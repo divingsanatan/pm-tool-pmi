@@ -1,0 +1,102 @@
+import { useState } from 'react';
+import { useStore } from '../store/StoreContext';
+import { useTasks } from '../store/useTasks';
+import { AvatarStack, Flag, StatusIcon } from '../components/Bits';
+import { isDoneStatus, nameOf, statusesOf } from '../lib/tasks';
+import { fdate, today } from '../lib/dates';
+
+function Card({ t, onOpen }) {
+  const { S } = useStore();
+  const done = isDoneStatus(S, t.status);
+  const late = !done && t.due && t.due < today();
+  return (
+    <div
+      className="kcard"
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/plain', t.id);
+        e.dataTransfer.effectAllowed = 'move';
+      }}
+      onClick={() => onOpen(t.id)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === 'Enter' && onOpen(t.id)}
+    >
+      <div className={'k-title' + (done ? ' done' : '')}>{t.name}</div>
+      <div className="row k-meta">
+        <AvatarStack names={(t.assignees || []).map((id) => nameOf(S, id))} size={20} />
+        <Flag priority={t.priority} size={14} />
+        {t.due && <span className={'msg' + (late ? ' lateTxt' : '')}>{fdate(t.due)}</span>}
+        {t.effort ? <span className="msg mono">{t.effort}h</span> : null}
+        {t.subtasks.length > 0 && <span className="msg">⑂ {t.subtasks.filter((s) => s.done).length}/{t.subtasks.length}</span>}
+      </div>
+    </div>
+  );
+}
+
+function Column({ s, tasks, onOpen, onAdd }) {
+  const tk = useTasks();
+  const [over, setOver] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [v, setV] = useState('');
+  return (
+    <div
+      className={'kcol' + (over ? ' over' : '')}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setOver(false);
+        const id = e.dataTransfer.getData('text/plain');
+        if (id) tk.patch(id, { status: s.id });
+      }}
+    >
+      <div className="k-hd"><StatusIcon status={s} size={16} /><b>{s.label}</b><span className="msg">{tasks.length}</span></div>
+      {tasks.map((t) => (<Card key={t.id} t={t} onOpen={onOpen} />))}
+      {adding ? (
+        <input
+          className="c"
+          autoFocus
+          value={v}
+          placeholder="Task name, then Enter"
+          onChange={(e) => setV(e.target.value)}
+          onBlur={() => {
+            if (v.trim()) onAdd(s.id, v.trim());
+            setV('');
+            setAdding(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              if (v.trim()) onAdd(s.id, v.trim());
+              setV('');
+            }
+            if (e.key === 'Escape') {
+              setV('');
+              setAdding(false);
+            }
+          }}
+          aria-label="New task name"
+        />
+      ) : (
+        <button className="add-row" onClick={() => setAdding(true)}>+ Add task</button>
+      )}
+    </div>
+  );
+}
+
+export default function Board({ tasks, onOpen, onAdd }) {
+  const { S } = useStore();
+  const sts = statusesOf(S);
+  return (
+    <div className="scroll">
+      <div className="kanban" style={{ '--cols': sts.length }}>
+        {sts.map((s) => (
+          <Column key={s.id} s={s} tasks={tasks.filter((t) => t.status === s.id)} onOpen={onOpen} onAdd={onAdd} />
+        ))}
+      </div>
+    </div>
+  );
+}

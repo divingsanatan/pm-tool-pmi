@@ -1,1 +1,76 @@
-# pm-tool-pmi
+# Sprint Control
+
+React (Vite) port of the single-file Sprint Control dashboard: earned-value tracking (PV / EV / AC, SPI / CPI, forecast), weekly tracker, work breakdown, Gantt timeline, budget, RACI and RAID log.
+
+## Run it
+
+```bash
+npm install
+npm run dev      # http://localhost:5173
+npm run build    # production build in dist/
+npm run preview  # serve the build locally
+```
+
+Deploys as a static site on Vercel, Netlify, GitHub Pages or Cloudflare Pages (build command `npm run build`, output folder `dist`).
+
+## What the app does
+
+ClickUp-style workspace:
+
+- **Left sidebar**: projects, each with its sprints and a Backlog. `+` adds a project or sprint, `⋯` renames or deletes, a red badge shows unfinished tasks. On phones it becomes a slide-out menu.
+- **Sprint view** (click a sprint; tasks can have several assignees and the project has custom, editable statuses): List and Board layouts, search, group by status / assignee / priority, assignee filter, inline add, status / assignee / priority menus, subtasks, drag and drop on the Board, task drawer (description, dates, effort, move between sprints), summary cards (tasks added, % assigned, missing effort), and an "unfinished tasks" banner on a Done sprint with one-click move to the next sprint or the Backlog.
+- **Backlog** (click it in the left menu): not a sprint. A flat holding area for work items that are not planned yet, with no statuses, no dates and no Board. Group by priority or assignee, and use **Move to sprint** on any item to plan it (it starts at the first open status). Moving work back to the Backlog clears its status. Backlog items are left out of the Timeline, the Dashboard delivery counts and the project's auto week count; the RACI still lists them under "Backlog" for the entire project.
+- **Project view** (click the project name): Dashboard (earned value), Weekly tracker, Timeline, Budget, RACI, RAID log.
+  - **Timeline:** driven by the sprint tasks, with Zoom (Day / Week / Month) and Range (Whole project / one Sprint / Custom dates), a sprint band, a today marker and a Today button.
+  - **Budget:** project length (start date, number of weeks set **Auto** from your tasks, sprints and costs, or **Manual**), a **Labour budget** (pick stakeholders, set each one's hourly rate and the capacity they have for the project; shared with RACI), planned line items that repeat per week / month / sprint or once, and an **Actual costs ledger**. "Actual cost to date" is the sum of the ledger. Entries can be added inline, pasted from a spreadsheet, and viewed by week, month, sprint or cost element against the plan.
+  - **Weekly tracker:** planned %, earned % and notes per week; actual cost is calculated from the ledger (＋ adds a cost to that week); add weeks, remove the last week, clear a week.
+  - **Stakeholders:** the single list of people (name, optional role). Work items, RACI and the labour budget all pick from it; names can only be added or renamed here.
+  - **RACI:** every work item of every sprint (and the Backlog) is listed automatically; only the roles can be marked. Filters: Entire project, a Sprint, a Week, a Month, or Custom dates (a work item belongs to a period when its dates overlap it). Stakeholder columns come from the Stakeholders list.
+- **Responsive:** sidebar becomes a slide-out menu, task lists and tables become cards on phones, the Board scrolls with snapping, 16px inputs avoid iOS zoom, larger tap targets on touch screens.
+
+## Project layout
+
+```
+src/
+  main.jsx, App.jsx        entry point and layout (sidebar + content)
+  styles.css               all styling (original sheet + new layout section at the bottom)
+  store/
+    StoreContext.jsx       workspace state, localStorage save, update()/updateW()/setNav()/setField()
+    useTasks.js            every task / sprint action (add, patch, move, subtasks, moveOpen...)
+    useCosts.js            actual cost ledger actions (add, addMany, patch, remove, sort)
+  lib/
+    gantt.js               Timeline axis: range, zoom, header cells, grid lines
+    parse.js               pasted spreadsheet rows -> cost entries
+    raci.js                RACI filters (project / sprint / week / month / custom)
+    calc.js                earned value, budget, RAID scoring, alerts, wbsOf() (sprints -> flat rows)
+    tasks.js               statuses, priorities, task/sprint/project factories and finders
+    seed.js                sample workspace (also used by "Reset to sample data")
+    migrate.js             accepts the new format AND the earlier single-file format
+    format.js, dates.js    money / percent / UTC date helpers
+  components/
+    Sidebar.jsx, Menu.jsx (portal dropdown), UI.jsx (confirm dialog + Data modal), Bits.jsx (icons, avatars)
+    Field.jsx              <Cell>, <SelectCell>, <Area> inputs; Charts.jsx; Header.jsx; DataPanel.jsx; Kpi.jsx
+  tabs/
+    SprintView.jsx, Board.jsx, TaskDrawer.jsx     the ClickUp-style sprint view
+    BacklogView.jsx                               the Backlog (no statuses, move to sprint)
+    Stakeholders.jsx                              the people list
+    Dashboard, Weekly, Timeline, Budget, Raci, Raid   project-level views
+```
+
+## How data flows
+
+- Everything lives in one workspace object: `{ v: 3, projects: [...], nav: {...} }`. Each project holds its sprints, backlog, budget, people, RACI and RAID.
+- `const { S } = useStore()` gives the **current project**. Change it with `update((project) => { ... })`; use `updateW((workspace) => { ... })` to touch the projects list.
+- Saved to `localStorage` under `sprint-control-v3`. Data saved by the earlier single-file version (`sprint-control-v2`) is migrated automatically on first load: each WBS phase becomes a sprint, and a task's status comes from its old percent complete.
+- Task status maps to percent complete in `lib/tasks.js` (To do 0, In progress 50%, In review 80%, Done 100%). Change `STATUSES` there to adjust roll-ups.
+- Stakeholders live in `project.people` (name, hourly rate `rate`, project capacity `cap`). The Budget's labour budget is just a list of which stakeholders are included (`project.team = [{ person: id }]`), so rate and capacity edited in Budget or RACI are the same numbers. Old budget rows are migrated into stakeholders automatically.
+- RACI roles live on each task (`task.raci`, keyed by person id), so the chart always matches the sprints. The RACI shows only stakeholders, work items and roles; rates and capacity are managed in Budget. Work items cannot be typed into RACI: rows added there by earlier versions are converted into Backlog tasks automatically.
+- Work items can have several assignees (`task.assignees`, a list of stakeholder ids; subtasks have a single `person`). Statuses are per project (`project.statuses`: label, colour, `done`, `pct`) and edited from the Statuses button or the status menu; deleting a status moves its tasks to another one.
+- Actual cost is `project.ledger` (date, element, description, amount). Weekly, monthly and sprint figures are always calculated from it, never typed twice.
+- `meta.weeksMode` is `auto` (weeks computed from data in `normalize()`) or `manual`. Data saved by earlier versions is migrated automatically (typed weekly costs become ledger entries; old RACI rows move onto their tasks).
+
+## Known limits (by design, for now)
+
+- Data is stored per browser. There is no backend, login, sharing or real-time collaboration.
+- Not built: Calendar, Mind map and Reporting views, custom statuses, comments, attachments, notifications, time tracking, integrations.
+- `seed.js` contains placeholder project data (names, hourly rates, budgets). Replace it before making the repo public.
