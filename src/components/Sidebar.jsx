@@ -26,7 +26,7 @@ function InlineEdit({ value, onDone }) {
 }
 
 export default function Sidebar({ onNavigate }) {
-  const { W, nav, updateW, setNav, saved } = useStore();
+  const { W, nav, updateW, setNav, saved, cloud } = useStore();
   const ui = useUI();
   const [closed, setClosed] = useState({});
   const [editing, setEditing] = useState(null);
@@ -170,6 +170,7 @@ export default function Sidebar({ onNavigate }) {
 
       <div className="sb-foot">
         <button className="btn" onClick={() => { ui.openData(); onNavigate && onNavigate(); }}>Data</button>
+        {cloud && <button className="btn" onClick={cloud.signOut} title={cloud.email}>Sign out</button>}
         <span className="msg">{saved}</span>
       </div>
     </aside>

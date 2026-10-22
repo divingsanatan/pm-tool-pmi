@@ -69,8 +69,17 @@ src/
 - Actual cost is `project.ledger` (date, element, description, amount). Weekly, monthly and sprint figures are always calculated from it, never typed twice.
 - `meta.weeksMode` is `auto` (weeks computed from data in `normalize()`) or `manual`. Data saved by earlier versions is migrated automatically (typed weekly costs become ledger entries; old RACI rows move onto their tasks).
 
+## Cloud storage (Supabase)
+
+Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` (see `.env.example`) and the app asks for a login, then loads and saves the workspace in Supabase. Leave them unset and it works exactly as before, saving to this browser only.
+
+- Schema: `supabase/migrations/0001_init_workspaces_and_projects.sql`. One row per project in `projects` (the whole project as JSONB) and one row in `workspaces` for navigation. Row-level security lets a signed-in user see only their own rows.
+- First sign-in with an empty cloud: choose "Import the work saved in this browser" or "Start with sample data". In cloud mode this browser's saved copy is never modified, so it stays as a backup.
+- Saves are debounced (about 1 second) and only changed projects are sent. Each project has a `rev` number; if another tab or device saved a newer version, the app shows a banner and asks you to reload instead of overwriting it.
+- Create your user in Supabase (Authentication > Users) and turn off public sign-ups. Only the publishable key belongs in the browser, never a service_role or secret key.
+
 ## Known limits (by design, for now)
 
-- Data is stored per browser. There is no backend, login, sharing or real-time collaboration.
+- Without the Supabase settings, data is stored per browser. There is no sharing or real-time collaboration.
 - Not built: Calendar, Mind map and Reporting views, custom statuses, comments, attachments, notifications, time tracking, integrations.
 - `seed.js` contains placeholder project data (names, hourly rates, budgets). Replace it before making the repo public.
