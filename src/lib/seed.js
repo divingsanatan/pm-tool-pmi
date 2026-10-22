@@ -16,7 +16,7 @@ export function seedProject() {
   rep[0] = { planPct: 0.2, earnPct: 0.165, note: '' };
   return {
     id: 'p1',
-    meta: { name: 'Sprint Control', start: '2026-09-07', weeks: 26, weeksMode: 'manual', sprintWeeks: 2, hoursPerDay: 8, sprintDays: 6 },
+    meta: { name: 'Sprint Control', start: '2026-09-07', weeks: 26, sprintWeeks: 2, hoursPerDay: 8, sprintDays: 6 },
     ui: { mode: 'project', week: 1, sprint: 1, from: 1, to: 26 },
     report: rep,
     lines: [

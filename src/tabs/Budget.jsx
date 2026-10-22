@@ -233,7 +233,7 @@ export default function Budget() {
     <>
       <div className="card">
         <h2>Project length</h2>
-        <p className="hint">The weekly budget is multiplied by the number of weeks. Let it follow your data, or set it yourself.</p>
+        <p className="hint">The weekly budget is multiplied by the number of weeks, and the number of weeks follows your dated work items, sprints and costs.</p>
         <div className="fields">
           <label className="fld">Start date (Monday of week 1)<Cell sec="meta" f="start" value={S.meta.start} type="date" cls="w-date" /></label>
           <WeeksControl />

@@ -117,6 +117,7 @@ export function autoWeeks(S) {
     c.tasks.forEach((t) => {
       take(t.start);
       take(t.due);
+      take(t.doneOn);
     });
   });
   S.ledger.forEach((e) => take(e.date));
@@ -224,17 +225,62 @@ export function worst(a, b) {
 }
 
 /* ---------- earned value ---------- */
+/* Planned and earned value come from the work items of the sprints (the Backlog is not scheduled work).
+   Every work item carries a share of the project budget: by effort hours when any item has effort, otherwise equally.
+   Planned: the item's share lands in the week of its due date (falling back to the sprint end, then its start).
+   Earned: the item's share lands in the week it was marked done. Items finished before completion dates were
+   recorded count on their due date. */
+export function workPlan(S) {
+  const N = nW(S);
+  const items = [];
+  S.sprints.forEach((sp) => sp.tasks.forEach((t) => items.push({ t, sp })));
+  const weighted = items.some((x) => nz(x.t.effort) > 0);
+  const wt = (x) => (weighted ? nz(x.t.effort) : 1);
+  const idx = (date) => Math.max(1, Math.min(N, weekOfDate(S, date))) - 1;
+  const o = { total: 0, plan: Array(N).fill(0), done: Array(N).fill(0), count: items.length, undated: 0, undatedDone: 0, noStamp: 0, weighted };
+  items.forEach((x) => {
+    const w = wt(x);
+    if (!w) return;
+    o.total += w;
+    const finish = x.t.due || x.sp.end || x.t.start || x.sp.start;
+    const finished = !!x.t.status && isDoneStatus(S, x.t.status);
+    if (finish) o.plan[idx(finish)] += w;
+    else o.undated++;
+    if (finished) {
+      if (!x.t.doneOn) o.noStamp++;
+      const on = x.t.doneOn || finish;
+      if (on) o.done[idx(on)] += w;
+      else {
+        o.undatedDone++;
+        o.done[idx(today())] += w;
+      }
+    }
+  });
+  return o;
+}
+
 export function wk(S, w) {
   const r = S.report[w - 1] || {};
   const B = weeklyBAC(S);
+  const BAC = projectBAC(S);
+  const P = workPlan(S);
+  const manual = r.planPct != null;
+  // planned: a typed value for the week wins; otherwise it follows the due dates
+  let pv = null;
+  if (manual) pv = r.planPct * B;
+  else if (P.total > 0) pv = (P.plan[w - 1] / P.total) * BAC;
+  // earned: counted for weeks up to today (future weeks have nothing to report yet)
+  let ev = null;
+  if (P.total > 0 && started(S) && w <= curWeek(S)) ev = (P.done[w - 1] / P.total) * BAC;
   return {
     w,
-    plan: r.planPct,
-    earn: r.earnPct,
+    plan: pv == null ? null : B ? pv / B : null,
+    earn: ev == null ? null : B ? ev / B : null,
+    manualPlan: manual,
     ac: weekAc(S, w),
     note: r.note || '',
-    pv: r.planPct != null ? r.planPct * B : null,
-    ev: r.earnPct != null ? r.earnPct * B : null,
+    pv,
+    ev,
   };
 }
 export function hasData(S, w) {
@@ -299,7 +345,6 @@ export function rlabel(S, a, b) {
 /* ---------- "Needs attention" checks (returns [{cls, text}]) ---------- */
 export function alerts(S) {
   const a = [];
-  const cur = curWeek(S);
   const od = S.raid.filter(overdue);
   if (od.length)
     a.push({
@@ -313,19 +358,6 @@ export function alerts(S) {
       text:
         late.length + ' work package' + (late.length > 1 ? 's are' : ' is') + ' past the finish date and not complete: ' + late.map((x) => x.id).join(', ') + '.',
     });
-  const miss = [];
-  if (started(S)) for (let w = 1; w < cur; w++) if (!hasData(S, w)) miss.push(w);
-  if (miss.length)
-    a.push({
-      cls: 'warn',
-      text:
-        miss.length +
-        ' past week' +
-        (miss.length > 1 ? 's have' : ' has') +
-        ' no report: ' +
-        (miss.length > 6 ? 'weeks ' + miss[0] + ' to ' + miss[miss.length - 1] : 'week' + (miss.length > 1 ? 's ' : ' ') + miss.join(', ')) +
-        '. Fill them in on the Weekly tracker.',
-    });
   const wb = weeklyBAC(S);
   const over = [];
   for (let k = 1; k <= nW(S); k++) {
@@ -336,8 +368,6 @@ export function alerts(S) {
   const gaps = raciGaps(S);
   if (gaps.length)
     a.push({ cls: 'warn', text: 'RACI is incomplete for ' + gaps.length + ' open item' + (gaps.length > 1 ? 's' : '') + ' (needs one Accountable and at least one Responsible): ' + gaps.slice(0, 6).join(', ') + (gaps.length > 6 ? '…' : '') + '.' });
-  if (S.meta.weeksMode !== 'auto' && autoWeeks(S) > nW(S))
-    a.push({ cls: 'warn', text: 'Some tasks, sprints or costs are dated after week ' + nW(S) + '. Extend the weeks on the Budget tab so they are counted.' });
   if (!a.length) a.push({ cls: 'good', text: 'Nothing flagged.' });
   return a;
 }
@@ -363,7 +393,7 @@ export function normalize(S) {
   S.backlog.id = 'backlog';
   if (!S.counter) S.counter = 1;
   if (!S.tl || typeof S.tl !== 'object') S.tl = { scale: 'week', scope: 'project', sprintId: '', from: '', to: '' };
-  if (!m.weeksMode) m.weeksMode = 'manual';
+  delete m.weeksMode; // the number of weeks always follows the data now
   if (!Array.isArray(S.raci)) S.raci = [];
   if (!S.rf || typeof S.rf !== 'object') S.rf = { scope: 'project', sprintId: '', week: 0, month: '', from: '', to: '' };
 
@@ -427,6 +457,7 @@ export function normalize(S) {
       delete t.assignee;
       if (c.id === 'backlog') t.status = ''; // the Backlog has no statuses
       else if (!stIds.has(t.status)) t.status = firstOpenStatus(S);
+      if (!t.status || !S.statuses.find((x) => x.id === t.status && x.done)) delete t.doneOn; // completion date only on finished work
       (t.subtasks || []).forEach((st) => {
         if (st.assignee !== undefined) {
           st.person = idForName(st.assignee) || '';
@@ -471,9 +502,8 @@ export function normalize(S) {
     });
   });
 
-  // number of weeks: from the data, or whatever was typed
-  if (m.weeksMode === 'auto') m.weeks = autoWeeks(S);
-  m.weeks = Math.max(1, Math.min(104, Math.round(nz(m.weeks)) || 26));
+  // number of weeks: always from the data (latest dated task, sprint, completion or cost)
+  m.weeks = autoWeeks(S);
   m.sprintWeeks = Math.max(1, Math.round(nz(m.sprintWeeks)) || 2);
   while (S.report.length < m.weeks) S.report.push({ planPct: null, earnPct: null, note: '' });
 
@@ -485,4 +515,39 @@ export function normalize(S) {
   u.from = cl(u.from, 1, W);
   u.to = cl(u.to, 1, W);
   return S;
+}
+
+/* ---------- all projects together ---------- */
+// Weeks are aligned by calendar (Monday based), so projects that start on different dates still line up.
+export function portfolio(projects) {
+  const WEEK = 7 * DAY;
+  const mon = (ms) => ms - ((new Date(ms).getUTCDay() + 6) % 7) * DAY;
+  const base = Math.min(...projects.map((p) => mon(pd(p.meta.start))));
+  const last = Math.max(...projects.map((p) => mon(wkS(p, nW(p)))));
+  const n = Math.round((last - base) / WEEK) + 1;
+  const rows = Array.from({ length: n }, (_, k) => ({ k: k + 1, s: base + k * WEEK, e: base + k * WEEK + 6 * DAY, parts: [] }));
+  projects.forEach((p) => {
+    for (let w = 1; w <= nW(p); w++) {
+      const k = Math.round((mon(wkS(p, w)) - base) / WEEK);
+      if (rows[k]) rows[k].parts.push({ p, w, x: wk(p, w) });
+    }
+  });
+  const sum = (parts, f) => {
+    const v = parts.map(f).filter((a) => a != null);
+    return v.length ? v.reduce((a, b) => a + b, 0) : null;
+  };
+  rows.forEach((r) => {
+    r.pv = sum(r.parts, (q) => q.x.pv);
+    r.ev = sum(r.parts, (q) => q.x.ev);
+    r.ac = sum(r.parts, (q) => q.x.ac);
+    const both = r.parts.filter((q) => q.x.pv != null && q.x.ev != null);
+    const cost = r.parts.filter((q) => q.x.ev != null && q.x.ac != null);
+    const pvR = both.reduce((a, q) => a + q.x.pv, 0), evR = both.reduce((a, q) => a + q.x.ev, 0);
+    const evC = cost.reduce((a, q) => a + q.x.ev, 0), acC = cost.reduce((a, q) => a + q.x.ac, 0);
+    r.spi = pvR ? evR / pvR : null;
+    r.cpi = acC ? evC / acC : null;
+  });
+  const t = pd(today());
+  const cur = rows.findIndex((r) => t >= r.s && t <= r.e);
+  return { rows, cur: cur < 0 ? null : cur + 1 };
 }

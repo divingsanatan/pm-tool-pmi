@@ -74,5 +74,7 @@ export function fixNav(w) {
   }
   if (!n.tab) n.tab = 'dash';
   if (!n.sprintView) n.sprintView = 'list';
+  if (n.weeklyScope !== 'all') n.weeklyScope = 'project';
+  n.weeklyDesc = !!n.weeklyDesc;
   return w;
 }

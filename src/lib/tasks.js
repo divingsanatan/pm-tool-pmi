@@ -1,4 +1,4 @@
-import { addDays, mondayOfToday } from './dates';
+import { addDays, mondayOfToday, today } from './dates';
 
 // Statuses are per project and editable. "done" marks a status as finished work; pct is the share of a task
 // counted as complete while it sits in an open status (used by the Dashboard and Timeline roll-ups).
@@ -64,6 +64,19 @@ export function makeTask(p, fields) {
   };
 }
 
+// Work that just moved into a finished status gets today's date as its completion date; reopened work loses it.
+export function stampDone(before, p) {
+  const was = new Set();
+  allContainers(before).forEach((c) => c.tasks.forEach((t) => t.status && isDoneStatus(before, t.status) && was.add(t.id)));
+  allContainers(p).forEach((c) =>
+    c.tasks.forEach((t) => {
+      const now = !!t.status && isDoneStatus(p, t.status);
+      if (!now) delete t.doneOn;
+      else if (!was.has(t.id) && !t.doneOn) t.doneOn = today();
+    })
+  );
+}
+
 export function newSprint(p, id) {
   const last = p.sprints[p.sprints.length - 1];
   const start = last && last.end ? addDays(last.end, 1) : mondayOfToday();
@@ -76,7 +89,7 @@ export function blankProject(name, id) {
   for (let i = 0; i < 12; i++) report.push({ planPct: null, earnPct: null, note: '' });
   return {
     id: id || uid(),
-    meta: { name: name || 'New project', start, weeks: 12, weeksMode: 'auto', sprintWeeks: 2, hoursPerDay: 8, sprintDays: 5 },
+    meta: { name: name || 'New project', start, weeks: 12, sprintWeeks: 2, hoursPerDay: 8, sprintDays: 5 },
     ui: { mode: 'project', week: 1, sprint: 1, from: 1, to: 12 },
     report,
     lines: [],

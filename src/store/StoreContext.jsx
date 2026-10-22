@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { seedWorkspace } from '../lib/seed';
 import { normalize } from '../lib/calc';
 import { fixNav, isV3, toWorkspace } from '../lib/migrate';
+import { stampDone } from '../lib/tasks';
 import { supabase } from '../lib/supabase';
 import { createCloud, fetchCloud, markSynced, newSyncState, pushCloud, workspaceFromRows } from '../lib/cloud';
 import { CloudImport, Splash } from '../components/CloudScreens';
@@ -153,7 +154,9 @@ export function StoreProvider({ children, cloud }) {
     setW((prev) => {
       const next = structuredClone(prev);
       const p = curOf(next);
+      const before = curOf(prev);
       fn(p, next);
+      stampDone(before, p);
       normalize(p);
       return next;
     });
@@ -183,7 +186,7 @@ export function StoreProvider({ children, cloud }) {
       update((p) => {
         const o = sec === 'meta' || sec === 'ui' ? p[sec] : p[sec] ? p[sec][i] : undefined;
         if (!o) return;
-        if (sec === 'meta' && (f === 'weeks' || f === 'sprintWeeks') && !(v >= 1)) v = f === 'weeks' ? 26 : 2;
+        if (sec === 'meta' && f === 'sprintWeeks' && !(v >= 1)) v = 2;
         if (sec === 'meta' && f === 'start' && !v) return;
         o[f] = v;
       });

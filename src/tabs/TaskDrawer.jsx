@@ -5,7 +5,7 @@ import { useUI } from '../components/UI';
 import { Area, Cell, SelectCell } from '../components/Field';
 import { Avatar } from '../components/Bits';
 import { AssigneeMenu } from '../components/Pickers';
-import { PRIORITIES, allContainers, findTask, nameOf, statusesOf } from '../lib/tasks';
+import { PRIORITIES, allContainers, findTask, isDoneStatus, nameOf, statusesOf } from '../lib/tasks';
 
 export default function TaskDrawer({ taskId, onClose }) {
   const { S } = useStore();
@@ -73,6 +73,11 @@ export default function TaskDrawer({ taskId, onClose }) {
           <label className="fld">Due date
             <Cell value={t.due} type="date" onCommit={(v) => tk.patch(t.id, { due: v })} />
           </label>
+          {isDoneStatus(S, t.status) && (
+            <label className="fld" title="Earned value counts this work in the week it was completed. If empty, the due date is used.">Completed on
+              <Cell value={t.doneOn || ''} type="date" onCommit={(v) => tk.patch(t.id, { doneOn: v || '' })} />
+            </label>
+          )}
             </>
           )}
           {f.c.id === 'backlog' && <p className="msg" style={{ gridColumn: '1 / -1', margin: 0 }}>Backlog items have no status or dates. Move this item to a sprint to schedule it.</p>}
