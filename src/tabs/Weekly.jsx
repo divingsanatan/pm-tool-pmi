@@ -48,13 +48,13 @@ function ProjectWeekly() {
     const x = wk(S, w);
     const spi = x.pv && x.ev != null ? x.ev / x.pv : null;
     const cpi = x.ac && x.ev != null ? x.ev / x.ac : null;
-    const cls = (w === cur && started(S) ? 'cur ' : '') + ((w - 1) % m.sprintWeeks === 0 && w > 1 ? 'sprint-start' : '');
+    const cls = (w === cur && started(S) ? 'cur ' : '') + (w > 1 && sprintOf(S, w) !== sprintOf(S, w - 1) ? 'sprint-start' : '');
     const typed = (S.report[w - 1] || {}).planPct;
     rows.push(
       <tr key={w} className={cls}>
         <td data-l="Week" className="mono"><span className="cell"><b>{w}</b></span></td>
         <td data-l="Dates"><span className="cell" style={{ whiteSpace: 'nowrap' }}>{wlabel(S, w)}</span></td>
-        <td data-l="Sprint" className="mono"><span className="cell">S{sprintOf(S, w)}</span></td>
+        <td data-l="Sprint" className="mono"><span className="cell">{sprintOf(S, w) ? 'S' + sprintOf(S, w) : '–'}</span></td>
         <td data-l="Planned %">
           <Cell sec="report" i={w - 1} f="planPct" value={typed} type="pct" cls="w-sm n" placeholder={x.plan == null ? '–' : pc(x.plan)} label={'Week ' + w + ' planned percent. Follows due dates; type a number to override'} />
         </td>

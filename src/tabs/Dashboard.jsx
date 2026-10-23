@@ -2,7 +2,7 @@ import { useStore } from '../store/StoreContext';
 import { SelectCell, Fld } from '../components/Field';
 import Kpi from '../components/Kpi';
 import { Spark, Gauge, Donut, BarsChart, SCurve, Legend3 } from '../components/Charts';
-import { agg, alerts, curWeek, emv, nSp, nW, projectBAC, rating, rlabel, rng, roll, score, sprintCap, sprintOf, stCls, wbsOf, weeklyBAC, worst, wps, wstat, wkS } from '../lib/calc';
+import { agg, alerts, curWeek, emv, nSp, nW, projectBAC, rating, rlabel, rng, roll, score, sprintCap, sprintOf, sprintWeeks, stCls, wbsOf, weeklyBAC, worst, wps, wstat, wkS } from '../lib/calc';
 import { fdate, fsh } from '../lib/dates';
 import { cl, money, nz, pc } from '../lib/format';
 import { changeAlerts } from '../lib/change';
@@ -35,14 +35,17 @@ export default function Dashboard() {
   const wopts = [];
   for (let w = 1; w <= Nw; w++) wopts.push([w, 'Week ' + w + ' · ' + fsh(wkS(S, w))]);
   const spopts = [];
-  for (let s = 1; s <= nSp(S); s++) spopts.push([s, 'Sprint ' + s + ' · weeks ' + ((s - 1) * S.meta.sprintWeeks + 1) + '–' + Math.min(Nw, s * S.meta.sprintWeeks)]);
+  S.sprints.forEach((sp, i) => {
+    const r = sprintWeeks(S, sp);
+    spopts.push([i + 1, sp.name + (r ? ' · ' + (r[0] === r[1] ? 'week ' + r[0] : 'weeks ' + r[0] + '–' + r[1]) : ' · no dates')]);
+  });
 
   const setMode = (v) =>
     update((s) => {
       const u = s.ui;
       u.mode = v;
       if (v === 'week') u.week = curWeek(s);
-      if (v === 'sprint') u.sprint = sprintOf(s, curWeek(s));
+      if (v === 'sprint') u.sprint = sprintOf(s, curWeek(s)) || 1;
       if (v === 'custom') {
         u.from = 1;
         u.to = curWeek(s);

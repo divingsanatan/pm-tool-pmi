@@ -80,7 +80,8 @@ export function stampDone(before, p) {
 export function newSprint(p, id) {
   const last = p.sprints[p.sprints.length - 1];
   const start = last && last.end ? addDays(last.end, 1) : mondayOfToday();
-  return { id: id || uid(), name: 'Sprint ' + (p.sprints.length + 1), status: 'Not started', start, end: addDays(start, 13), tasks: [] };
+  const weeks = Math.max(1, Math.round((p.meta && p.meta.sprintWeeks) || 2));
+  return { id: id || uid(), name: 'Sprint ' + (p.sprints.length + 1), status: 'Not started', start, end: addDays(start, weeks * 7 - 1), tasks: [] };
 }
 
 export function blankProject(name, id) {

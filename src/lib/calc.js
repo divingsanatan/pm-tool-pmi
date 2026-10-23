@@ -1,5 +1,5 @@
 import { DAY, pd, today, fsh } from './dates';
-import { nz, cl } from './format';
+import { nz, cl, money as money0 } from './format';
 import { DEFAULT_STATUSES, allContainers, firstOpenStatus, isDoneStatus, makeTask, statusPct, uid } from './tasks';
 
 /* ---------- timeline helpers ---------- */
@@ -7,8 +7,31 @@ export const nW = (S) => S.meta.weeks;
 export const wkS = (S, w) => pd(S.meta.start) + (w - 1) * 7 * DAY;
 export const wkE = (S, w) => wkS(S, w) + 6 * DAY;
 export const wlabel = (S, w) => fsh(wkS(S, w)) + ' – ' + fsh(wkE(S, w));
-export const sprintOf = (S, w) => Math.ceil(w / S.meta.sprintWeeks);
-export const nSp = (S) => Math.ceil(nW(S) / S.meta.sprintWeeks);
+// Sprint numbers come from the sprints that actually exist (their dates), not from a fixed sprint length.
+// sprintOf(S, w): 1-based number of the sprint that covers most of week w, or 0 when no sprint covers it.
+export function sprintOf(S, w) {
+  const a = wkS(S, w), b = wkE(S, w);
+  let best = 0, days = 0;
+  S.sprints.forEach((sp, i) => {
+    if (!sp.start || !sp.end) return;
+    const lo = Math.max(a, pd(sp.start)), hi = Math.min(b, pd(sp.end));
+    const d = hi >= lo ? (hi - lo) / DAY + 1 : 0;
+    if (d > days) {
+      days = d;
+      best = i + 1;
+    }
+  });
+  return best;
+}
+export const nSp = (S) => Math.max(1, S.sprints.length);
+// first and last project week a sprint touches, or null when it has no dates
+export function sprintWeeks(S, sp) {
+  if (!sp || !sp.start || !sp.end) return null;
+  const W = nW(S);
+  const a = Math.floor((pd(sp.start) - pd(S.meta.start)) / (7 * DAY)) + 1;
+  const b = Math.floor((pd(sp.end) - pd(S.meta.start)) / (7 * DAY)) + 1;
+  return [Math.max(1, Math.min(W, a)), Math.max(1, Math.min(W, b))];
+}
 export function curWeek(S) {
   const w = Math.floor((pd(today()) - pd(S.meta.start)) / (7 * DAY)) + 1;
   return Math.max(1, Math.min(nW(S), w));
@@ -317,13 +340,13 @@ export function agg(S, a, b) {
 export function rng(S) {
   const u = S.ui;
   const W = nW(S);
-  const sw = S.meta.sprintWeeks;
   let a, b;
   if (u.mode === 'week') {
     a = b = u.week;
   } else if (u.mode === 'sprint') {
-    a = (u.sprint - 1) * sw + 1;
-    b = Math.min(W, u.sprint * sw);
+    const r = sprintWeeks(S, S.sprints[u.sprint - 1]);
+    a = r ? r[0] : 1;
+    b = r ? r[1] : W;
   } else if (u.mode === 'custom') {
     a = Math.min(u.from, u.to);
     b = Math.max(u.from, u.to);
@@ -365,6 +388,17 @@ export function alerts(S) {
     if (x.ac != null && x.ac > wb) over.push(k);
   }
   if (over.length) a.push({ cls: 'bad', text: 'Actual cost is above the weekly budget in week' + (over.length > 1 ? 's ' : ' ') + over.join(', ') + '.' });
+  const outs = outsideSprint(S);
+  if (outs.length) {
+    const now = ifAligned(S);
+    const same = now.weeks === nW(S);
+    a.push({
+      cls: 'warn',
+      text:
+        outs.length + ' work item' + (outs.length > 1 ? 's are' : ' is') + ' dated outside ' + (outs.length > 1 ? 'their sprints' : 'its sprint') + ' (' + outs.slice(0, 4).map((x) => x.t.code).join(', ') + (outs.length > 4 ? '…' : '') + ')' +
+        (same ? '.' : '. This stretches the project to ' + nW(S) + ' weeks and the budget to ' + money0(projectBAC(S)) + '; inside the sprints it would be ' + now.weeks + ' week' + (now.weeks > 1 ? 's' : '') + ' and ' + money0(now.bac) + '. Fix it on the sprint page.'),
+    });
+  }
   const gaps = raciGaps(S);
   if (gaps.length)
     a.push({ cls: 'warn', text: 'RACI is incomplete for ' + gaps.length + ' open item' + (gaps.length > 1 ? 's' : '') + ' (needs one Accountable and at least one Responsible): ' + gaps.slice(0, 6).join(', ') + (gaps.length > 6 ? '…' : '') + '.' });
@@ -383,6 +417,44 @@ export function newRaidId(S, type) {
     }
   });
   return pre + '-' + ('0' + (mx + 1)).slice(-2);
+}
+
+/* ---------- work items dated outside their sprint ---------- */
+// The project length follows the latest date in the plan, so one work item due after its sprint ends
+// stretches the whole project (and its budget). These helpers find such items and pull them back in.
+const clampDate = (d, lo, hi) => (!d ? d : d < lo ? lo : d > hi ? hi : d);
+export function outsideSprint(S) {
+  const out = [];
+  S.sprints.forEach((sp) => {
+    if (!sp.start || !sp.end) return;
+    sp.tasks.forEach((t) => {
+      if ((t.due && (t.due < sp.start || t.due > sp.end)) || (t.start && (t.start < sp.start || t.start > sp.end))) out.push({ sp, t });
+    });
+  });
+  return out;
+}
+// Moves start and due dates into the sprint window. Pass a sprint id to limit it to that sprint. Returns how many items changed.
+export function alignSprintDates(S, sprintId) {
+  let n = 0;
+  S.sprints.forEach((sp) => {
+    if ((sprintId && sp.id !== sprintId) || !sp.start || !sp.end) return;
+    sp.tasks.forEach((t) => {
+      const s = clampDate(t.start, sp.start, sp.end), d = clampDate(t.due, sp.start, sp.end);
+      if (s !== t.start || d !== t.due) {
+        t.start = s;
+        t.due = d;
+        n++;
+      }
+    });
+  });
+  return n;
+}
+// What the project would look like with every item inside its sprint
+export function ifAligned(S) {
+  const c = structuredClone(S);
+  alignSprintDates(c);
+  c.meta.weeks = autoWeeks(c);
+  return { weeks: c.meta.weeks, bac: projectBAC(c) };
 }
 
 /* ---------- keep state valid after any edit ---------- */
@@ -517,7 +589,7 @@ export function normalize(S) {
 
   const u = S.ui;
   const W = m.weeks;
-  const SP = Math.ceil(W / m.sprintWeeks);
+  const SP = Math.max(1, S.sprints.length);
   u.week = cl(u.week, 1, W);
   u.sprint = cl(u.sprint, 1, SP);
   u.from = cl(u.from, 1, W);

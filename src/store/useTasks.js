@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useStore } from './StoreContext';
+import { alignSprintDates } from '../lib/calc';
 import { containerById, findTask, firstOpenStatus, isDoneStatus, makeTask, uid } from '../lib/tasks';
 
 // All task / sprint mutations in one place. Every function edits the current project.
@@ -20,6 +21,10 @@ export function useTasks() {
           const f = findTask(p, id);
           if (f) Object.assign(f.t, patch);
         });
+      },
+      // pull every work item's start and due date of one sprint back inside that sprint
+      alignDates(sprintId) {
+        update((p) => void alignSprintDates(p, sprintId));
       },
       // change several work items in one update (one render, one save)
       patchMany(ids, patch) {

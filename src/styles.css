@@ -526,3 +526,6 @@ label.fld{max-width:100%;min-width:0}
 .drawer .chip:disabled{cursor:default;opacity:.55}
 .drawer .chip[aria-pressed="true"]:disabled{opacity:1}
 @media (max-width:600px){.d-actions .btn{flex:1 1 auto}}
+
+/* banner variant for scheduling warnings */
+.banner.warn{background:var(--warn-bg);color:var(--warn)}

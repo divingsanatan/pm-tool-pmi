@@ -7,7 +7,8 @@ import Menu from '../components/Menu';
 import { Avatar, SprintIcon, StatusIcon } from '../components/Bits';
 import { AssigneeMenu, PriorityMenu, StatusMenu } from '../components/Pickers';
 import { PRIORITIES, SPRINT_STATUSES, containerById, isDoneStatus, isOpen, nameOf, priorityOf, statusesOf } from '../lib/tasks';
-import { today } from '../lib/dates';
+import { fdate, today } from '../lib/dates';
+import { outsideSprint } from '../lib/calc';
 import { hrsf } from '../lib/format';
 import TaskDrawer from './TaskDrawer';
 import Board from './Board';
@@ -149,6 +150,7 @@ export default function SprintView() {
   const idx = S.sprints.findIndex((s) => s.id === c.id);
   const next = S.sprints[idx + 1];
   const unfinished = c.tasks.filter((t) => isOpen(S, t));
+  const outside = outsideSprint(S).filter((x) => x.sp.id === c.id).length;
   const totalH = c.tasks.reduce((a, t) => a + (t.effort || 0), 0);
   const missing = c.tasks.filter((t) => !t.effort).length;
   const assigned = c.tasks.filter((t) => (t.assignees || []).length).length;
@@ -258,6 +260,13 @@ export default function SprintView() {
           />
           <span style={{ flex: 1 }} />
           <button className="btn" onClick={() => { setSel(new Set()); last.current = null; }}>Clear selection</button>
+        </div>
+      )}
+
+      {outside > 0 && (
+        <div className="banner warn">
+          <span>{outside} work item{outside > 1 ? 's are' : ' is'} dated outside this sprint ({fdate(c.start)} – {fdate(c.end)}). Dates after the sprint ends stretch the whole project timeline and budget.</span>
+          <button className="btn" onClick={() => tk.alignDates(c.id)}>Move dates into the sprint</button>
         </div>
       )}
 
