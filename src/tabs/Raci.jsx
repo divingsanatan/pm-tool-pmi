@@ -1,4 +1,7 @@
 import { useStore } from '../store/StoreContext';
+import { useSelect } from '../lib/useSelect';
+import RaciBar from '../components/RaciBulk';
+import { TriBox } from './SprintView';
 import { Fld } from '../components/Field';
 import { raciOkFor, wkE, wkS, nW } from '../lib/calc';
 import { findTask } from '../lib/tasks';
@@ -32,6 +35,9 @@ export default function Raci() {
       else delete roles[pid];
     });
 
+  const flat = groups.flatMap((g) => g.tasks);
+  const pick = useSelect(flat.map((t) => t.id), flat.map((t) => t.id), S.id);
+
   const weeks = [];
   for (let w = 1; w <= nW(S); w++) weeks.push(w);
 
@@ -41,7 +47,7 @@ export default function Raci() {
         <div>
           <h2>RACI chart</h2>
           <p className="hint">
-            Every work item from your sprints appears here automatically. Click a cell to cycle A, R, C, I and empty. Each work item needs one A and at least one R.
+            Every work item from your sprints appears here automatically. Click a cell to cycle A, R, C, I and empty, or tick several work items to set roles for all of them at once. Each work item needs one A and at least one R.
             Work items are managed in the sprints and people on the <button className="linkbtn" onClick={() => setNav({ tab: 'people' })}>Stakeholders</button> tab.
           </p>
         </div>
@@ -83,11 +89,13 @@ export default function Raci() {
         <span className="msg" style={{ marginLeft: 'auto' }}>Showing {shown} of {total} work items{R.scope !== 'project' && R.scope !== 'sprint' ? ' (a work item belongs to a period when its dates overlap it; work items without dates are hidden)' : ''}</span>
       </div>
 
+      <RaciBar ids={pick.chosen} items={flat} people={people} onDone={pick.clear} />
+
       <div className="scroll">
         <table className="tbl raci">
           <thead>
             <tr>
-              <th className="sticky-l">Work item</th>
+              <th className="sticky-l"><TriBox all={flat.length > 0 && pick.chosen.length === flat.length} some={pick.chosen.length > 0} onChange={(e) => pick.setMany(flat.map((t) => t.id), e.target.checked)} label="Select all work items" /> Work item</th>
               {people.map((p) => (
                 <th key={p.id} style={{ minWidth: 96, textAlign: 'center' }}>
                   <div className="raci-name">{p.name}</div>
@@ -99,7 +107,7 @@ export default function Raci() {
           </thead>
           <tbody>
             {groups.map((g) => (
-              <RowsFor key={g.id} g={g} />
+              <RowsFor key={g.id} g={g} people={people} cols={cols} onCycle={cycle} sel={pick.sel} onSelect={pick.toggleOne} onGroup={pick.setMany} />
             ))}
             {!groups.length && (<tr><td colSpan={cols}><span className="cell msg">{total ? 'No work items match this filter.' : 'No work items yet. Add tasks to a sprint and they will show up here.'}</span></td></tr>)}
             {!people.length && groups.length > 0 && (<tr><td colSpan={cols}><span className="cell msg">There are no stakeholders yet. Add them on the Stakeholders tab to start marking roles.</span></td></tr>)}
@@ -108,26 +116,38 @@ export default function Raci() {
       </div>
     </div>
   );
+}
 
-  function RowsFor({ g }) {
-    return (
-      <>
-        <tr className="grp"><td colSpan={cols}>{g.name} <span className="msg">· {g.tasks.length} work item{g.tasks.length === 1 ? '' : 's'}</span></td></tr>
-        {g.tasks.map((t) => (
-          <tr key={t.id}>
-            <td className="sticky-l" title={t.name}><span className="mono msg">{t.code}</span> <span className="cell" style={{ display: 'inline' }}>{t.name}</span></td>
-            {people.map((p) => {
-              const v = (t.raci || {})[p.id] || '';
-              return (
-                <td key={p.id} style={{ textAlign: 'center' }}>
-                  <button className={'rc ' + (v ? 'r-' + v : '')} onClick={() => cycle(t.id, p.id)} aria-label={p.name + ' role ' + (v || 'none') + ' on ' + t.name}>{v || '·'}</button>
-                </td>
-              );
-            })}
-            <td><Check roles={t.raci} /></td>
-          </tr>
-        ))}
-      </>
-    );
-  }
+function RowsFor({ g, people, cols, onCycle, sel, onSelect, onGroup }) {
+  const all = g.tasks.length > 0 && g.tasks.every((t) => sel.has(t.id));
+  const some = g.tasks.some((t) => sel.has(t.id));
+  return (
+    <>
+      <tr className="grp">
+        <td colSpan={cols}>
+          <span className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
+            <TriBox all={all} some={some} onChange={(e) => onGroup(g.tasks.map((t) => t.id), e.target.checked)} label={'Select all in ' + g.name} />
+            <span>{g.name} <span className="msg">· {g.tasks.length} work item{g.tasks.length === 1 ? '' : 's'}</span></span>
+          </span>
+        </td>
+      </tr>
+      {g.tasks.map((t) => (
+        <tr key={t.id} className={sel.has(t.id) ? 'sel' : ''}>
+          <td className="sticky-l" title={t.name}>
+            <input type="checkbox" className="tg-sel" checked={sel.has(t.id)} onChange={() => {}} onClick={(e) => onSelect(t.id, e.shiftKey)} aria-label={'Select ' + t.name} />
+            <span className="mono msg">{t.code}</span> <span className="cell" style={{ display: 'inline' }}>{t.name}</span>
+          </td>
+          {people.map((p) => {
+            const v = (t.raci || {})[p.id] || '';
+            return (
+              <td key={p.id} style={{ textAlign: 'center' }}>
+                <button type="button" className={'rc ' + (v ? 'r-' + v : '')} onClick={() => onCycle(t.id, p.id)} aria-label={p.name + ' role ' + (v || 'none') + ' on ' + t.name}>{v || '·'}</button>
+              </td>
+            );
+          })}
+          <td><Check roles={t.raci} /></td>
+        </tr>
+      ))}
+    </>
+  );
 }

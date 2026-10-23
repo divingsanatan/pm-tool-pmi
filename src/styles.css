@@ -529,3 +529,12 @@ label.fld{max-width:100%;min-width:0}
 
 /* banner variant for scheduling warnings */
 .banner.warn{background:var(--warn-bg);color:var(--warn)}
+
+/* ================= RACI: multi-select ================= */
+.tbl.raci .sticky-l .tg-sel{vertical-align:middle;margin:0 8px 0 2px}
+.tbl.raci th.sticky-l .tg-sel{margin-right:6px}
+.tbl.raci tbody tr.sel td,.tbl.raci tbody tr.sel td.sticky-l{background:var(--accent-soft)}
+.tbl.raci tr.grp .tg-sel{margin:0 2px}
+.rb-list{display:flex;flex-direction:column;gap:2px;max-height:52vh;overflow:auto}
+.rb-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 2px;border-bottom:1px solid var(--line)}
+.rb-who{min-width:140px}
