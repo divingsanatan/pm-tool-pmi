@@ -10,6 +10,7 @@ import { PRIORITIES, SPRINT_STATUSES, containerById, isDoneStatus, isOpen, nameO
 import { fdate, today } from '../lib/dates';
 import { outsideSprint } from '../lib/calc';
 import { hrsf } from '../lib/format';
+import BulkBar from '../components/BulkBar';
 import TaskDrawer from './TaskDrawer';
 import Board from './Board';
 
@@ -102,7 +103,7 @@ function Row({ t, expanded, onToggle, onOpen, selected, onSelect }) {
 }
 
 // checkbox that can show "some selected"
-function TriBox({ all, some, onChange, label }) {
+export function TriBox({ all, some, onChange, label }) {
   return <input type="checkbox" className="tg-sel" checked={all} ref={(el) => { if (el) el.indeterminate = some && !all; }} onChange={onChange} aria-label={label} />;
 }
 
@@ -180,12 +181,6 @@ export default function SprintView() {
     ids.forEach((x) => (on ? n.add(x) : n.delete(x)));
     setSel(n);
   };
-  const bulkStatus = (status) => {
-    tk.patchMany(chosen, { status });
-    setSel(new Set());
-    last.current = null;
-  };
-
   const addTo = (defaults) => (name) => tk.add(c.id, { name, ...defaults });
   const quickAdd = () => setOpen(tk.add(c.id, { name: 'Untitled task' }));
 
@@ -246,22 +241,7 @@ export default function SprintView() {
         <button className="btn primary" onClick={quickAdd}>+ Task</button>
       </div>
 
-      {view === 'list' && chosen.length > 0 && (
-        <div className="selbar" role="region" aria-label="Bulk actions">
-          <b>{chosen.length} selected</b>
-          <Menu
-            className="btn primary"
-            label="Set status ▾"
-            title="Set status for selected tasks"
-            items={statusesOf(S).map((st) => ({
-              label: (<span className="sm-item"><StatusIcon status={st} size={14} />{st.label}</span>),
-              onClick: () => bulkStatus(st.id),
-            }))}
-          />
-          <span style={{ flex: 1 }} />
-          <button className="btn" onClick={() => { setSel(new Set()); last.current = null; }}>Clear selection</button>
-        </div>
-      )}
+      {view === 'list' && <BulkBar ids={chosen} container={c} onDone={() => { setSel(new Set()); last.current = null; }} />}
 
       {outside > 0 && (
         <div className="banner warn">

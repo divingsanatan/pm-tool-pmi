@@ -35,6 +35,59 @@ export function useTasks() {
           });
         });
       },
+      // add (on = true) or remove one stakeholder on every listed work item
+      assignMany(ids, personId, on) {
+        update((p) => {
+          ids.forEach((id) => {
+            const f = findTask(p, id);
+            if (!f) return;
+            const a = (f.t.assignees || []).filter((x) => x !== personId);
+            f.t.assignees = on ? a.concat(personId) : a;
+          });
+        });
+      },
+      moveMany(ids, cid) {
+        update((p) => {
+          const to = containerById(p, cid);
+          if (!to) return;
+          ids.forEach((id) => {
+            const f = findTask(p, id);
+            if (!f || f.c === to) return;
+            f.c.tasks.splice(f.i, 1);
+            if (to.id === 'backlog') {
+              f.t.status = '';
+              f.t.start = '';
+              f.t.due = '';
+            } else if (!f.t.status) f.t.status = firstOpenStatus(p);
+            to.tasks.push(f.t);
+          });
+        });
+      },
+      removeMany(ids) {
+        update((p) => {
+          ids.forEach((id) => {
+            const f = findTask(p, id);
+            if (f) f.c.tasks.splice(f.i, 1);
+          });
+        });
+      },
+      // copies are placed right after their originals with new codes
+      duplicateMany(ids) {
+        update((p) => {
+          ids.forEach((id) => {
+            const f = findTask(p, id);
+            if (!f) return;
+            const n = p.counter || 1;
+            p.counter = n + 1;
+            const copy = structuredClone(f.t);
+            copy.id = uid();
+            copy.code = 'T-' + n;
+            copy.name = f.t.name + ' (copy)';
+            copy.subtasks = (copy.subtasks || []).map((s) => ({ ...s, id: uid() }));
+            f.c.tasks.splice(f.i + 1, 0, copy);
+          });
+        });
+      },
       remove(id) {
         update((p) => {
           const f = findTask(p, id);

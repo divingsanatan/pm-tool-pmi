@@ -8,7 +8,9 @@ import { AssigneeMenu, PriorityMenu } from '../components/Pickers';
 import { nameOf } from '../lib/tasks';
 import { hrsf } from '../lib/format';
 import TaskDrawer from './TaskDrawer';
-import { AddRow, groupsOf } from './SprintView';
+import BulkBar from '../components/BulkBar';
+import { useSelect } from '../lib/useSelect';
+import { AddRow, TriBox, groupsOf } from './SprintView';
 
 function MoveMenu({ task, className = 'btn' }) {
   const { S } = useStore();
@@ -19,14 +21,15 @@ function MoveMenu({ task, className = 'btn' }) {
   return <Menu className={className} label="Move to sprint ▾" title={'Move ' + task.name + ' to a sprint'} items={items} />;
 }
 
-function Row({ t, expanded, onToggle, onOpen }) {
+function Row({ t, expanded, onToggle, onOpen, selected, onSelect }) {
   const tk = useTasks();
   const { S } = useStore();
   const subDone = t.subtasks.filter((s) => s.done).length;
   return (
     <>
-      <div className="tg-row">
+      <div className={'tg-row' + (selected ? ' sel' : '')}>
         <div className="tg-name">
+          <input type="checkbox" className="tg-sel" checked={selected} onChange={() => {}} onClick={(e) => onSelect(t.id, e.shiftKey)} aria-label={'Select ' + t.name} />
           <button className="x tg-exp" onClick={onToggle} aria-label={expanded ? 'Hide subtasks' : 'Show subtasks'}>{expanded ? '▾' : '▸'}</button>
           <button className="tg-title" onClick={() => onOpen(t.id)} title="Open work item">{t.name}</button>
           {t.subtasks.length > 0 && <span className="subc" title="Subtasks done">⑂ {subDone}/{t.subtasks.length}</span>}
@@ -92,6 +95,9 @@ export default function BacklogView() {
   const filtering = !!q.trim() || who !== 'all';
   const groups = groupsOf(tasks, by, S, false);
   const addTo = (defaults) => (name) => tk.add('backlog', { name, ...defaults });
+  const order = [];
+  groups.forEach((g) => !shut[g.key] && g.tasks.forEach((t) => !order.includes(t.id) && order.push(t.id)));
+  const pick = useSelect(tasks.map((t) => t.id), order, S.id);
 
   return (
     <div className="sprint backlog">
@@ -128,6 +134,8 @@ export default function BacklogView() {
         <button className="btn primary" onClick={() => setOpen(tk.add('backlog', { name: 'Untitled work item' }))}>+ Work item</button>
       </div>
 
+      <BulkBar ids={pick.chosen} container={c} onDone={pick.clear} />
+
       <div className="s-cards">
         <div className="s-card"><span className={'s-ic ' + (c.tasks.length ? 'good' : 'warn')}>{c.tasks.length ? '✓' : '!'}</span><div><b>Work items</b><div className="msg">{c.tasks.length} waiting to be planned</div></div></div>
         <div className="s-card"><span className={'s-ic ' + (pctA === 100 ? 'good' : 'warn')}>{pctA === 100 ? '✓' : '!'}</span><div><b>Assigned</b><div className="msg">{pctA == null ? 'No work items yet' : pctA + '% assigned'}</div></div></div>
@@ -136,20 +144,26 @@ export default function BacklogView() {
 
       <div className="scroll">
         <div className="tg bk">
-          <div className="tg-row tg-h"><div>Name</div><div>Assignee</div><div>Priority</div><div>Effort (h)</div><div>Sprint</div><div /></div>
+          <div className="tg-row tg-h"><div className="tg-name"><TriBox all={tasks.length > 0 && pick.chosen.length === tasks.length} some={pick.chosen.length > 0} onChange={(e) => pick.setMany(tasks.map((t) => t.id), e.target.checked)} label="Select all work items" />Name</div><div>Assignee</div><div>Priority</div><div>Effort (h)</div><div>Sprint</div><div /></div>
           {groups.map((g) => {
             const hide = shut[g.key];
             return (
               <div key={g.key} className="tg-group">
                 {by !== 'none' && (
                   <div className="g-hd">
+                    <TriBox
+                      all={g.tasks.length > 0 && g.tasks.every((t) => pick.sel.has(t.id))}
+                      some={g.tasks.some((t) => pick.sel.has(t.id))}
+                      onChange={(e) => pick.setMany(g.tasks.map((t) => t.id), e.target.checked)}
+                      label={'Select all in ' + g.label}
+                    />
                     <button className="x" onClick={() => setShut({ ...shut, [g.key]: !hide })} aria-label={hide ? 'Expand group' : 'Collapse group'}>{hide ? '▸' : '▾'}</button>
                     <span className="g-chip" style={{ background: g.color }}>{g.label}</span>
                     <span className="msg">{g.tasks.length}</span>
                   </div>
                 )}
                 {!hide && g.tasks.map((t) => (
-                  <Row key={t.id} t={t} expanded={!!exp[t.id]} onToggle={() => setExp({ ...exp, [t.id]: !exp[t.id] })} onOpen={setOpen} />
+                  <Row key={t.id} t={t} expanded={!!exp[t.id]} onToggle={() => setExp({ ...exp, [t.id]: !exp[t.id] })} onOpen={setOpen} selected={pick.sel.has(t.id)} onSelect={pick.toggleOne} />
                 ))}
               </div>
             );
