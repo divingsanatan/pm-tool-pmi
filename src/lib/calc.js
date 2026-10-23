@@ -395,6 +395,14 @@ export function normalize(S) {
   if (!S.tl || typeof S.tl !== 'object') S.tl = { scale: 'week', scope: 'project', sprintId: '', from: '', to: '' };
   delete m.weeksMode; // the number of weeks always follows the data now
   if (!Array.isArray(S.raci)) S.raci = [];
+  // change control: change requests and baseline versions
+  if (!Array.isArray(S.baselines)) S.baselines = [];
+  if (!Array.isArray(S.cr)) S.cr = [];
+  S.cr.forEach((c) => {
+    if (!c.id) c.id = uid();
+    ['affects', 'tasks', 'raid', 'informed', 'log'].forEach((k) => !Array.isArray(c[k]) && (c[k] = []));
+    if (!c.chk || typeof c.chk !== 'object') c.chk = { comms: false, docs: false, raid: false, wbs: false };
+  });
   if (!S.rf || typeof S.rf !== 'object') S.rf = { scope: 'project', sprintId: '', week: 0, month: '', from: '', to: '' };
 
   // actual cost ledger (earlier versions kept one typed number per week)

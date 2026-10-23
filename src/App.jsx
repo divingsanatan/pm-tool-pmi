@@ -9,10 +9,11 @@ import Budget from './tabs/Budget';
 import Raci from './tabs/Raci';
 import Stakeholders from './tabs/Stakeholders';
 import Raid from './tabs/Raid';
+import Change from './tabs/Change';
 import SprintView from './tabs/SprintView';
 import BacklogView from './tabs/BacklogView';
 
-const VIEWS = { dash: Dashboard, weekly: Weekly, time: Timeline, budget: Budget, people: Stakeholders, raci: Raci, raid: Raid };
+const VIEWS = { dash: Dashboard, weekly: Weekly, time: Timeline, budget: Budget, people: Stakeholders, raci: Raci, raid: Raid, change: Change };
 
 export default function App() {
   const { S, nav } = useStore();

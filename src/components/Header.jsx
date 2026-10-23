@@ -12,6 +12,7 @@ export const TABS = [
   ['people', 'Stakeholders'],
   ['raci', 'RACI'],
   ['raid', 'RAID log'],
+  ['change', 'Change control'],
 ];
 
 export default function Header() {

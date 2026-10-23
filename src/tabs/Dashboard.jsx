@@ -5,6 +5,8 @@ import { Spark, Gauge, Donut, BarsChart, SCurve, Legend3 } from '../components/C
 import { agg, alerts, curWeek, emv, nSp, nW, projectBAC, rating, rlabel, rng, roll, score, sprintCap, sprintOf, stCls, wbsOf, weeklyBAC, worst, wps, wstat, wkS } from '../lib/calc';
 import { fdate, fsh } from '../lib/dates';
 import { cl, money, nz, pc } from '../lib/format';
+import { changeAlerts } from '../lib/change';
+import BaselinePanel from '../components/BaselinePanel';
 
 function Delta({ cur, prev }) {
   if (cur == null || prev == null) return <span className="delta flat">No previous period to compare</span>;
@@ -73,6 +75,10 @@ export default function Dashboard() {
     if (t) rc[t]++;
   });
   const top = op.filter((r) => emv(r) != null).sort((x, y) => emv(y) - emv(x)).slice(0, 3);
+
+  // schedule and cost checks plus change-control checks, with one "nothing flagged" line only when both are clean
+  const needs = alerts(S).filter((x) => x.cls !== 'good').concat(changeAlerts(S));
+  if (!needs.length) needs.push({ cls: 'good', text: 'Nothing flagged.' });
 
   const spiText = A.spi == null ? 'No data' : A.spi >= 1 ? 'On or ahead of plan' : A.spi >= 0.9 ? 'Slightly behind' : 'Behind plan';
   const cpiText = A.cpi == null ? 'No data' : A.cpi >= 1 ? 'Under budget' : A.cpi >= 0.9 ? 'Slightly over' : 'Over budget';
@@ -165,6 +171,8 @@ export default function Dashboard() {
         </div>
       </div>
 
+      <BaselinePanel />
+
       <div className="grid2">
         <div className="card">
           <h2>Cumulative cost across the project</h2>
@@ -227,7 +235,7 @@ export default function Dashboard() {
           <h2>Needs attention</h2>
           <p className="hint">Checks run against your data.</p>
           <ul className="list">
-            {alerts(S).map((x, i) => (
+            {needs.map((x, i) => (
               <li key={i} className="alert"><span className={'dot ' + x.cls} /><span>{x.text}</span></li>
             ))}
           </ul>

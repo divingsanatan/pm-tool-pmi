@@ -76,12 +76,13 @@ export function Cell({ sec, i = 0, f, value, type = 'text', cls = '', placeholde
 }
 
 /** Dropdown bound to S[sec][i][f]. options: strings or [value, label] pairs. */
-export function SelectCell({ sec, i = 0, f, value, options, type = 'text', cls = '', onCommit }) {
+export function SelectCell({ sec, i = 0, f, value, options, type = 'text', cls = '', onCommit, disabled }) {
   const { setField } = useStore();
   return (
     <select
       className={'c ' + cls}
       aria-label={f}
+      disabled={disabled}
       value={value == null ? '' : String(value)}
       onChange={(e) => {
         const v = type === 'int' ? parseInt(e.target.value, 10) : e.target.value;
@@ -113,7 +114,7 @@ export function Fld({ label, children, style }) {
 }
 
 /** Multi-line text, committed on blur. */
-export function Area({ value, onCommit, placeholder, rows = 4, label, cls = '', single = false }) {
+export function Area({ value, onCommit, placeholder, rows = 4, label, cls = '', single = false, disabled }) {
   const [draft, setDraft] = useState(value || '');
   const ref = useRef(null);
   useEffect(() => setDraft(value || ''), [value]);
@@ -131,6 +132,7 @@ export function Area({ value, onCommit, placeholder, rows = 4, label, cls = '', 
       value={draft}
       placeholder={placeholder}
       aria-label={label}
+      disabled={disabled}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => draft !== (value || '') && onCommit(draft)}
       onKeyDown={single ? (e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } } : undefined}

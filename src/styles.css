@@ -504,3 +504,25 @@ label.fld{max-width:100%;min-width:0}
   background:var(--surface);border:1px solid var(--accent);border-radius:10px;padding:8px 12px;margin-bottom:12px;box-shadow:0 6px 22px rgba(0,0,0,.2)}
 @media (pointer:coarse){.tg-sel{width:22px;height:22px}}
 @media (max-width:600px){.selbar .btn{flex:1 1 auto}}
+
+/* ================= Change control ================= */
+.drawer.wide{width:min(780px,100vw)}
+.d-panel{border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--row);margin-top:12px}
+.ck-box{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--row)}
+.ck{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.ck li{display:flex;gap:8px;align-items:flex-start;font-size:13px}
+.ck .m{flex:none;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;margin-top:1px}
+.ck .m.ok{background:var(--good-bg);color:var(--good)}
+.ck .m.no{background:var(--bad-bg);color:var(--bad)}
+.ck .m.rec{background:var(--warn-bg);color:var(--warn)}
+.tag{margin-left:4px;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700}
+.steps{display:flex;flex-wrap:wrap;gap:4px;margin-top:10px}
+.steps span{font-size:12px;font-weight:600;padding:3px 10px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+.steps .past{color:var(--good);border-color:var(--good)}
+.steps .on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.steps .on.bad{background:var(--bad);border-color:var(--bad);color:var(--surface)}
+.d-actions{position:sticky;bottom:-24px;margin:20px -18px -24px;padding:12px 18px calc(12px + env(safe-area-inset-bottom,0px));background:var(--surface);border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.drawer .c:disabled,.drawer textarea.c:disabled,.drawer select.c:disabled{opacity:1;color:var(--ink);background:var(--row);cursor:default}
+.drawer .chip:disabled{cursor:default;opacity:.55}
+.drawer .chip[aria-pressed="true"]:disabled{opacity:1}
+@media (max-width:600px){.d-actions .btn{flex:1 1 auto}}

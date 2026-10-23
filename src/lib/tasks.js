@@ -98,6 +98,8 @@ export function blankProject(name, id) {
     raci: [],
     raid: [],
     ledger: [],
+    cr: [],
+    baselines: [],
     statuses: DEFAULT_STATUSES.map((x) => ({ ...x })),
     sprints: [{ id: uid(), name: 'Sprint 1', status: 'Not started', start, end: addDays(start, 13), tasks: [] }],
     backlog: { id: 'backlog', name: 'Backlog', tasks: [] },
