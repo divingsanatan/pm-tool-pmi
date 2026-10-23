@@ -91,7 +91,7 @@ export default function Raci() {
 
       <RaciBar ids={pick.chosen} items={flat} people={people} onDone={pick.clear} />
 
-      <div className="scroll">
+      <div className="scroll raci-scroll">
         <table className="tbl raci">
           <thead>
             <tr>

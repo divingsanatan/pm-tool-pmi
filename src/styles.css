@@ -314,6 +314,10 @@ textarea.c.d-name:hover{border-color:var(--line)}
 .tbl.raci .sticky-l{position:sticky;left:0;z-index:2;background:var(--surface);min-width:210px;max-width:280px;text-align:left}
 .tbl.raci tr.grp td{background:var(--row);font-weight:700;font-size:12.5px;padding:6px 8px;border-bottom:1px solid var(--line)}
 .tbl.raci tbody td.sticky-l{font-size:13.5px}
+/* RACI: the table scrolls inside its own box so the stakeholder header row stays frozen while scrolling down */
+.raci-scroll{overflow:auto;max-height:calc(100vh - 230px);max-height:calc(100dvh - 230px);min-height:260px}
+.tbl.raci thead th{position:sticky;top:0;z-index:3;background:var(--surface);border-bottom:0;box-shadow:inset 0 -1px 0 var(--line)}
+.tbl.raci thead th.sticky-l{left:0;z-index:5}
 .weeks-ctl{min-width:240px}
 
 /* ================= Responsive ================= */
