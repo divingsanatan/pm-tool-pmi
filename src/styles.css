@@ -495,3 +495,12 @@ label.fld{max-width:100%;min-width:0}
   .card .row.sp>.row>.btn{flex:1 1 auto}
   .totals{gap:4px 12px}
 }
+
+/* ================= Sprint list: multi-select + bulk status ================= */
+.tg-sel{flex:none;width:16px;height:16px;margin:0 2px 0 4px;accent-color:var(--accent);cursor:pointer}
+.g-hd .tg-sel{margin-right:6px}
+.tg-row.sel,.tg-row.sel:not(.tg-h):not(.sub):hover{background:var(--accent-soft)}
+.selbar{position:sticky;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:6;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  background:var(--surface);border:1px solid var(--accent);border-radius:10px;padding:8px 12px;margin-bottom:12px;box-shadow:0 6px 22px rgba(0,0,0,.2)}
+@media (pointer:coarse){.tg-sel{width:22px;height:22px}}
+@media (max-width:600px){.selbar .btn{flex:1 1 auto}}

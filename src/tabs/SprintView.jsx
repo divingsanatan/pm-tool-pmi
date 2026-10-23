@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store/StoreContext';
 import { useTasks } from '../store/useTasks';
 import { useUI } from '../components/UI';
@@ -49,7 +49,7 @@ export function AddRow({ onAdd, label = 'Add task' }) {
   );
 }
 
-function Row({ t, expanded, onToggle, onOpen }) {
+function Row({ t, expanded, onToggle, onOpen, selected, onSelect }) {
   const tk = useTasks();
   const { S } = useStore();
   const done = isDoneStatus(S, t.status);
@@ -57,8 +57,9 @@ function Row({ t, expanded, onToggle, onOpen }) {
   const subDone = t.subtasks.filter((s) => s.done).length;
   return (
     <>
-      <div className="tg-row">
+      <div className={'tg-row' + (selected ? ' sel' : '')}>
         <div className="tg-name">
+          <input type="checkbox" className="tg-sel" checked={selected} onChange={() => {}} onClick={(e) => onSelect(t.id, e.shiftKey)} aria-label={'Select ' + t.name} />
           <button className="x tg-exp" onClick={onToggle} aria-label={expanded ? 'Hide subtasks' : 'Show subtasks'}>{expanded ? '▾' : '▸'}</button>
           <StatusMenu task={t} />
           <button className={'tg-title' + (done ? ' done' : '')} onClick={() => onOpen(t.id)} title="Open task">{t.name}</button>
@@ -99,6 +100,11 @@ function Row({ t, expanded, onToggle, onOpen }) {
   );
 }
 
+// checkbox that can show "some selected"
+function TriBox({ all, some, onChange, label }) {
+  return <input type="checkbox" className="tg-sel" checked={all} ref={(el) => { if (el) el.indeterminate = some && !all; }} onChange={onChange} aria-label={label} />;
+}
+
 export function groupsOf(tasks, by, S, showEmpty) {
   const who = (t) => t.assignees || [];
   let g;
@@ -126,6 +132,8 @@ export default function SprintView() {
   const [open, setOpen] = useState(null); // task shown in the drawer
   const [exp, setExp] = useState({});
   const [shut, setShut] = useState({});
+  const [sel, setSel] = useState(() => new Set()); // ids of selected work items (list view)
+  const last = useRef(null); // last clicked id, for shift-click range selection
 
   const ui = useUI();
   const people = S.people.filter((p) => p.name);
@@ -134,6 +142,8 @@ export default function SprintView() {
     const ql = q.trim().toLowerCase();
     return c.tasks.filter((t) => (!ql || t.name.toLowerCase().includes(ql)) && (who === 'all' || (who === 'none' ? !(t.assignees || []).length : (t.assignees || []).includes(who))));
   }, [c, q, who]);
+  // a selection belongs to one sprint and one view
+  useEffect(() => { setSel(new Set()); last.current = null; }, [nav.sprintId, nav.sprintView]);
   if (!c) return <div className="card">This sprint no longer exists. Pick another from the left.</div>;
 
   const idx = S.sprints.findIndex((s) => s.id === c.id);
@@ -146,6 +156,33 @@ export default function SprintView() {
   const filtering = !!q.trim() || who !== 'all';
   const groups = groupsOf(tasks, by, S, !filtering);
   const view = nav.sprintView;
+
+  // selection only counts items that are currently visible (search / assignee filters can hide some)
+  const order = [];
+  groups.forEach((g) => !shut[g.key] && g.tasks.forEach((t) => !order.includes(t.id) && order.push(t.id)));
+  const visible = new Set(tasks.map((t) => t.id));
+  const chosen = [...sel].filter((id) => visible.has(id));
+  const toggleOne = (id, range) => {
+    const n = new Set(sel);
+    if (range && last.current && order.includes(last.current) && order.includes(id)) {
+      const a = order.indexOf(last.current), b = order.indexOf(id);
+      const on = !sel.has(id);
+      order.slice(Math.min(a, b), Math.max(a, b) + 1).forEach((x) => (on ? n.add(x) : n.delete(x)));
+    } else if (n.has(id)) n.delete(id);
+    else n.add(id);
+    last.current = id;
+    setSel(n);
+  };
+  const setMany = (ids, on) => {
+    const n = new Set(sel);
+    ids.forEach((x) => (on ? n.add(x) : n.delete(x)));
+    setSel(n);
+  };
+  const bulkStatus = (status) => {
+    tk.patchMany(chosen, { status });
+    setSel(new Set());
+    last.current = null;
+  };
 
   const addTo = (defaults) => (name) => tk.add(c.id, { name, ...defaults });
   const quickAdd = () => setOpen(tk.add(c.id, { name: 'Untitled task' }));
@@ -207,6 +244,23 @@ export default function SprintView() {
         <button className="btn primary" onClick={quickAdd}>+ Task</button>
       </div>
 
+      {view === 'list' && chosen.length > 0 && (
+        <div className="selbar" role="region" aria-label="Bulk actions">
+          <b>{chosen.length} selected</b>
+          <Menu
+            className="btn primary"
+            label="Set status ▾"
+            title="Set status for selected tasks"
+            items={statusesOf(S).map((st) => ({
+              label: (<span className="sm-item"><StatusIcon status={st} size={14} />{st.label}</span>),
+              onClick: () => bulkStatus(st.id),
+            }))}
+          />
+          <span style={{ flex: 1 }} />
+          <button className="btn" onClick={() => { setSel(new Set()); last.current = null; }}>Clear selection</button>
+        </div>
+      )}
+
       {c.status === 'Done' && unfinished.length > 0 && (
         <div className="banner">
           <span>This sprint has {unfinished.length} unfinished task{unfinished.length > 1 ? 's' : ''}</span>
@@ -226,18 +280,24 @@ export default function SprintView() {
       {view === 'list' ? (
         <div className="scroll">
           <div className="tg">
-            <div className="tg-row tg-h"><div>Name</div><div>Assignee</div><div>Due date</div><div>Priority</div><div>Effort (h)</div><div /></div>
+            <div className="tg-row tg-h"><div className="tg-name"><TriBox all={tasks.length > 0 && chosen.length === tasks.length} some={chosen.length > 0} onChange={(e) => setMany(tasks.map((t) => t.id), e.target.checked)} label="Select all tasks" />Name</div><div>Assignee</div><div>Due date</div><div>Priority</div><div>Effort (h)</div><div /></div>
             {groups.map((g) => {
               const hide = shut[g.key];
               return (
                 <div key={g.key} className="tg-group">
                   <div className="g-hd">
+                    <TriBox
+                      all={g.tasks.length > 0 && g.tasks.every((t) => sel.has(t.id))}
+                      some={g.tasks.some((t) => sel.has(t.id))}
+                      onChange={(e) => setMany(g.tasks.map((t) => t.id), e.target.checked)}
+                      label={'Select all in ' + g.label}
+                    />
                     <button className="x" onClick={() => setShut({ ...shut, [g.key]: !hide })} aria-label={hide ? 'Expand group' : 'Collapse group'}>{hide ? '▸' : '▾'}</button>
                     <span className="g-chip" style={{ background: g.color }}>{g.label}</span>
                     <span className="msg">{g.tasks.length}</span>
                   </div>
                   {!hide && g.tasks.map((t) => (
-                    <Row key={t.id} t={t} expanded={!!exp[t.id]} onToggle={() => setExp({ ...exp, [t.id]: !exp[t.id] })} onOpen={setOpen} />
+                    <Row key={t.id} t={t} expanded={!!exp[t.id]} onToggle={() => setExp({ ...exp, [t.id]: !exp[t.id] })} onOpen={setOpen} selected={sel.has(t.id)} onSelect={toggleOne} />
                   ))}
                   {!hide && <div className="tg-add"><AddRow onAdd={addTo(g.defaults)} /></div>}
                 </div>

@@ -21,6 +21,15 @@ export function useTasks() {
           if (f) Object.assign(f.t, patch);
         });
       },
+      // change several work items in one update (one render, one save)
+      patchMany(ids, patch) {
+        update((p) => {
+          ids.forEach((id) => {
+            const f = findTask(p, id);
+            if (f) Object.assign(f.t, patch);
+          });
+        });
+      },
       remove(id) {
         update((p) => {
           const f = findTask(p, id);
