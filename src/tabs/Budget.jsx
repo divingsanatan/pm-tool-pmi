@@ -241,7 +241,7 @@ export default function Budget() {
         </div>
       </div>
 
-      <div className="grid2">
+      <div className="grid2 bud-grid">
         <LabourRegister />
 
         <div className="card">
