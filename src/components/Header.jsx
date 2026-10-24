@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useStore } from '../store/StoreContext';
-import { curWeek, nW, started, weeklyBAC, wkE, wkS } from '../lib/calc';
+import { curWeek, nW, projectBAC, projectEnd, started, wkS } from '../lib/calc';
 import { fdate, fsh } from '../lib/dates';
 import { money } from '../lib/format';
 
@@ -25,7 +25,7 @@ export default function Header() {
 
   const sub =
     (started(S) ? 'Week ' + curWeek(S) + ' of ' + nW(S) + ' · ' : 'Starts ' + fdate(S.meta.start) + ' · ') +
-    fsh(wkS(S, 1)) + ' – ' + fsh(wkE(S, nW(S))) + ' · weekly BAC ' + money(weeklyBAC(S));
+    fsh(wkS(S, 1)) + ' – ' + fsh(projectEnd(S)) + ' · BAC ' + money(projectBAC(S));
 
   return (
     <header className="top">

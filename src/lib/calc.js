@@ -1,6 +1,9 @@
 import { DAY, pd, today, fsh } from './dates';
 import { nz, cl, money as money0 } from './format';
 import { DEFAULT_STATUSES, allContainers, firstOpenStatus, isDoneStatus, makeTask, statusPct, uid } from './tasks';
+import { budgetModel, sumRange, weekOf, workDaysOf, validDate } from './budget';
+
+export { budgetModel, sumRange, weekOf, workDaysOf };
 
 /* ---------- timeline helpers ---------- */
 export const nW = (S) => S.meta.weeks;
@@ -89,6 +92,8 @@ export function wstat(x) {
 }
 
 /* ---------- budget ---------- */
+// The budget is counted day by day (lib/budget.js): labour = working days x hours x rates, recurring line items are
+// charged on the days they cover, one-time items once. A part week only gets the days that fall inside the project.
 // The labour budget is a list of stakeholders ({ person: id }); their rate and capacity live on the stakeholder itself,
 // so the Budget register and the RACI chart always show the same numbers.
 export const personOf = (S, id) => S.people.find((p) => p.id === id);
@@ -97,9 +102,11 @@ export const hourly = (S) => S.team.reduce((a, t) => {
   return a + (p ? nz(p.rate) * nz(p.cap) : 0);
 }, 0);
 export const dailyCap = (S) => hourly(S) * nz(S.meta.hoursPerDay);
-export const sprintCap = (S) => dailyCap(S) * nz(S.meta.sprintDays);
-// planned cost of one budget line, expressed per week (one-time lines are not time-phased)
+export const sprintCap = (S) => dailyCap(S) * workDaysOf(S.meta).length;
+// What one budget line would cost over a COMPLETE week. This is only a run rate for reference; the real cost
+// of a line follows the days of the project (see budgetModel).
 export function lineWeekly(S, l) {
+  if (l.per === 'day') return nz(l.amount) * workDaysOf(S.meta).length;
   if (l.per === 'week') return nz(l.amount);
   if (l.per === 'month') return (nz(l.amount) * 12) / 52;
   if (l.per === 'sprint') return nz(l.amount) / Math.max(1, S.meta.sprintWeeks);
@@ -107,9 +114,10 @@ export function lineWeekly(S, l) {
 }
 export const lineWeeklySum = (S) => S.lines.reduce((a, l) => a + lineWeekly(S, l), 0);
 export const lineOnce = (S) => S.lines.reduce((a, l) => a + (l.per === 'project' ? nz(l.amount) : 0), 0);
+// run rate of one full week (reference only)
 export const weeklyBAC = (S) => sprintCap(S) + lineWeeklySum(S);
-export const projectBAC = (S) => weeklyBAC(S) * nW(S) + lineOnce(S);
-export const projectEnd = (S) => pd(S.meta.start) + (nW(S) * 7 - 1) * DAY;
+export const projectBAC = (S) => budgetModel(S).totals.bac;
+export const projectEnd = (S) => budgetModel(S).end;
 
 /* ---------- actual cost ledger ---------- */
 export const ledgerTotal = (S) => S.ledger.reduce((a, e) => a + nz(e.amount), 0);
@@ -144,6 +152,7 @@ export function autoWeeks(S) {
     });
   });
   S.ledger.forEach((e) => take(e.date));
+  if (S.meta.endMode === 'fixed') take(S.meta.end);
   return Math.max(1, Math.min(104, Math.ceil(((end - start) / DAY + 1) / 7)));
 }
 
@@ -151,10 +160,11 @@ const mStart = (ms) => Date.UTC(new Date(ms).getUTCFullYear(), new Date(ms).getU
 const mNext = (ms) => Date.UTC(new Date(ms).getUTCFullYear(), new Date(ms).getUTCMonth() + 1, 1);
 const norm = (x) => (x || '').trim().toLowerCase();
 
-/** Planned vs actual cost grouped by 'week' | 'month' | 'sprint' | 'element'. */
+/** Planned vs actual cost grouped by 'week' | 'month' | 'sprint' | 'element'. Planned comes from the day-by-day budget. */
 export function costBy(S, mode) {
-  const wB = weeklyBAC(S), perDay = wB / 7;
-  const start = pd(S.meta.start), end = projectEnd(S);
+  const M = budgetModel(S);
+  const start = M.start, end = M.end;
+  const shownEnd = wkE(S, nW(S)); // last day covered by the weekly rows (costs can run past the planned end)
   const led = S.ledger.map((e) => ({ amount: nz(e.amount), element: e.element, t: e.date ? pd(e.date) : null }));
   const sumIn = (a, b) => {
     let s = 0, n = 0;
@@ -166,27 +176,27 @@ export function costBy(S, mode) {
     });
     return { s, n };
   };
-  const overlap = (a, b) => {
-    const lo = Math.max(a, start), hi = Math.min(b, end);
-    return hi >= lo ? (hi - lo) / DAY + 1 : 0;
-  };
+  const plan = (a, b) => sumRange(M, a, b).total;
   const rows = [];
+  const unplaced = M.totals.onceUnphased;
   if (mode === 'week') {
     for (let w = 1; w <= nW(S); w++) {
       const a = wkS(S, w), b = wkE(S, w), { s, n } = sumIn(a, b);
-      rows.push({ key: 'w' + w, label: 'Week ' + w, sub: fsh(a) + ' – ' + fsh(b), planned: wB, actual: s, n });
+      rows.push({ key: 'w' + w, label: 'Week ' + w, sub: fsh(a) + ' – ' + fsh(b), planned: weekOf(M, w).total, actual: s, n });
     }
-    const out = led.filter((e) => e.t == null || e.t < start || e.t > end);
-    if (out.length) rows.push({ key: 'out', label: 'Outside the project weeks', sub: 'Dated before the start or after the last week', planned: 0, actual: out.reduce((a, e) => a + e.amount, 0), n: out.length });
+    const out = led.filter((e) => e.t == null || e.t < start || e.t > shownEnd);
+    if (out.length) rows.push({ key: 'out', label: 'Outside the project weeks', sub: 'No date, or dated before the start or after the last week', planned: 0, actual: out.reduce((a, e) => a + e.amount, 0), n: out.length });
+    if (unplaced > 0) rows.push({ key: 'once', label: 'One-time items without a date', sub: 'Not placed in a week', planned: unplaced, actual: 0, n: 0 });
   } else if (mode === 'month') {
     const dated = led.filter((e) => e.t != null).map((e) => e.t);
     const lo = mStart(Math.min(start, ...dated)), hi = Math.max(end, ...dated);
     for (let m = lo; m <= hi; m = mNext(m)) {
       const b = mNext(m) - DAY, { s, n } = sumIn(m, b);
-      rows.push({ key: 'm' + m, label: new Date(m).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }), sub: '', planned: overlap(m, b) * perDay, actual: s, n });
+      rows.push({ key: 'm' + m, label: new Date(m).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }), sub: '', planned: plan(m, b), actual: s, n });
     }
     const nd = led.filter((e) => e.t == null);
     if (nd.length) rows.push({ key: 'nd', label: 'No date', sub: '', planned: 0, actual: nd.reduce((a, e) => a + e.amount, 0), n: nd.length });
+    if (unplaced > 0) rows.push({ key: 'once', label: 'One-time items without a date', sub: 'Not placed in a month', planned: unplaced, actual: 0, n: 0 });
   } else if (mode === 'sprint') {
     const covered = new Set();
     S.sprints.forEach((sp) => {
@@ -196,7 +206,7 @@ export function costBy(S, mode) {
       }
       const a = pd(sp.start), b = pd(sp.end), { s, n } = sumIn(a, b);
       led.forEach((e, i) => e.t != null && e.t >= a && e.t <= b && covered.add(i));
-      rows.push({ key: sp.id, label: sp.name, sub: fsh(a) + ' – ' + fsh(b), planned: overlap(a, b) * perDay, actual: s, n });
+      rows.push({ key: sp.id, label: sp.name, sub: fsh(a) + ' – ' + fsh(b), planned: plan(a, b), actual: s, n });
     });
     const rest = led.filter((e, i) => !covered.has(i));
     if (rest.length) rows.push({ key: 'none', label: 'Not in any sprint', sub: '', planned: 0, actual: rest.reduce((a, e) => a + e.amount, 0), n: rest.length });
@@ -207,9 +217,9 @@ export function costBy(S, mode) {
       if (!map.has(k)) map.set(k, { key: k, label: (name || '').trim() || '(no element)', sub: '', planned: 0, actual: 0, n: 0 });
       return map.get(k);
     };
-    get('Team labour').planned += sprintCap(S) * nW(S);
-    S.lines.forEach((l) => {
-      get(l.name || 'Line item').planned += l.per === 'project' ? nz(l.amount) : lineWeekly(S, l) * nW(S);
+    get('Team labour').planned += M.totals.labour;
+    M.lines.forEach((l) => {
+      get(l.name || 'Line item').planned += l.total;
     });
     led.forEach((e) => {
       const r = get(e.element);
@@ -284,8 +294,9 @@ export function workPlan(S) {
 
 export function wk(S, w) {
   const r = S.report[w - 1] || {};
-  const B = weeklyBAC(S);
-  const BAC = projectBAC(S);
+  const M = budgetModel(S);
+  const B = weekOf(M, w).total; // this week's own budget: only the days of the project that fall in it
+  const BAC = M.totals.bac;
   const P = workPlan(S);
   const manual = r.planPct != null;
   // planned: a typed value for the week wins; otherwise it follows the due dates
@@ -300,6 +311,7 @@ export function wk(S, w) {
     plan: pv == null ? null : B ? pv / B : null,
     earn: ev == null ? null : B ? ev / B : null,
     manualPlan: manual,
+    budget: B,
     ac: weekAc(S, w),
     note: r.note || '',
     pv,
@@ -312,9 +324,14 @@ export function hasData(S, w) {
 }
 
 export function agg(S, a, b) {
-  const o = { pv: 0, ev: 0, ac: 0, pvR: 0, evR: 0, evC: 0, acC: 0, weeks: b - a + 1, reported: 0, spiS: [], cpiS: [] };
+  const M = budgetModel(S);
+  const o = { pv: 0, ev: 0, ac: 0, pvR: 0, evR: 0, evC: 0, acC: 0, weeks: b - a + 1, reported: 0, spiS: [], cpiS: [], budget: 0, work: 0, hours: 0 };
   for (let w = a; w <= b; w++) {
     const x = wk(S, w);
+    const bw = weekOf(M, w);
+    o.budget += bw.total;
+    o.work += bw.work;
+    o.hours += bw.hours;
     if (x.pv != null && x.ev != null) {
       o.pvR += x.pv;
       o.evR += x.ev;
@@ -332,7 +349,8 @@ export function agg(S, a, b) {
   }
   o.spi = o.pvR ? o.evR / o.pvR : null;
   o.cpi = o.acC ? o.evC / o.acC : null;
-  o.budget = weeklyBAC(S) * (b - a + 1);
+  // the whole project also carries one-time items that have no date, so its budget equals the BAC
+  if (a <= 1 && b >= M.weeks.length) o.budget += M.totals.onceUnphased;
   return o;
 }
 
@@ -381,13 +399,13 @@ export function alerts(S) {
       text:
         late.length + ' work package' + (late.length > 1 ? 's are' : ' is') + ' past the finish date and not complete: ' + late.map((x) => x.id).join(', ') + '.',
     });
-  const wb = weeklyBAC(S);
+  const M = budgetModel(S);
   const over = [];
   for (let k = 1; k <= nW(S); k++) {
     const x = wk(S, k);
-    if (x.ac != null && x.ac > wb) over.push(k);
+    if (x.ac != null && x.ac > weekOf(M, k).total + 0.005) over.push(k);
   }
-  if (over.length) a.push({ cls: 'bad', text: 'Actual cost is above the weekly budget in week' + (over.length > 1 ? 's ' : ' ') + over.join(', ') + '.' });
+  if (over.length) a.push({ cls: 'bad', text: 'Actual cost is above that week\'s budget in week' + (over.length > 1 ? 's ' : ' ') + over.join(', ') + '.' });
   const outs = outsideSprint(S);
   if (outs.length) {
     const now = ifAligned(S);
@@ -580,6 +598,30 @@ export function normalize(S) {
     (t.subtasks || []).forEach((st) => {
       if (st.person && !ids.has(st.person)) st.person = '';
     });
+  });
+
+  // working calendar and budget settings (older projects only had "days per week")
+  m.workDays = workDaysOf(m);
+  m.sprintDays = m.workDays.length;
+  if (m.endMode !== 'fixed') m.endMode = 'auto';
+  if (!validDate(m.end)) m.end = '';
+  if (!Array.isArray(S.holidays)) S.holidays = [];
+  S.holidays = S.holidays.filter((h) => h && typeof h === 'object');
+  S.holidays.forEach((h) => {
+    if (!h.id) h.id = uid();
+    h.from = h.from || '';
+    h.to = h.to || '';
+    h.label = h.label || '';
+  });
+  (S.lines || []).forEach((l) => {
+    if (!['day', 'week', 'month', 'sprint', 'project'].includes(l.per)) l.per = 'week';
+    l.spread = l.spread === 'work' ? 'work' : 'cal';
+    l.from = validDate(l.from) ? l.from : '';
+    l.to = validDate(l.to) ? l.to : '';
+  });
+  S.team.forEach((t) => {
+    t.from = validDate(t.from) ? t.from : '';
+    t.to = validDate(t.to) ? t.to : '';
   });
 
   // number of weeks: always from the data (latest dated task, sprint, completion or cost)

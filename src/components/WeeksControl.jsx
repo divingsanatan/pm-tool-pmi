@@ -1,20 +1,24 @@
 import { useStore } from '../store/StoreContext';
-import { nW, wkE } from '../lib/calc';
+import { budgetModel } from '../lib/calc';
 import { fdate } from '../lib/dates';
+import { isoOf } from '../lib/budget';
 
-// Project length is always worked out from the data: the latest dated work item, sprint, completion or cost
+// Project length is worked out from the data (the latest planned date) unless a fixed end date is chosen on the Budget tab.
+// The budget is counted day by day, so a part week is never rounded up to a whole week.
 export default function WeeksControl() {
   const { S } = useStore();
-  const n = nW(S);
+  const M = budgetModel(S);
+  const t = M.totals;
+  const r = (n) => Math.round(n * 100) / 100;
   return (
     <div className="weeks-ctl">
-      <div className="fld">Number of weeks
+      <div className="fld">Project length
         <div className="row" style={{ gap: 10 }}>
-          <b className="mono">{n}</b>
-          <span className="msg">Ends {fdate(new Date(wkE(S, n)).toISOString().slice(0, 10))}</span>
+          <b className="mono">{t.calDays} day{t.calDays === 1 ? '' : 's'}</b>
+          <span className="msg">Ends {fdate(isoOf(M.end))} · {t.workDays} working day{t.workDays === 1 ? '' : 's'} ({r(t.equivWeeks)} work weeks)</span>
         </div>
       </div>
-      <p className="msg" style={{ marginTop: 6 }}>Follows your work items, sprints and costs automatically.</p>
+      <p className="msg" style={{ marginTop: 6 }}>End date: {M.endSource.text}. Change it on the Budget tab.</p>
     </div>
   );
 }

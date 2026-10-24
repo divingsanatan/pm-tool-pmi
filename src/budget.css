@@ -1,0 +1,29 @@
+/* Budget calculation panel: calendar strip, formulas and week/day drill-down */
+.bcal{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0 6px}
+.bday{width:40px;padding:3px 0 4px;border:1px solid var(--line);border-radius:6px;text-align:center;font:10.5px/1.2 var(--f-mono);background:var(--surface);color:var(--muted)}
+.bday b{display:block;font-size:13px;color:var(--ink);font-weight:600}
+.bday.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.bday.on b{color:var(--accent)}
+.bday.off{background:var(--row);opacity:.7}
+.bday.hol{background:var(--warn-bg);border-color:var(--warn);color:var(--warn)}
+.bday.hol b{color:var(--warn)}
+.bday.today{box-shadow:0 0 0 2px var(--accent)}
+.bkey{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:6px}
+.bkey i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;border:1px solid var(--line)}
+.bkey i.on{background:var(--accent-soft);border-color:var(--accent)}
+.bkey i.off{background:var(--row)}
+.bkey i.hol{background:var(--warn-bg);border-color:var(--warn)}
+.bstep{margin:18px 0 6px;font-size:13px;font-weight:700;display:flex;gap:8px;align-items:baseline}
+.bstep span{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-size:12px;flex:none}
+.bformula{font:12.5px/1.45 var(--f-mono);color:var(--muted)}
+.bformula b{color:var(--ink);font-weight:600}
+.tbl tr.bsub td{background:var(--row);font-size:12.5px}
+.tbl tr.bsub.off td{color:var(--muted)}
+.tbl tr.bsub td.mono{font-size:12px}
+.bcheck{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.bcheck div{display:flex;gap:8px;align-items:flex-start;font-size:13px}
+.bcheck .m{flex:none;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;margin-top:1px}
+.bcheck .m.ok{background:var(--good-bg);color:var(--good)}
+.bcheck .m.no{background:var(--bad-bg);color:var(--bad)}
+.hol-row{display:grid;grid-template-columns:150px 150px minmax(160px,1fr) 36px;gap:8px;align-items:center;margin-top:6px}
+@media (max-width:720px){.hol-row{grid-template-columns:1fr 1fr}.hol-row .c-lbl{grid-column:1 / -1}.bday{width:36px}}

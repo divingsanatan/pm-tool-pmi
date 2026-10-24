@@ -49,12 +49,12 @@ export function Gauge({ v }) {
   );
 }
 
-export function Donut({ parts }) {
+export function Donut({ parts, unit = 'per week' }) {
   const tot = parts.reduce((a, p) => a + p.v, 0);
   const r = 15.9155;
   let acc = 0;
   return (
-    <svg viewBox="0 0 42 42" width="170" height="170" role="img" aria-label="Weekly budget makeup">
+    <svg viewBox="0 0 42 42" width="170" height="170" role="img" aria-label="Budget makeup">
       <circle className="sg" cx="21" cy="21" r={r} style={{ stroke: 'var(--line)' }} />
       {tot > 0 &&
         parts.map((p, i) => {
@@ -77,7 +77,7 @@ export function Donut({ parts }) {
           );
         })}
       <text x="21" y="20" textAnchor="middle" style={{ font: '500 4.2px var(--f-mono)', fill: 'var(--ink)' }}>{money(tot)}</text>
-      <text x="21" y="26" textAnchor="middle" style={{ font: '3px var(--f-body)' }}>per week</text>
+      <text x="21" y="26" textAnchor="middle" style={{ font: '3px var(--f-body)' }}>{unit}</text>
     </svg>
   );
 }

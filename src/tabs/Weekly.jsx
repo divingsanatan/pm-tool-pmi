@@ -3,7 +3,7 @@ import { useStore } from '../store/StoreContext';
 import { Cell } from '../components/Field';
 import Menu from '../components/Menu';
 import WeeksControl from '../components/WeeksControl';
-import { agg, curWeek, nW, portfolio, projectBAC, sprintOf, started, stCls, weeklyBAC, wk, wkS, wkE, wlabel, worst, workPlan } from '../lib/calc';
+import { agg, budgetModel, curWeek, nW, portfolio, projectBAC, projectEnd, sprintOf, started, stCls, weekOf, wk, wkS, wlabel, worst, workPlan } from '../lib/calc';
 import { fsh } from '../lib/dates';
 import { money, pc } from '../lib/format';
 
@@ -38,7 +38,7 @@ function ProjectWeekly() {
   const m = S.meta;
   const Nw = nW(S);
   const cur = curWeek(S);
-  const B = weeklyBAC(S);
+  const M = budgetModel(S);
   const P = workPlan(S);
 
   const clearWeek = (w) => update((s) => { const r = s.report[w - 1]; if (r) Object.assign(r, { planPct: null, note: '' }); });
@@ -50,11 +50,14 @@ function ProjectWeekly() {
     const cpi = x.ac && x.ev != null ? x.ev / x.ac : null;
     const cls = (w === cur && started(S) ? 'cur ' : '') + (w > 1 && sprintOf(S, w) !== sprintOf(S, w - 1) ? 'sprint-start' : '');
     const typed = (S.report[w - 1] || {}).planPct;
+    const bw = weekOf(M, w);
     rows.push(
       <tr key={w} className={cls}>
         <td data-l="Week" className="mono"><span className="cell"><b>{w}</b></span></td>
         <td data-l="Dates"><span className="cell" style={{ whiteSpace: 'nowrap' }}>{wlabel(S, w)}</span></td>
         <td data-l="Sprint" className="mono"><span className="cell">{sprintOf(S, w) ? 'S' + sprintOf(S, w) : '–'}</span></td>
+        <td data-l="Work days" className="r mono"><span className="cell" title={bw.cal + ' of 7 days of this week are inside the project'}>{bw.cal ? bw.work + (bw.cal < 7 ? ' / ' + bw.cal + 'd' : '') : '–'}</span></td>
+        <td data-l="Budget" className="r mono"><span className="cell">{bw.cal ? money(bw.total) : '–'}</span></td>
         <td data-l="Planned %">
           <Cell sec="report" i={w - 1} f="planPct" value={typed} type="pct" cls="w-sm n" placeholder={x.plan == null ? '–' : pc(x.plan)} label={'Week ' + w + ' planned percent. Follows due dates; type a number to override'} />
         </td>
@@ -87,7 +90,7 @@ function ProjectWeekly() {
         <p className="hint">Set these once. Weeks run from the start date, and sprints group weeks together. Every tab follows this setup.</p>
         <div className="fields">
           <label className="fld">Project name<Cell sec="meta" f="name" value={m.name} cls="w-name" /></label>
-          <label className="fld">Start date (Monday of week 1)<Cell sec="meta" f="start" value={m.start} type="date" cls="w-date" /></label>
+          <label className="fld">Start date (day 1 of week 1)<Cell sec="meta" f="start" value={m.start} type="date" cls="w-date" /></label>
           <WeeksControl />
           <label className="fld">Sprint length (weeks)<Cell sec="meta" f="sprintWeeks" value={m.sprintWeeks} type="int" cls="w-sm n" /></label>
         </div>
@@ -99,7 +102,7 @@ function ProjectWeekly() {
             <p className="hint">
               Everything here is worked out from your work items and costs. Each work item carries a share of the project budget ({money(projectBAC(S))}),{' '}
               {P.weighted ? 'weighted by its effort hours' : 'shared equally (add effort hours to weight them)'}. <b>Planned</b> follows due dates, <b>Earned</b> follows when items were marked done,
-              and <b>Actual cost</b> is the cost entries on the Budget tab. A week's budget is {money(B)}. You can type a Planned % to override a week; clear it to go back to the due dates.
+              and <b>Actual cost</b> is the cost entries on the Budget tab. <b>Budget</b> is counted day by day, so a part week only gets the days that fall inside the project (the Budget tab shows every step). Planned % is measured against that week's own budget; type one to override a week, or clear it to go back to the due dates.
             </p>
           </div>
           <Controls />
@@ -108,7 +111,7 @@ function ProjectWeekly() {
           <table className="tbl rwd">
             <thead>
               <tr>
-                <th>Week</th><th>Dates</th><th>Sprint</th>
+                <th>Week</th><th>Dates</th><th>Sprint</th><th className="r">Work days</th><th className="r">Budget</th>
                 <th className="r">Planned %</th><th className="r">Earned %</th><th className="r">Actual cost</th>
                 <th className="r">PV</th><th className="r">EV</th><th className="r">SPI</th><th className="r">CPI</th>
                 <th>Status</th><th>Notes, highlights and blockers</th><th></th>
@@ -202,7 +205,7 @@ function AllWeekly() {
               {per.map(({ p, T, bac }) => (
                 <tr key={p.id} className={p.id === nav.projectId ? 'cur' : ''}>
                   <td data-l="Project"><span className="cell"><b>{p.meta.name}</b></span></td>
-                  <td data-l="Runs"><span className="cell" style={{ whiteSpace: 'nowrap' }}>{range(wkS(p, 1), wkE(p, nW(p)))}</span></td>
+                  <td data-l="Runs"><span className="cell" style={{ whiteSpace: 'nowrap' }}>{range(wkS(p, 1), projectEnd(p))}</span></td>
                   <td data-l="Budget" className="r mono"><span className="cell">{money(bac)}</span></td>
                   <td data-l="Planned to date" className="r mono"><span className="cell">{money(T.pvR)}</span></td>
                   <td data-l="Earned to date" className="r mono"><span className="cell">{money(T.evR)}</span></td>

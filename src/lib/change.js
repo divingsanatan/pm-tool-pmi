@@ -26,6 +26,7 @@ export function snapshot(S) {
     start: S.meta.start,
     end: isoOf(projectEnd(S)),
     weeks: nW(S),
+    calc: 'days', // budget counted day by day (older baselines were counted in whole weeks)
     items: tasks.length,
     effort: Math.round(tasks.reduce((a, t) => a + nz(t.effort), 0) * 100) / 100,
     codes: tasks.map((t) => t.code),
@@ -109,8 +110,8 @@ export function reconcile(cr, S) {
   const diffCost = live.bac - expCost;
   const actDays = Math.round((pd(live.end) - pd(b.end)) / DAY);
   const diffDays = actDays - nz(cr.apDays);
-  // the plan runs in whole weeks, so a finish date within a week of the approved shift counts as matching
-  const mismatch = Math.abs(diffCost) > 1 || Math.abs(diffDays) > 6;
+  // baselines taken with the day-by-day budget have an exact finish date; older ones were rounded to whole weeks
+  const mismatch = Math.abs(diffCost) > 1 || Math.abs(diffDays) > (b.calc === 'days' ? 0 : 6);
   return { b, live, expCost, diffCost, actDays, diffDays, expEnd: addDays(b.end, nz(cr.apDays)), mismatch };
 }
 export function implChecks(cr, S) {

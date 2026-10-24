@@ -2,9 +2,9 @@ import { useStore } from '../store/StoreContext';
 import { SelectCell, Fld } from '../components/Field';
 import Kpi from '../components/Kpi';
 import { Spark, Gauge, Donut, BarsChart, SCurve, Legend3 } from '../components/Charts';
-import { agg, alerts, curWeek, emv, nSp, nW, projectBAC, rating, rlabel, rng, roll, score, sprintCap, sprintOf, sprintWeeks, stCls, wbsOf, weeklyBAC, worst, wps, wstat, wkS } from '../lib/calc';
-import { fdate, fsh } from '../lib/dates';
-import { cl, money, nz, pc } from '../lib/format';
+import { agg, alerts, budgetModel, curWeek, emv, nSp, nW, rating, rlabel, rng, roll, score, sprintOf, sprintWeeks, stCls, sumRange, wbsOf, worst, wps, wstat, wkS } from '../lib/calc';
+import { fdate, fsh, pd, today } from '../lib/dates';
+import { cl, hrsf, money, nz, pc } from '../lib/format';
 import { changeAlerts } from '../lib/change';
 import BaselinePanel from '../components/BaselinePanel';
 
@@ -59,10 +59,13 @@ export default function Dashboard() {
     });
 
   const T = agg(S, 1, Nw);
-  const pb = projectBAC(S);
+  const M = budgetModel(S);
+  const pb = M.totals.bac;
   const eac = T.cpi ? pb / T.cpi : null;
+  // planned cost accrued day by day up to today (never beyond the project end)
+  const plannedToDate = sumRange(M, M.start, pd(today())).total;
 
-  const parts = [{ n: 'Team labour', v: sprintCap(S) }].concat(S.lines.filter((l) => l.per === 'week').map((l) => ({ n: l.name || 'Line item', v: nz(l.amount) })));
+  const parts = [{ n: 'Team labour', v: M.totals.labour }].concat(M.lines.filter((l) => l.total > 0).map((l) => ({ n: l.name || 'Line item', v: l.total })));
   const ptot = parts.reduce((x, p) => x + p.v, 0);
 
   const cnt = { Done: 0, 'In progress': 0, Late: 0, 'Not started': 0 };
@@ -126,7 +129,7 @@ export default function Dashboard() {
         <Kpi l="Planned value" v={money(A.pv)} s="What the plan said to deliver" />
         <Kpi l="Earned value" v={money(A.ev)} s={A.pv ? pc(A.ev / A.pv, 0) + ' of planned value' : 'No plan entered'} />
         <Kpi l="Actual cost" v={money(A.ac)} s={A.budget ? pc(A.ac / A.budget, 0) + ' of period budget' : ''} />
-        <Kpi l="Period budget" v={money(A.budget)} s={len + ' week' + (len > 1 ? 's' : '') + ' × ' + money(weeklyBAC(S))}>
+        <Kpi l="Period budget" v={money(A.budget)} s={A.work + ' working day' + (A.work === 1 ? '' : 's') + ' · ' + hrsf(A.hours) + ' labour h'}>
           <div className={'bar ' + (A.ac > A.budget ? 'bad' : '')} style={{ marginTop: 8 }}>
             <i style={{ width: Math.min(100, A.budget ? (A.ac / A.budget) * 100 : 0) + '%' }} />
           </div>
@@ -163,6 +166,7 @@ export default function Dashboard() {
           <p className="hint">Uses cost performance to date.</p>
           <div className="totals">
             <span>Project budget (BAC)</span><span className="mono">{money(pb)}</span>
+            <span>Planned to date (today)</span><span className="mono">{money(plannedToDate)}</span>
             <span>Spent so far</span><span className="mono">{money(T.ac)}</span>
             <span>Earned so far</span><span className="mono">{money(T.ev)}</span>
             <span>Forecast at completion</span><span className="mono">{eac == null ? '–' : money(eac)}</span>
@@ -193,10 +197,10 @@ export default function Dashboard() {
 
       <div className="grid2e">
         <div className="card">
-          <h2>Weekly budget makeup</h2>
-          <p className="hint">Team labour plus every weekly line item.</p>
+          <h2>Budget makeup</h2>
+          <p className="hint">Team labour plus every line item, over the whole project ({M.totals.workDays} working days).</p>
           <div className="row" style={{ gap: 18, alignItems: 'center' }}>
-            <Donut parts={parts} />
+            <Donut parts={parts} unit="whole project" />
             <ul className="list" style={{ flex: 1, minWidth: 150 }}>
               {parts.map((p, i) => (
                 <li key={i} className="row sp" style={{ flexWrap: 'nowrap' }}>

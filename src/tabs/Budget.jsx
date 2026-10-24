@@ -4,12 +4,16 @@ import { useCosts } from '../store/useCosts';
 import { Cell, SelectCell } from '../components/Field';
 import { Modal } from '../components/UI';
 import WeeksControl from '../components/WeeksControl';
-import { costBy, curWeek, dailyCap, hourly, ledgerTotal, lineOnce, lineWeekly, lineWeeklySum, nW, personOf, projectBAC, sprintCap, weekAc, weeklyBAC } from '../lib/calc';
-import { fdate, today } from '../lib/dates';
+import { budgetModel, costBy, curWeek, hourly, ledgerTotal, lineWeekly, personOf, sprintCap, sumRange, weekAc, workDaysOf } from '../lib/calc';
+import { WEEKDAYS, isoOf } from '../lib/budget';
+import { fdate, pd, today } from '../lib/dates';
 import { hrsf, money, nz, pc } from '../lib/format';
 import { parseCosts } from '../lib/parse';
+import { uid } from '../lib/tasks';
+import BudgetCalc from './BudgetCalc';
 
-const BASES = [['week', 'Per week'], ['month', 'Per month'], ['sprint', 'Per sprint'], ['project', 'One-time']];
+const BASES = [['day', 'Per working day'], ['week', 'Per week'], ['month', 'Per month'], ['sprint', 'Per sprint'], ['project', 'One-time']];
+const SPREADS = [['cal', 'Calendar days'], ['work', 'Working days']];
 const VIEWS = [['entries', 'Entries'], ['week', 'By week'], ['month', 'By month'], ['sprint', 'By sprint'], ['element', 'By element']];
 
 function PasteCosts({ onClose }) {
@@ -111,7 +115,7 @@ function Ledger() {
           <p className="hint" style={{ marginTop: 10 }}>
             {view === 'element'
               ? 'Planned comes from team labour and your budget line items over the whole project. Costs recorded with a name that is not in the plan show as Unplanned.'
-              : 'Planned is the recurring weekly budget spread over the days of each period. One-time line items are not time-phased, so they appear only under By element.'}
+              : 'Planned is the budget of the days that fall in each period: labour on working days plus the line items that run on those days. One-time items with a date land in their period; ones without a date have their own row. The steps are laid out in “How this budget is calculated” below.'}
           </p>
         </>
       )}
@@ -179,40 +183,42 @@ function AddLabour({ onClose }) {
 
 function LabourRegister() {
   const { S, update } = useStore();
+  const M = budgetModel(S);
   const [adding, setAdding] = useState(false);
   const used = new Set(S.team.map((t) => t.person));
   const setPerson = (id, patch) => update((s) => void Object.assign(s.people.find((x) => x.id === id), patch));
-  const hpw = (per) => nz(per.cap) * nz(S.meta.hoursPerDay) * nz(S.meta.sprintDays);
-  const rows = S.team.map((t, i) => ({ t, i, per: personOf(S, t.person) })).filter((r) => r.per);
-  const totalH = rows.reduce((a, r) => a + hpw(r.per), 0);
-  const totalC = rows.reduce((a, r) => a + nz(r.per.rate) * hpw(r.per), 0);
+  const calc = new Map(M.people.map((p) => [p.id, p]));
+  const rows = S.team.map((t, i) => ({ t, i, per: personOf(S, t.person), m: calc.get(t.person) })).filter((r) => r.per && r.m);
 
   return (
     <div className="card">
       <div className="row sp">
         <div>
           <h2>Labour budget</h2>
-          <p className="hint">Pick a stakeholder from your list, then set their hourly rate and the share of their time available to this project. People are added and renamed on the Stakeholders tab.</p>
+          <p className="hint">Pick a stakeholder, then set their hourly rate and the share of their time available to this project. Cost = rate × capacity × {hrsf(S.meta.hoursPerDay)} h × the working days they are available. Set From / To when someone joins late or leaves early.</p>
         </div>
         <button className="btn primary" onClick={() => setAdding(true)}>+ Add stakeholder</button>
       </div>
       <div className="scroll">
         <table className="tbl rwd">
-          <thead><tr><th>Stakeholder</th><th className="r">Hourly rate</th><th className="r">Capacity for project</th><th className="r">Hours / week</th><th className="r">Weekly cost</th><th></th></tr></thead>
+          <thead><tr><th>Stakeholder</th><th className="r">Hourly rate</th><th className="r">Capacity</th><th>Available from</th><th>Available to</th><th className="r">Working days</th><th className="r">Hours</th><th className="r">Project cost</th><th></th></tr></thead>
           <tbody>
-            {rows.map(({ t, i, per }) => (
+            {rows.map(({ t, i, per, m }) => (
               <tr key={per.id + ':' + i}>
                 <td data-l="Stakeholder"><SelectCell value={t.person} options={S.people.filter((x) => x.id === t.person || !used.has(x.id)).map((x) => [x.id, x.name || '(unnamed)'])} cls="w-md" onCommit={(v) => update((s) => { s.team[i].person = v; })} /></td>
                 <td data-l="Hourly rate"><Cell value={per.rate} type="num" cls="w-md n" label="Hourly rate" onCommit={(v) => setPerson(per.id, { rate: v == null ? 0 : v })} /></td>
                 <td data-l="Capacity %"><Cell value={per.cap} type="pct" cls="w-md n" label="Capacity for this project in percent" onCommit={(v) => setPerson(per.id, { cap: v == null ? 0 : v })} /></td>
-                <td data-l="Hours / week" className="r mono"><span className="cell">{hrsf(hpw(per))}</span></td>
-                <td data-l="Weekly cost" className="r mono"><span className="cell">{money(nz(per.rate) * hpw(per))}</span></td>
+                <td data-l="Available from"><Cell value={t.from} type="date" cls="w-date" label="Available from (blank = project start)" onCommit={(v) => update((s) => { s.team[i].from = v || ''; })} /></td>
+                <td data-l="Available to"><Cell value={t.to} type="date" cls="w-date" label="Available to (blank = project end)" onCommit={(v) => update((s) => { s.team[i].to = v || ''; })} /></td>
+                <td data-l="Working days" className="r mono"><span className="cell">{m.days}</span></td>
+                <td data-l="Hours" className="r mono"><span className="cell">{hrsf(m.hours)}</span></td>
+                <td data-l="Project cost" className="r mono"><span className="cell">{money(m.cost)}</span></td>
                 <td data-l=""><button className="x" onClick={() => update((s) => { s.team.splice(i, 1); })} aria-label="Remove from the labour budget" title="Remove from the labour budget (they stay in RACI)">✕</button></td>
               </tr>
             ))}
-            {!rows.length && (<tr className="empty-row"><td colSpan="6"><span className="cell msg">Nobody in the labour budget yet. Use “+ Add stakeholder”.</span></td></tr>)}
+            {!rows.length && (<tr className="empty-row"><td colSpan="9"><span className="cell msg">Nobody in the labour budget yet. Use “+ Add stakeholder”.</span></td></tr>)}
           </tbody>
-          {rows.length > 0 && (<tfoot><tr><td>Total</td><td className="r mono">{money(hourly(S))}/h</td><td></td><td className="r mono">{hrsf(totalH)}</td><td className="r mono">{money(totalC)}</td><td></td></tr></tfoot>)}
+          {rows.length > 0 && (<tfoot><tr><td>Total</td><td className="r mono">{money(hourly(S))}/h</td><td></td><td></td><td></td><td className="r mono">{M.totals.workDays}</td><td className="r mono">{hrsf(M.totals.hours)}</td><td className="r mono">{money(M.totals.labour)}</td><td></td></tr></tfoot>)}
         </table>
       </div>
       {adding && <AddLabour onClose={() => setAdding(false)} />}
@@ -220,47 +226,104 @@ function LabourRegister() {
   );
 }
 
+// Dates, working week and non-working days: everything that decides which days are counted
+function CalendarCard() {
+  const { S, update } = useStore();
+  const M = budgetModel(S);
+  const m = S.meta;
+  const work = new Set(workDaysOf(m));
+  const toggleDay = (d) =>
+    update((s) => {
+      const cur = new Set(workDaysOf(s.meta));
+      if (cur.has(d)) {
+        if (cur.size > 1) cur.delete(d); // at least one working day
+      } else cur.add(d);
+      s.meta.workDays = Array.from(cur).sort((a, b) => a - b);
+    });
+  const setMode = (mode) =>
+    update((s) => {
+      s.meta.endMode = mode;
+      if (mode === 'fixed' && !s.meta.end) s.meta.end = isoOf(budgetModel(s).end);
+    });
+  const patchHol = (id, patch) => update((s) => void Object.assign(s.holidays.find((h) => h.id === id), patch));
+
+  return (
+    <div className="card">
+      <h2>Project dates and working calendar</h2>
+      <p className="hint">The budget is counted day by day between the start and end date, on the days the team works. A project that ends midweek is only charged up to that day.</p>
+      <div className="fields">
+        <label className="fld">Start date (day 1)<Cell sec="meta" f="start" value={m.start} type="date" cls="w-date" /></label>
+        <div className="fld">Project end
+          <div className="seg" role="group" aria-label="How the project end is set">
+            <button aria-pressed={m.endMode !== 'fixed'} onClick={() => setMode('auto')}>Follow the plan</button>
+            <button aria-pressed={m.endMode === 'fixed'} onClick={() => setMode('fixed')}>Fixed date</button>
+          </div>
+        </div>
+        {m.endMode === 'fixed' && <label className="fld">End date<Cell sec="meta" f="end" value={m.end} type="date" cls="w-date" /></label>}
+        <WeeksControl />
+        <label className="fld">Working hours per day<Cell sec="meta" f="hoursPerDay" value={m.hoursPerDay} type="num" cls="w-sm n" /></label>
+        <label className="fld">Sprint length (weeks)<Cell sec="meta" f="sprintWeeks" value={m.sprintWeeks} type="int" cls="w-sm n" /></label>
+      </div>
+
+      <div className="flabel" style={{ margin: '14px 0 6px' }}>Working days of the week</div>
+      <div className="chips" role="group" aria-label="Working days of the week">
+        {WEEKDAYS.map((d, i) => (<button key={d} className="chip" aria-pressed={work.has(i)} onClick={() => toggleDay(i)}>{d}</button>))}
+      </div>
+      <p className="msg" style={{ marginTop: 6 }}>Labour is only charged on these days. A weekly or monthly line item can be spread over calendar days or over working days (see the line items below).</p>
+
+      <div className="flabel" style={{ margin: '14px 0 2px' }}>Non-working dates</div>
+      <p className="msg" style={{ margin: '0 0 4px' }}>Public holidays, shutdowns or breaks. No labour is charged on these days, and line items spread over working days skip them.</p>
+      {S.holidays.map((h) => (
+        <div key={h.id} className="hol-row">
+          <Cell value={h.from} type="date" cls="w-date" label="Non-working from" onCommit={(v) => patchHol(h.id, { from: v || '', to: h.to && v && h.to < v ? v : h.to })} />
+          <Cell value={h.to} type="date" cls="w-date" label="Non-working to (blank = one day)" onCommit={(v) => patchHol(h.id, { to: v || '' })} />
+          <span className="c-lbl"><Cell value={h.label} cls="w-md" placeholder="Reason, e.g. Diwali" label="Reason" onCommit={(v) => patchHol(h.id, { label: v.trim() })} /></span>
+          <button className="x" onClick={() => update((s) => { s.holidays = s.holidays.filter((x) => x.id !== h.id); })} aria-label="Delete non-working dates">✕</button>
+        </div>
+      ))}
+      <div style={{ marginTop: 8 }}>
+        <button className="btn" onClick={() => update((s) => void s.holidays.push({ id: uid(), from: '', to: '', label: '' }))}>+ Add non-working dates</button>
+      </div>
+    </div>
+  );
+}
+
 export default function Budget() {
   const { S, update } = useStore();
-  const dc = dailyCap(S), sc = sprintCap(S), wB = weeklyBAC(S), pB = projectBAC(S), Nw = nW(S);
+  const M = budgetModel(S);
+  const t = M.totals;
+  const pB = t.bac;
   const ac = ledgerTotal(S);
   const cw = curWeek(S);
   const thisWeek = weekAc(S, cw);
   const ym = today().slice(0, 7);
   const thisMonth = S.ledger.reduce((a, e) => a + (e.date && e.date.slice(0, 7) === ym ? nz(e.amount) : 0), 0);
+  const ptd = sumRange(M, M.start, pd(today())); // planned, day by day, up to today
+  const r2 = (n) => Math.round(n * 100) / 100;
 
   return (
     <>
-      <div className="card">
-        <h2>Project length</h2>
-        <p className="hint">The weekly budget is multiplied by the number of weeks, and the number of weeks follows your dated work items, sprints and costs.</p>
-        <div className="fields">
-          <label className="fld">Start date (Monday of week 1)<Cell sec="meta" f="start" value={S.meta.start} type="date" cls="w-date" /></label>
-          <WeeksControl />
-          <label className="fld">Sprint length (weeks)<Cell sec="meta" f="sprintWeeks" value={S.meta.sprintWeeks} type="int" cls="w-sm n" /></label>
-        </div>
-      </div>
+      <CalendarCard />
 
       <div className="grid2 bud-grid">
         <LabourRegister />
 
         <div className="card">
           <h2>Budget summary</h2>
-          <p className="hint">Planned cost baseline, and what has actually been spent.</p>
+          <p className="hint">Planned cost baseline, and what has actually been spent. Step-by-step working is in “How this budget is calculated” below.</p>
           <div className="totals">
-            <span>Working hours per day</span><Cell sec="meta" f="hoursPerDay" value={S.meta.hoursPerDay} type="num" cls="w-sm n" />
-            <span>Working days per week</span><Cell sec="meta" f="sprintDays" value={S.meta.sprintDays} type="num" cls="w-sm n" />
-            <span>Daily team cap</span><span className="mono">{money(dc)}</span>
-            <span>Weekly team cap</span><span className="mono">{money(sc)}</span>
-            <span>Recurring line items (per week)</span><span className="mono">{money(lineWeeklySum(S))}</span>
+            <span>Project length</span><span className="mono">{t.calDays} day{t.calDays === 1 ? '' : 's'} · {t.workDays} working</span>
+            <span>Equivalent work weeks</span><span className="mono">{r2(t.equivWeeks)}</span>
             <div className="sep" />
-            <span className="big">Weekly BAC</span><span className="mono big">{money(wB)}</span>
-            <span>× {Nw} weeks</span><span className="mono">{money(wB * Nw)}</span>
-            <span>One-time line items</span><span className="mono">{money(lineOnce(S))}</span>
+            <span>Team labour ({hrsf(t.hours)} h)</span><span className="mono">{money(t.labour)}</span>
+            <span>Recurring line items</span><span className="mono">{money(t.recurring)}</span>
+            <span>One-time line items</span><span className="mono">{money(t.once)}</span>
             <span className="big">Project BAC</span><span className="mono big">{money(pB)}</span>
             <div className="sep" />
+            <span>Planned to date (today)</span><span className="mono">{money(ptd.total)}</span>
             <span className="big">Actual cost to date</span><span className="mono big">{money(ac)}</span>
-            <span>Remaining</span><span className="mono" style={pB - ac < 0 ? { color: 'var(--bad)' } : undefined}>{money(pB - ac)}</span>
+            <span>Actual vs planned to date</span><span className="mono" style={ac - ptd.total > 0 ? { color: 'var(--bad)' } : undefined}>{money(ac - ptd.total)}</span>
+            <span>Remaining against BAC</span><span className="mono" style={pB - ac < 0 ? { color: 'var(--bad)' } : undefined}>{money(pB - ac)}</span>
             <span>Spent</span><span className="mono">{pc(pB ? ac / pB : null)}</span>
             <span>This week (week {cw})</span><span className="mono">{thisWeek == null ? '–' : money(thisWeek)}</span>
             <span>This month</span><span className="mono">{money(thisMonth)}</span>
@@ -272,40 +335,49 @@ export default function Budget() {
         <div className="row sp">
           <div>
             <h2>Planned budget line items</h2>
-            <p className="hint">Beyond team labour: licenses, cloud, tools, travel, contingency. Choose how each amount repeats: every week, every month, every sprint, or once.</p>
+            <p className="hint">Beyond team labour: licenses, cloud, tools, travel, contingency. Choose how each amount repeats. Optional From / To dates limit when a line runs; for a one-time item the From date is the day it is paid.</p>
           </div>
-          <button className="btn primary" onClick={() => update((s) => s.lines.push({ name: '', amount: 0, per: 'week' }))}>Add line item</button>
+          <button className="btn primary" onClick={() => update((s) => s.lines.push({ name: '', amount: 0, per: 'week', spread: 'cal', from: '', to: '' }))}>Add line item</button>
         </div>
         <div className="scroll">
           <table className="tbl rwd">
-            <thead><tr><th>Line item</th><th className="r">Amount</th><th>Basis</th><th className="r">Per week</th><th className="r">Project total</th><th></th></tr></thead>
+            <thead><tr><th>Line item</th><th className="r">Amount</th><th>Basis</th><th>Spread over</th><th>From / on</th><th>To</th><th className="r">Project total</th><th></th></tr></thead>
             <tbody>
               <tr>
                 <td data-l="Line item"><span className="cell">Team labour (from the register)</span></td>
-                <td data-l="Amount" className="r mono"><span className="cell">{money(sc)}</span></td>
-                <td data-l="Basis"><span className="cell msg">Per week</span></td>
-                <td data-l="Per week" className="r mono"><span className="cell">{money(sc)}</span></td>
-                <td data-l="Project total" className="r mono"><span className="cell">{money(sc * Nw)}</span></td>
+                <td data-l="Amount" className="r mono"><span className="cell">{money(sprintCap(S))}</span></td>
+                <td data-l="Basis"><span className="cell msg">Per full week</span></td>
+                <td data-l="Spread over"><span className="cell msg">Working days</span></td>
+                <td data-l="From / on"></td>
+                <td data-l="To"></td>
+                <td data-l="Project total" className="r mono"><span className="cell">{money(t.labour)}</span></td>
                 <td data-l=""></td>
               </tr>
               {S.lines.map((l, i) => {
                 const once = l.per === 'project';
+                const canSpread = l.per === 'week' || l.per === 'month' || l.per === 'sprint';
+                const L = M.lines[i];
                 return (
                   <tr key={i}>
                     <td data-l="Line item"><Cell sec="lines" i={i} f="name" value={l.name} cls="w-name" placeholder="Line item name" /></td>
                     <td data-l="Amount"><Cell sec="lines" i={i} f="amount" value={l.amount} type="num" cls="w-md n" /></td>
                     <td data-l="Basis"><SelectCell sec="lines" i={i} f="per" value={l.per} options={BASES} cls="w-md" /></td>
-                    <td data-l="Per week" className="r mono"><span className="cell">{once ? '–' : money(lineWeekly(S, l))}</span></td>
-                    <td data-l="Project total" className="r mono"><span className="cell">{money(once ? nz(l.amount) : lineWeekly(S, l) * Nw)}</span></td>
+                    <td data-l="Spread over"><SelectCell sec="lines" i={i} f="spread" value={canSpread ? l.spread : l.per === 'day' ? 'work' : 'cal'} options={SPREADS} cls="w-md" disabled={!canSpread} /></td>
+                    <td data-l="From / on"><Cell sec="lines" i={i} f="from" value={l.from} type="date" cls="w-date" label={once ? 'Date paid (optional)' : 'Runs from (blank = project start)'} /></td>
+                    <td data-l="To"><Cell sec="lines" i={i} f="to" value={l.to} type="date" cls="w-date" label="Runs until (blank = project end)" disabled={once} /></td>
+                    <td data-l="Project total" className="r mono"><span className="cell" title={L && L.note ? L.note : undefined}>{money(L ? L.total : 0)}{L && L.note ? ' *' : ''}</span></td>
                     <td data-l=""><button className="x" onClick={() => update((s) => s.lines.splice(i, 1))} aria-label="Delete line item">✕</button></td>
                   </tr>
                 );
               })}
             </tbody>
-            <tfoot><tr><td>Total</td><td></td><td></td><td className="r mono">{money(wB)}</td><td className="r mono">{money(pB)}</td><td></td></tr></tfoot>
+            <tfoot><tr><td>Total (labour + line items)</td><td></td><td></td><td></td><td></td><td></td><td className="r mono">{money(pB)}</td><td></td></tr></tfoot>
           </table>
         </div>
+        {M.lines.some((x) => x.note) && <p className="msg" style={{ marginTop: 8 }}>* One-time items without a date inside the project count in the BAC but are not placed in a particular week.</p>}
       </div>
+
+      <BudgetCalc />
 
       <Ledger />
     </>
