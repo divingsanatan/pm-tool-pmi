@@ -440,13 +440,14 @@ export function newRaidId(S, type) {
 /* ---------- work items dated outside their sprint ---------- */
 // The project length follows the latest date in the plan, so one work item due after its sprint ends
 // stretches the whole project (and its budget). These helpers find such items and pull them back in.
-const clampDate = (d, lo, hi) => (!d ? d : d < lo ? lo : d > hi ? hi : d);
+const clampDate = (d, sp) => (!d ? d : sp.start && d < sp.start ? sp.start : sp.end && d > sp.end ? sp.end : d);
+const isOut = (d, sp) => !!d && ((sp.start && d < sp.start) || (sp.end && d > sp.end));
 export function outsideSprint(S) {
   const out = [];
   S.sprints.forEach((sp) => {
-    if (!sp.start || !sp.end) return;
+    if (!sp.start && !sp.end) return;
     sp.tasks.forEach((t) => {
-      if ((t.due && (t.due < sp.start || t.due > sp.end)) || (t.start && (t.start < sp.start || t.start > sp.end))) out.push({ sp, t });
+      if (isOut(t.due, sp) || isOut(t.start, sp)) out.push({ sp, t });
     });
   });
   return out;
@@ -455,9 +456,9 @@ export function outsideSprint(S) {
 export function alignSprintDates(S, sprintId) {
   let n = 0;
   S.sprints.forEach((sp) => {
-    if ((sprintId && sp.id !== sprintId) || !sp.start || !sp.end) return;
+    if ((sprintId && sp.id !== sprintId) || (!sp.start && !sp.end)) return;
     sp.tasks.forEach((t) => {
-      const s = clampDate(t.start, sp.start, sp.end), d = clampDate(t.due, sp.start, sp.end);
+      const s = clampDate(t.start, sp), d = clampDate(t.due, sp);
       if (s !== t.start || d !== t.due) {
         t.start = s;
         t.due = d;

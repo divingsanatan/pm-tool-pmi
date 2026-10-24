@@ -26,7 +26,7 @@ function ValueDialog({ kind, count, tasks, container, onApply, onClose }) {
         <label className="fld">{isDate ? 'Date' : 'Hours'}
           <input className="c" type={isDate ? 'date' : 'number'} step={isDate ? undefined : 'any'} min={isDate ? undefined : 0} autoFocus value={v} onChange={(e) => setV(e.target.value)} />
         </label>
-        {outside && <p className="msg" style={{ color: 'var(--warn)' }}>This date is outside the sprint ({fdate(container.start)} – {fdate(container.end)}). It will stretch the project timeline and budget.</p>}
+        {outside && <p className="msg" style={{ color: 'var(--warn)' }}>This date is outside the sprint ({fdate(container.start)} – {fdate(container.end)}). Dates must stay inside the sprint, so you will be asked to move them inside, use or create another sprint, extend this sprint, or send the items to the Backlog.</p>}
         {clash > 0 && <p className="msg" style={{ color: 'var(--warn)' }}>{clash} selected item{clash > 1 ? 's have' : ' has'} a {kind === 'start' ? 'due date before this start date' : 'start date after this due date'}.</p>}
         <div className="row" style={{ justifyContent: 'flex-end', marginTop: 14 }}>
           <button className="btn" onClick={onClose}>Cancel</button>

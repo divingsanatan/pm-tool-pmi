@@ -12,6 +12,7 @@ import Raid from './tabs/Raid';
 import Change from './tabs/Change';
 import SprintView from './tabs/SprintView';
 import BacklogView from './tabs/BacklogView';
+import OutsideBanner from './components/OutsideBanner';
 
 const VIEWS = { dash: Dashboard, weekly: Weekly, time: Timeline, budget: Budget, people: Stakeholders, raci: Raci, raid: Raid, change: Change };
 
@@ -36,6 +37,7 @@ export default function App() {
         ) : (
           <div className="wrap" key={S.id}>
             <Header />
+            <OutsideBanner />
             <main>
               <View />
             </main>
