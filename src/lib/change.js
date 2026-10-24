@@ -58,44 +58,43 @@ const chk = (key, label, ok, req = true) => ({ key, label, ok: !!ok, req });
 const has = (cr, a) => (cr.affects || []).includes(a);
 
 export function raiseChecks(cr) {
+  // Only the title, the cost change and the schedule change are mandatory (0 is a valid answer); everything else is optional
   return [
     chk('title', 'Short title', filled(cr.title)),
-    chk('desc', 'What exactly is changing (description)', filled(cr.desc)),
-    chk('kind', 'Type of change (corrective, preventive, defect repair, enhancement…)', filled(cr.kind)),
-    chk('by', 'Who is raising it', filled(cr.by)),
-    chk('on', 'Date raised', filled(cr.on)),
-    chk('priority', 'Priority', filled(cr.priority)),
-    chk('why', 'Justification: why the change is needed', filled(cr.why)),
-    chk('affects', 'Which baselines it touches (scope, schedule, cost…)', (cr.affects || []).length > 0),
+    chk('cost', 'Cost change in money (type 0 if none)', cr.cost != null),
+    chk('days', 'Schedule change in days (type 0 if none)', cr.days != null),
+    chk('desc', 'What exactly is changing (description)', filled(cr.desc), false),
+    chk('kind', 'Type of change (corrective, preventive, defect repair, enhancement…)', filled(cr.kind), false),
+    chk('by', 'Who is raising it', filled(cr.by), false),
+    chk('why', 'Justification: why the change is needed', filled(cr.why), false),
+    chk('affects', 'Which baselines it touches (scope, schedule, cost…)', (cr.affects || []).length > 0, false),
     chk('tasks', 'Work items it affects', (cr.tasks || []).length > 0, false),
     chk('raid', 'Related risks, issues or assumptions in the RAID log', (cr.raid || []).length > 0, false),
     chk('informed', 'Stakeholders who must be told about it', (cr.informed || []).length > 0, false),
     chk('ref', 'Evidence or reference (document, link, ticket)', filled(cr.ref), false),
   ];
 }
-// Impact analysis: only the areas the request says it touches need an answer, but risk, alternatives and "if we do nothing" always do
+// Impact analysis: all optional (cost and schedule change are already required when raising the request)
 export function impactChecks(cr) {
   const l = [];
-  if (has(cr, 'Scope')) l.push(chk('iScope', 'Scope impact', filled(cr.iScope)));
-  if (has(cr, 'Schedule')) l.push(chk('days', 'Schedule impact in days (0 if none)', cr.days != null));
-  if (has(cr, 'Cost')) l.push(chk('cost', 'Cost impact in money (0 if none)', cr.cost != null));
-  if (has(cr, 'Quality')) l.push(chk('iQuality', 'Quality impact', filled(cr.iQuality)));
-  if (has(cr, 'Resources')) l.push(chk('iResources', 'Resource impact', filled(cr.iResources)));
+  if (has(cr, 'Scope')) l.push(chk('iScope', 'Scope impact', filled(cr.iScope), false));
+  if (has(cr, 'Quality')) l.push(chk('iQuality', 'Quality impact', filled(cr.iQuality), false));
+  if (has(cr, 'Resources')) l.push(chk('iResources', 'Resource impact', filled(cr.iResources), false));
   l.push(
-    chk('iRisk', 'Risk impact: new or changed risks (“none” is fine)', filled(cr.iRisk)),
-    chk('alt', 'Alternatives that were considered', filled(cr.alt)),
-    chk('noop', 'What happens if the change is not made', filled(cr.noop))
+    chk('iRisk', 'Risk impact: new or changed risks', filled(cr.iRisk), false),
+    chk('alt', 'Alternatives that were considered', filled(cr.alt), false),
+    chk('noop', 'What happens if the change is not made', filled(cr.noop), false)
   );
   return l;
 }
 export function decisionChecks(cr, approving) {
-  const a = [chk('decidedBy', 'Who decided (approver or board member)', filled(cr.decidedBy)), chk('rationale', 'Reason for the decision', filled(cr.rationale))];
+  const a = [chk('decidedBy', 'Who decided (approver or board member)', filled(cr.decidedBy), false), chk('rationale', 'Reason for the decision', filled(cr.rationale), false)];
   if (!approving) return a;
   return a.concat([
-    chk('apCost', 'Approved cost impact', cr.apCost != null),
-    chk('apDays', 'Approved schedule impact (days)', cr.apDays != null),
-    chk('owner', 'Who will implement it', filled(cr.owner)),
-    chk('target', 'Target date to implement', filled(cr.target)),
+    chk('apCost', 'Approved cost change', cr.apCost != null),
+    chk('apDays', 'Approved schedule change (days)', cr.apDays != null),
+    chk('owner', 'Who will implement it', filled(cr.owner), false),
+    chk('target', 'Target date to implement', filled(cr.target), false),
     chk('conditions', 'Conditions or constraints on the approval', filled(cr.conditions), false),
   ]);
 }
@@ -117,15 +116,15 @@ export function implChecks(cr, S) {
   const r = reconcile(cr, S);
   const c = cr.chk || {};
   const list = [
-    chk('comms', 'Decision communicated to the requester and affected stakeholders', c.comms),
-    chk('docs', 'Project plan documents updated (scope, schedule, budget, RACI)', c.docs),
-    chk('raid', 'RAID log updated for new or changed risks', c.raid),
-    chk('wbs', 'Work items and budget changed to match the approval', c.wbs),
+    chk('comms', 'Decision communicated to the requester and affected stakeholders', c.comms, false),
+    chk('docs', 'Project plan documents updated (scope, schedule, budget, RACI)', c.docs, false),
+    chk('raid', 'RAID log updated for new or changed risks', c.raid, false),
+    chk('wbs', 'Work items and budget changed to match the approval', c.wbs, false),
   ];
-  if (r && r.mismatch) list.push(chk('reconcile', 'Note explaining why the plan differs from the approved impact', filled(cr.reconcile)));
+  if (r && r.mismatch) list.push(chk('reconcile', 'Note explaining why the plan differs from the approved impact', filled(cr.reconcile), false));
   return list;
 }
-export const closeChecks = (cr) => [chk('verified', 'Verification: the change works and the new baseline was checked', filled(cr.verified))];
+export const closeChecks = (cr) => [chk('verified', 'Verification: the change works and the new baseline was checked', filled(cr.verified), false)];
 
 /* ---------- workflow ---------- */
 export const NEXT = { Draft: ['Submitted'], Submitted: ['Under review', 'Draft'], 'Under review': ['Approved', 'Rejected', 'Deferred', 'Draft'], Deferred: ['Under review'], Approved: ['Implemented'], Implemented: ['Closed'], Rejected: [], Closed: [] };

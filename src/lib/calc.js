@@ -502,6 +502,15 @@ export function normalize(S) {
     ['affects', 'tasks', 'raid', 'informed', 'log'].forEach((k) => !Array.isArray(c[k]) && (c[k] = []));
     if (!c.chk || typeof c.chk !== 'object') c.chk = { comms: false, docs: false, raid: false, wbs: false };
   });
+  // RAID items get a stable key, because their visible ID can be edited, blank or repeated. Change requests link by key
+  // (links made by ID in earlier versions are converted).
+  (S.raid || []).forEach((r) => {
+    if (!r.key) r.key = uid();
+  });
+  S.cr.forEach((c) => {
+    const keys = (c.raid || []).map((v) => (S.raid.find((r) => r.key === v) || S.raid.find((r) => r.id && r.id === v) || { key: v }).key);
+    c.raid = keys.filter((k, i) => keys.indexOf(k) === i);
+  });
   if (!S.rf || typeof S.rf !== 'object') S.rf = { scope: 'project', sprintId: '', week: 0, month: '', from: '', to: '' };
 
   // actual cost ledger (earlier versions kept one typed number per week)

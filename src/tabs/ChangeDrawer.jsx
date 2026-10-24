@@ -66,7 +66,7 @@ export default function ChangeDrawer({ id, onClose }) {
   const people = [['', '— select —']].concat(S.people.filter((p) => p.name).map((p) => [p.id, p.name]));
   const who = (pid) => (S.people.find((p) => p.id === pid) || {}).name || '';
   const tasks = allContainers(S).flatMap((c) => c.tasks.map((t) => [t.id, t.code + ' · ' + t.name]));
-  const raid = S.raid.map((r) => [r.id, r.id + ' · ' + (r.desc || r.type)]);
+  const raid = S.raid.map((r) => [r.key, (r.id || '(no ID)') + ' · ' + (r.desc || r.type)]);
   const informed = S.people.filter((p) => p.name).map((p) => [p.id, p.name]);
 
   const lockReq = st !== 'Draft';
@@ -121,7 +121,7 @@ export default function ChangeDrawer({ id, onClose }) {
           </span>
           <button className="x" onClick={onClose} aria-label="Close">✕</button>
         </div>
-        <Area value={cr.title} single rows={2} cls="h-name d-name" label="Change request title" placeholder="Title of the change" disabled={lockReq} onCommit={(v) => v.trim() && set({ title: v.trim() })} />
+        <Area value={cr.title} single rows={2} cls="h-name d-name" label="Change request title" placeholder="Title of the change (required)" disabled={lockReq} onCommit={(v) => v.trim() && set({ title: v.trim() })} />
 
         <div className="steps" aria-label="Progress">
           {WORKFLOW.map((s) => (<span key={s} className={s === st ? 'on' : WORKFLOW.indexOf(s) < WORKFLOW.indexOf(st) ? 'past' : ''}>{s}</span>))}
@@ -188,10 +188,10 @@ export default function ChangeDrawer({ id, onClose }) {
 
         <h3 className="d-h">3 · Impact assessment</h3>
         <div className="d-grid">
-          <label className="fld">Cost impact (money, negative saves)
+          <label className="fld">Cost change (money, negative saves) · required
             <Cell type="num" cls="n" value={cr.cost} placeholder="0" disabled={lockImp} onCommit={(v) => set({ cost: v })} />
           </label>
-          <label className="fld">Schedule impact (days, negative is earlier)
+          <label className="fld">Schedule change (days, negative is earlier) · required
             <Cell type="num" cls="n" value={cr.days} placeholder="0" disabled={lockImp} onCommit={(v) => set({ days: v })} />
           </label>
           {base && (

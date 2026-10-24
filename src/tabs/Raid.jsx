@@ -4,6 +4,7 @@ import { Cell, SelectCell } from '../components/Field';
 import Kpi from '../components/Kpi';
 import { emv, expo, newRaidId, overdue, rating, score } from '../lib/calc';
 import { today } from '../lib/dates';
+import { uid } from '../lib/tasks';
 import { hrsf, money, nz } from '../lib/format';
 
 const TYPES = ['Risk', 'Assumption', 'Issue', 'Dependency'];
@@ -53,7 +54,7 @@ export default function Raid() {
   const addRaid = () =>
     update((s) => {
       const isR = newType === 'Risk';
-      s.raid.push({ id: newRaidId(s, newType), type: newType, desc: '', owner: '', p: isR ? 3 : null, i: isR ? 3 : null, probPct: isR ? 0.5 : null, cost: null, days: null, status: 'Open', resp: '', due: '', rev: today() });
+      s.raid.push({ key: uid(), id: newRaidId(s, newType), type: newType, desc: '', owner: '', p: isR ? 3 : null, i: isR ? 3 : null, probPct: isR ? 0.5 : null, cost: null, days: null, status: 'Open', resp: '', due: '', rev: today() });
     });
 
   return (
