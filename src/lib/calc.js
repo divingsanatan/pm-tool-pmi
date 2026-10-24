@@ -116,14 +116,22 @@ export const labourTotal = (S) => labourRows(S).reduce((a, r) => a + r.cost, 0);
 // Labour is a project total now. The weekly figure below is only that total spread evenly over the project weeks,
 // kept for the Dashboard and Weekly tracker (period budgets, planned value); the Budget tab does not use it.
 export const sprintCap = (S) => labourTotal(S) / Math.max(1, nW(S));
-// planned cost of one budget line, expressed per week (one-time lines are not time-phased)
-export function lineWeekly(S, l) {
-  if (l.per === 'week') return nz(l.amount);
-  if (l.per === 'month') return (nz(l.amount) * 12) / 52;
-  if (l.per === 'sprint') return nz(l.amount) / Math.max(1, S.meta.sprintWeeks);
+// Planned cost of one budget line. A recurring line (per week / month / sprint) is its amount times the number of
+// iterations typed in; a one-time line is just its amount.
+export const ITER_UNIT = { week: 'weeks', month: 'months', sprint: 'sprints' };
+export const lineTotal = (S, l) => (l.per === 'project' ? nz(l.amount) : nz(l.amount) * Math.max(0, nz(l.iterations)));
+// Suggested number of iterations for a basis, from the project length (only used to pre-fill the box)
+export const suggestIter = (S, per) => {
+  const w = Math.max(1, nW(S));
+  if (per === 'week') return w;
+  if (per === 'month') return Math.max(1, Math.round((w * 12) / 52));
+  if (per === 'sprint') return Math.max(1, Math.round(w / Math.max(1, S.meta.sprintWeeks)));
   return 0;
-}
-export const lineWeeklySum = (S) => S.lines.reduce((a, l) => a + lineWeekly(S, l), 0);
+};
+export const lineRecurring = (S) => S.lines.reduce((a, l) => a + (l.per === 'project' ? 0 : lineTotal(S, l)), 0);
+// Per-week spread of a recurring line, kept only for the Dashboard and Weekly tracker (period budgets, planned value)
+export const lineWeekly = (S, l) => (l.per === 'project' ? 0 : lineTotal(S, l) / Math.max(1, nW(S)));
+export const lineWeeklySum = (S) => lineRecurring(S) / Math.max(1, nW(S));
 export const lineOnce = (S) => S.lines.reduce((a, l) => a + (l.per === 'project' ? nz(l.amount) : 0), 0);
 export const weeklyBAC = (S) => sprintCap(S) + lineWeeklySum(S);
 export const projectBAC = (S) => weeklyBAC(S) * nW(S) + lineOnce(S);
@@ -227,7 +235,7 @@ export function costBy(S, mode) {
     };
     get('Team labour').planned += sprintCap(S) * nW(S);
     S.lines.forEach((l) => {
-      get(l.name || 'Line item').planned += l.per === 'project' ? nz(l.amount) : lineWeekly(S, l) * nW(S);
+      get(l.name || 'Line item').planned += lineTotal(S, l);
     });
     led.forEach((e) => {
       const r = get(e.element);
@@ -663,6 +671,12 @@ export function normalize(S) {
     if (t.hours == null) t.hours = Math.round(m.weeks * nz(m.hoursPerDay) * nz(m.sprintDays) * 100) / 100;
     t.hours = Math.max(0, nz(t.hours));
     t.off = Math.max(0, nz(t.off));
+  });
+  // recurring budget lines hold a number of iterations; lines from earlier versions keep the total they used to give
+  (S.lines || []).forEach((l) => {
+    if (l.per === 'project') return;
+    if (l.iterations == null) l.iterations = Math.round(suggestIter({ meta: m }, l.per) * 100) / 100;
+    l.iterations = Math.max(0, nz(l.iterations));
   });
   // budget lines get ids so the activity log can tell them apart
   (S.lines || []).forEach((l) => {

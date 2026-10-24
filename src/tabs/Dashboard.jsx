@@ -2,7 +2,7 @@ import { useStore } from '../store/StoreContext';
 import { SelectCell, Fld } from '../components/Field';
 import Kpi from '../components/Kpi';
 import { Spark, Gauge, Donut, BarsChart, SCurve, Legend3 } from '../components/Charts';
-import { agg, alerts, curWeek, emv, nSp, nW, projectBAC, rating, rlabel, rng, roll, score, sprintCap, sprintOf, sprintWeeks, stCls, wbsOf, weeklyBAC, worst, wps, wstat, wkS } from '../lib/calc';
+import { agg, alerts, curWeek, emv, lineWeekly, nSp, nW, projectBAC, rating, rlabel, rng, roll, score, sprintCap, sprintOf, sprintWeeks, stCls, wbsOf, weeklyBAC, worst, wps, wstat, wkS } from '../lib/calc';
 import { fdate, fsh } from '../lib/dates';
 import { cl, money, nz, pc } from '../lib/format';
 import { changeAlerts } from '../lib/change';
@@ -62,7 +62,7 @@ export default function Dashboard() {
   const pb = projectBAC(S);
   const eac = T.cpi ? pb / T.cpi : null;
 
-  const parts = [{ n: 'Team labour', v: sprintCap(S) }].concat(S.lines.filter((l) => l.per === 'week').map((l) => ({ n: l.name || 'Line item', v: nz(l.amount) })));
+  const parts = [{ n: 'Team labour', v: sprintCap(S) }].concat(S.lines.filter((l) => l.per !== 'project').map((l) => ({ n: l.name || 'Line item', v: lineWeekly(S, l) })));
   const ptot = parts.reduce((x, p) => x + p.v, 0);
 
   const cnt = { Done: 0, 'In progress': 0, Late: 0, 'Not started': 0 };

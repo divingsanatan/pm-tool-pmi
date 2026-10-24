@@ -4,7 +4,7 @@ import { useCosts } from '../store/useCosts';
 import { Cell, SelectCell } from '../components/Field';
 import { Modal } from '../components/UI';
 import WeeksControl from '../components/WeeksControl';
-import { costBy, curWeek, labourOf, labourTotal, ledgerTotal, lineOnce, lineWeekly, lineWeeklySum, nW, personOf, projectBAC, weekAc } from '../lib/calc';
+import { ITER_UNIT, costBy, labourOf, labourTotal, ledgerTotal, lineOnce, lineRecurring, lineTotal, personOf, projectBAC, suggestIter } from '../lib/calc';
 import { fdate, today } from '../lib/dates';
 import { hrsf, money, nz, pc } from '../lib/format';
 import { parseCosts } from '../lib/parse';
@@ -111,7 +111,7 @@ function Ledger() {
           <p className="hint" style={{ marginTop: 10 }}>
             {view === 'element'
               ? 'Planned comes from team labour and your budget line items over the whole project. Costs recorded with a name that is not in the plan show as Unplanned.'
-              : 'Planned is the recurring weekly budget spread over the days of each period. One-time line items are not time-phased, so they appear only under By element.'}
+              : 'Planned is the budget spread evenly over the project’s days. One-time line items are not time-phased, so they appear only under By element.'}
           </p>
         </>
       )}
@@ -228,13 +228,9 @@ function LabourRegister() {
 
 export default function Budget() {
   const { S, update } = useStore();
-  const lab = labourTotal(S), pB = projectBAC(S), Nw = nW(S);
-  const recur = lineWeeklySum(S) * Nw;
+  const lab = labourTotal(S), pB = projectBAC(S);
+  const recur = lineRecurring(S);
   const ac = ledgerTotal(S);
-  const cw = curWeek(S);
-  const thisWeek = weekAc(S, cw);
-  const ym = today().slice(0, 7);
-  const thisMonth = S.ledger.reduce((a, e) => a + (e.date && e.date.slice(0, 7) === ym ? nz(e.amount) : 0), 0);
 
   return (
     <>
@@ -263,8 +259,6 @@ export default function Budget() {
             <span className="big">Actual cost to date</span><span className="mono big">{money(ac)}</span>
             <span>Remaining</span><span className="mono" style={pB - ac < 0 ? { color: 'var(--bad)' } : undefined}>{money(pB - ac)}</span>
             <span>Spent</span><span className="mono">{pc(pB ? ac / pB : null)}</span>
-            <span>This week (week {cw})</span><span className="mono">{thisWeek == null ? '–' : money(thisWeek)}</span>
-            <span>This month</span><span className="mono">{money(thisMonth)}</span>
           </div>
         </div>
       </div>
@@ -273,18 +267,19 @@ export default function Budget() {
         <div className="row sp">
           <div>
             <h2>Planned budget line items</h2>
-            <p className="hint">Beyond team labour: licenses, cloud, tools, travel, contingency. Choose how each amount repeats: every week, every month, every sprint, or once.</p>
+            <p className="hint">Beyond team labour: licenses, cloud, tools, travel, contingency. Choose how each amount repeats (every week, month or sprint) and enter how many times it recurs, or choose one-time.</p>
           </div>
-          <button className="btn primary" onClick={() => update((s) => s.lines.push({ name: '', amount: 0, per: 'week' }))}>Add line item</button>
+          <button className="btn primary" onClick={() => update((s) => s.lines.push({ name: '', amount: 0, per: 'week', iterations: suggestIter(s, 'week') }))}>Add line item</button>
         </div>
         <div className="scroll">
           <table className="tbl rwd">
-            <thead><tr><th>Line item</th><th className="r">Amount</th><th>Basis</th><th className="r">Project total</th><th></th></tr></thead>
+            <thead><tr><th>Line item</th><th className="r">Amount</th><th>Basis</th><th>Iterations</th><th className="r">Project total</th><th></th></tr></thead>
             <tbody>
               <tr>
                 <td data-l="Line item"><span className="cell">Team labour (from the labour budget)</span></td>
                 <td data-l="Amount" className="r mono"><span className="cell">{money(lab)}</span></td>
                 <td data-l="Basis"><span className="cell msg">Project total</span></td>
+                <td data-l="Iterations"></td>
                 <td data-l="Project total" className="r mono"><span className="cell">{money(lab)}</span></td>
                 <td data-l=""></td>
               </tr>
@@ -294,14 +289,15 @@ export default function Budget() {
                   <tr key={i}>
                     <td data-l="Line item"><Cell sec="lines" i={i} f="name" value={l.name} cls="w-name" placeholder="Line item name" /></td>
                     <td data-l="Amount"><Cell sec="lines" i={i} f="amount" value={l.amount} type="num" cls="w-md n" /></td>
-                    <td data-l="Basis"><SelectCell sec="lines" i={i} f="per" value={l.per} options={BASES} cls="w-md" /></td>
-                    <td data-l="Project total" className="r mono"><span className="cell">{money(once ? nz(l.amount) : lineWeekly(S, l) * Nw)}</span></td>
+                    <td data-l="Basis"><SelectCell value={l.per} options={BASES} cls="w-md" onCommit={(v) => update((p) => { const x = p.lines[i]; x.per = v; x.iterations = suggestIter(p, v); })} /></td>
+                    <td data-l="Iterations">{once ? <span className="cell msg">–</span> : (<span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}><Cell sec="lines" i={i} f="iterations" value={l.iterations} type="num" cls="w-sm n" label={'How many ' + ITER_UNIT[l.per] + ' this cost recurs'} /><span className="msg">× {ITER_UNIT[l.per]}</span></span>)}</td>
+                    <td data-l="Project total" className="r mono"><span className="cell">{money(lineTotal(S, l))}</span></td>
                     <td data-l=""><button className="x" onClick={() => update((s) => s.lines.splice(i, 1))} aria-label="Delete line item">✕</button></td>
                   </tr>
                 );
               })}
             </tbody>
-            <tfoot><tr><td>Total</td><td></td><td></td><td className="r mono">{money(pB)}</td><td></td></tr></tfoot>
+            <tfoot><tr><td>Total</td><td></td><td></td><td></td><td className="r mono">{money(pB)}</td><td></td></tr></tfoot>
           </table>
         </div>
       </div>
