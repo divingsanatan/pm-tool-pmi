@@ -3,6 +3,7 @@ import { useStore } from '../store/StoreContext';
 import { useChange } from '../store/useChange';
 import { useUI } from '../components/UI';
 import Kpi from '../components/Kpi';
+import { Cell } from '../components/Field';
 import { fdate } from '../lib/dates';
 import { hrsf, money, nz } from '../lib/format';
 import { CR_STATUSES, crCls, currentBaseline, drift, pendingOf, signedDays, signedMoney, snapshot, stageOf } from '../lib/change';
@@ -113,31 +114,37 @@ export default function Change() {
 
       <section className="card">
         <h2>Baseline history</h2>
-        <p className="hint">Each version is a frozen copy of scope, schedule and cost. A new version appears only when an approved change is implemented.</p>
+        <p className="hint">Each version is a frozen copy of scope, schedule and cost. A new version appears when an approved change is implemented. You can correct a version’s name, date, budget, finish and note here, delete a version, or re-capture the latest one from the plan as it is now.</p>
         <div className="scroll">
           <table className="tbl rwd">
             <thead>
-              <tr><th>Version</th><th>Date</th><th>Source</th><th className="r">Budget</th><th className="r">Change</th><th>Finish</th><th className="r">Shift</th><th className="r">Work items</th><th className="r">Effort (h)</th><th>Note</th></tr>
+              <tr><th>Version</th><th>Date</th><th>Source</th><th className="r">Budget</th><th className="r">Change</th><th>Finish</th><th className="r">Shift</th><th className="r">Work items</th><th className="r">Effort (h)</th><th>Note</th><th></th></tr>
             </thead>
             <tbody>
               {S.baselines.slice().reverse().map((b, i, arr) => {
                 const prev = arr[i + 1];
                 return (
                   <tr key={b.id}>
-                    <td data-l="Version" className="mono"><span className="cell">{b.version}{i === 0 ? ' ' : ''}{i === 0 && <span className="pill neutral">Current</span>}</span></td>
-                    <td data-l="Date"><span className="cell">{fdate(b.date)}</span></td>
+                    <td data-l="Version" className="mono"><span className="cell"><Cell value={b.version} cls="w-sm" label="Version name" onCommit={(v) => v.trim() && ch.patchBaseline(b.id, { version: v.trim() })} />{i === 0 && <span className="pill neutral">Current</span>}</span></td>
+                    <td data-l="Date"><Cell type="date" value={b.date} cls="w-date" label="Baseline date" onCommit={(v) => ch.patchBaseline(b.id, { date: v || b.date })} /></td>
                     <td data-l="Source"><span className="cell">{b.crCode || 'Original plan'}</span></td>
-                    <td data-l="Budget" className="r mono"><span className="cell">{money(b.bac)}</span></td>
+                    <td data-l="Budget"><Cell type="num" value={b.bac} cls="w-md n" label="Baseline budget" onCommit={(v) => ch.patchBaseline(b.id, { bac: v == null ? 0 : v })} /></td>
                     <td data-l="Change" className="r mono"><span className="cell">{prev ? signedMoney(b.bac - prev.bac, money) : '–'}</span></td>
-                    <td data-l="Finish"><span className="cell">{fdate(b.end)}</span></td>
+                    <td data-l="Finish"><Cell type="date" value={b.end} cls="w-date" label="Baseline finish date" onCommit={(v) => ch.patchBaseline(b.id, { end: v || b.end })} /></td>
                     <td data-l="Shift" className="r mono"><span className="cell">{prev ? signedDays(Math.round((Date.parse(b.end) - Date.parse(prev.end)) / 86400000)) : '–'}</span></td>
                     <td data-l="Work items" className="r mono"><span className="cell">{b.items}</span></td>
                     <td data-l="Effort (h)" className="r mono"><span className="cell">{hrsf(b.effort)}</span></td>
-                    <td data-l="Note"><span className="cell">{b.note}</span></td>
+                    <td data-l="Note"><Cell value={b.note} cls="w-desc" label="Baseline note" placeholder="Note" onCommit={(v) => ch.patchBaseline(b.id, { note: v })} /></td>
+                    <td data-l="">
+                      <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                        {i === 0 && (<button className="linkbtn" title="Replace this version’s figures with the plan as it is now" onClick={() => ui.ask({ title: 'Re-capture ' + b.version + '?', body: 'This version’s budget, finish date, work items and effort are replaced with the plan as it stands now (budget ' + money(live.bac) + ', finish ' + fdate(live.end) + ').', confirm: 'Re-capture', onConfirm: () => ch.recaptureBaseline(b.id) })}>Re-capture</button>)}
+                        <button className="x" aria-label={'Delete baseline ' + b.version} onClick={() => ui.ask({ title: 'Delete baseline ' + b.version + '?', body: (S.baselines.length === 1 ? 'This is the only baseline, so change requests will have nothing to measure against until you set a new one. ' : '') + 'Change requests stay on record, but ' + (b.crCode ? b.crCode + ' will no longer point to this version. ' : '') + 'This cannot be undone.', confirm: 'Delete baseline', danger: true, onConfirm: () => ch.removeBaseline(b.id) })}>✕</button>
+                      </span>
+                    </td>
                   </tr>
                 );
               })}
-              {!S.baselines.length && (<tr className="empty-row"><td colSpan="10"><span className="cell msg">No baseline yet.</span></td></tr>)}
+              {!S.baselines.length && (<tr className="empty-row"><td colSpan="11"><span className="cell msg">No baseline yet.</span></td></tr>)}
             </tbody>
           </table>
         </div>

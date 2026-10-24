@@ -19,6 +19,32 @@ export function useChange() {
           p.baselines.push({ id: uid(), version: 'v1.0', kind: 'Initial', date: today(), crId: '', crCode: '', note: (text || '').trim() || 'Original approved plan', ...snapshot(p) });
         });
       },
+      // Baselines can be corrected or removed. Removing one unlinks it from the change request that created it.
+      patchBaseline(id, patch) {
+        update((p) => {
+          const b = p.baselines.find((x) => x.id === id);
+          if (b) Object.assign(b, patch);
+        });
+      },
+      recaptureBaseline(id) {
+        update((p) => {
+          const b = p.baselines.find((x) => x.id === id);
+          if (b) Object.assign(b, snapshot(p), { date: today() });
+        });
+      },
+      removeBaseline(id) {
+        update((p) => {
+          const b = p.baselines.find((x) => x.id === id);
+          if (!b) return;
+          p.baselines = p.baselines.filter((x) => x.id !== id);
+          p.cr.forEach((c) => {
+            if (c.baselineId === id) {
+              c.baselineId = '';
+              note(c, 'Baseline ' + b.version + ' was deleted');
+            }
+          });
+        });
+      },
       add(fields = {}) {
         const id = uid();
         update((p) => void p.cr.push(blankCr(p, id, fields)));
