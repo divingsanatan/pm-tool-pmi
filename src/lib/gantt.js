@@ -63,7 +63,8 @@ function rawRange(S, tl) {
 }
 
 /** Everything the chart needs to draw one axis: range, scale, header cells, grid lines, sprint band, today. */
-export function buildAxis(S, tl) {
+// minTotal: the width (px) of the chart area. When the range is short the chart stretches to fill it, so it never leaves empty space.
+export function buildAxis(S, tl, minTotal = 0) {
   let [r0, r1] = rawRange(S, tl);
   let scale = tl.scale;
   let notice = '';
@@ -83,8 +84,8 @@ export function buildAxis(S, tl) {
     r1 = nextMonth(r1) - DAY;
   }
 
-  const ppd = PX_PER_DAY[scale];
   const days = (r1 - r0) / DAY + 1;
+  const ppd = Math.max(PX_PER_DAY[scale], minTotal > 0 ? minTotal / days : 0);
   const total = days * ppd;
   const x = (ms) => ((ms - r0) / DAY) * ppd;
   const w = (a, b) => ((b - a) / DAY + 1) * ppd;

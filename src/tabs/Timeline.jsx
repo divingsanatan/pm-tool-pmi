@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store/StoreContext';
 import { roll, wbsOf, wstat } from '../lib/calc';
 import { DAY, fdate, pd } from '../lib/dates';
@@ -41,7 +41,25 @@ export default function Timeline() {
   const tl = { ...DEFAULT_TL, ...(S.tl || {}) };
   const set = (patch) => update((p) => { p.tl = { ...DEFAULT_TL, ...(p.tl || {}), ...patch }; });
   const sp = pickedSprint(S, tl);
-  const ax = buildAxis(S, tl);
+  // width available to the chart area (the box minus the label column), so a short range stretches to fill the page
+  const [avail, setAvail] = useState(0);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return undefined;
+    const measure = () => {
+      const lw = parseFloat(getComputedStyle(el).getPropertyValue('--lw')) || 250;
+      setAvail(Math.max(0, Math.floor(el.clientWidth - lw - 1)));
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const ax = buildAxis(S, tl, avail);
 
   // which rows to show
   let rows = wbsOf(S);
