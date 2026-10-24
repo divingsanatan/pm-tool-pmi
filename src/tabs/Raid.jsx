@@ -46,6 +46,12 @@ export default function Raid() {
 
   const count = (type, status) => S.raid.filter((r) => (type === 'All' || r.type === type) && (status === 'All' || r.status === status)).length;
   const rows = S.raid.map((r, i) => ({ r, i })).filter((o) => (fType === 'All' || o.r.type === fType) && (fStat === 'All' || o.r.status === fStat));
+  // stakeholders to pick from; an owner typed earlier that is not on the list stays selectable until it is changed
+  const ownerOpts = (cur) => {
+    const o = [['', '— none —']].concat(S.people.filter((p) => p.name).map((p) => [p.id, p.name]));
+    if (cur && !S.people.some((p) => p.id === cur)) o.push([cur, cur + ' (not on the stakeholder list)']);
+    return o;
+  };
   const risks = S.raid.filter((r) => r.type === 'Risk' && r.status !== 'Closed');
   const tE = risks.reduce((s, r) => s + nz(emv(r)), 0);
   const tX = risks.reduce((s, r) => s + nz(expo(r)), 0);
@@ -120,7 +126,7 @@ export default function Raid() {
                       <td data-l="ID"><Cell sec="raid" i={i} f="id" value={r.id} cls="w-id mono" /></td>
                       <td data-l="Type"><SelectCell sec="raid" i={i} f="type" value={r.type} options={TYPES} cls="w-md" /></td>
                       <td data-l="Description"><Cell sec="raid" i={i} f="desc" value={r.desc} cls="w-desc" placeholder="Describe" /></td>
-                      <td data-l="Owner"><Cell sec="raid" i={i} f="owner" value={r.owner} cls="w-md" placeholder="Owner" /></td>
+                      <td data-l="Owner"><SelectCell sec="raid" i={i} f="owner" value={r.owner} options={ownerOpts(r.owner)} cls="w-md" /></td>
                       <td data-l="P">{isR && <Cell sec="raid" i={i} f="p" value={r.p} type="num" cls="w-sm n" />}</td>
                       <td data-l="I">{isR && <Cell sec="raid" i={i} f="i" value={r.i} type="num" cls="w-sm n" />}</td>
                       <td data-l="Score" className="r mono"><span className="cell">{isR && sc != null ? sc : ''}</span></td>

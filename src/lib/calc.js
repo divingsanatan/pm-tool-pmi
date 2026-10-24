@@ -641,6 +641,13 @@ export function normalize(S) {
   });
 
   const ids = new Set(S.people.map((p) => p.id));
+  // RAID owners are picked from the stakeholder list and stored by id; names typed in earlier versions are matched to a stakeholder
+  const lc = (x) => (x || '').trim().toLowerCase();
+  (S.raid || []).forEach((r) => {
+    if (!r.owner || ids.has(r.owner)) return;
+    const per = S.people.find((x) => lc(x.name) === lc(r.owner));
+    if (per) r.owner = per.id;
+  });
   const seen = new Set();
   S.team = S.team.filter((t) => ids.has(t.person) && !seen.has(t.person) && seen.add(t.person));
   const tasks = allContainers(S).flatMap((c) => c.tasks);

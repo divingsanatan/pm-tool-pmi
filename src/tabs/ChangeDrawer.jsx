@@ -1,15 +1,16 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '../store/StoreContext';
 import { useChange } from '../store/useChange';
 import { useUI } from '../components/UI';
 import { Area, Cell, SelectCell } from '../components/Field';
-import { addDays, fdate } from '../lib/dates';
+import { addDays, fdate, today } from '../lib/dates';
+import { newRaidId } from '../lib/calc';
 import { money, nz } from '../lib/format';
-import { allContainers } from '../lib/tasks';
+import { allContainers, uid } from '../lib/tasks';
 import { AREAS, CR_PRIORITIES, KINDS, NEXT, WORKFLOW, checksFor, crCls, currentBaseline, missing, reconcile, signedDays, signedMoney, stageOf } from '../lib/change';
 
 // A list of chosen items shown as chips, with a dropdown to add more
-function Picker({ ids, options, onChange, disabled, label }) {
+function Picker({ ids, options, onChange, disabled, label, empty }) {
   const name = (id) => (options.find((o) => o[0] === id) || [id, '(removed)'])[1];
   const left = options.filter((o) => !ids.includes(o[0]));
   return (
@@ -27,6 +28,32 @@ function Picker({ ids, options, onChange, disabled, label }) {
         </select>
       )}
       {disabled && !ids.length && <span className="msg">None</span>}
+      {!disabled && !options.length && empty && <span className="msg">{empty}</span>}
+    </div>
+  );
+}
+
+// Adds a RAID item without leaving the change request, and links it
+function QuickRaid({ cr }) {
+  const { update } = useStore();
+  const [type, setType] = useState('Risk');
+  const [desc, setDesc] = useState('');
+  const add = () => {
+    const key = uid();
+    update((p) => {
+      p.raid.push({ key, id: newRaidId(p, type), type, desc: desc.trim(), owner: '', p: type === 'Risk' ? 3 : null, i: type === 'Risk' ? 3 : null, probPct: type === 'Risk' ? 0.5 : null, cost: null, days: null, status: 'Open', resp: '', due: '', rev: today() });
+      const c = p.cr.find((x) => x.id === cr.id);
+      if (c && !c.raid.includes(key)) c.raid.push(key);
+    });
+    setDesc('');
+  };
+  return (
+    <div className="row" style={{ gap: 6, marginTop: 6 }}>
+      <select className="c" style={{ width: 'auto', borderColor: 'var(--line)' }} value={type} onChange={(e) => setType(e.target.value)} aria-label="New RAID item type">
+        {['Risk', 'Assumption', 'Issue', 'Dependency'].map((t) => (<option key={t}>{t}</option>))}
+      </select>
+      <input className="c" style={{ maxWidth: 260, borderColor: 'var(--line)' }} value={desc} onChange={(e) => setDesc(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} placeholder="Describe a new RAID item" aria-label="New RAID item description" />
+      <button className="btn" onClick={add}>Add and link</button>
     </div>
   );
 }
@@ -179,7 +206,8 @@ export default function ChangeDrawer({ id, onClose }) {
             <Picker ids={cr.tasks} options={tasks} disabled={lockImp} label="Add work item" onChange={(v) => set({ tasks: v })} />
           </div>
           <div className="fld" style={{ gridColumn: '1 / -1' }}>Related RAID items
-            <Picker ids={cr.raid} options={raid} disabled={lockImp} label="Add RAID item" onChange={(v) => set({ raid: v })} />
+            <Picker ids={cr.raid} options={raid} disabled={lockImp} label="Add RAID item" empty={S.raid.length ? 'All RAID items are already linked.' : 'There are no RAID items yet. Add one below, or in the RAID log.'} onChange={(v) => set({ raid: v })} />
+            {!lockImp && <QuickRaid cr={cr} />}
           </div>
           <div className="fld" style={{ gridColumn: '1 / -1' }}>Stakeholders to inform
             <Picker ids={cr.informed} options={informed} disabled={lockImp} label="Add stakeholder" onChange={(v) => set({ informed: v })} />
