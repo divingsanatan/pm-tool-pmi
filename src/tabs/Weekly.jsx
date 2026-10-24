@@ -3,7 +3,7 @@ import { useStore } from '../store/StoreContext';
 import { Cell } from '../components/Field';
 import Menu from '../components/Menu';
 import WeeksControl from '../components/WeeksControl';
-import { agg, curWeek, nW, portfolio, projectBAC, sprintOf, started, stCls, weeklyBAC, wk, wkS, wkE, wlabel, worst, workPlan } from '../lib/calc';
+import { agg, curWeek, nW, portfolio, projectBAC, sprintOf, started, stCls, wk, wkS, wkE, wlabel, worst, workPlan } from '../lib/calc';
 import { fsh } from '../lib/dates';
 import { money, pc } from '../lib/format';
 
@@ -38,7 +38,6 @@ function ProjectWeekly() {
   const m = S.meta;
   const Nw = nW(S);
   const cur = curWeek(S);
-  const B = weeklyBAC(S);
   const P = workPlan(S);
 
   const clearWeek = (w) => update((s) => { const r = s.report[w - 1]; if (r) Object.assign(r, { planPct: null, note: '' }); });
@@ -56,7 +55,7 @@ function ProjectWeekly() {
         <td data-l="Dates"><span className="cell" style={{ whiteSpace: 'nowrap' }}>{wlabel(S, w)}</span></td>
         <td data-l="Sprint" className="mono"><span className="cell">{sprintOf(S, w) ? 'S' + sprintOf(S, w) : '–'}</span></td>
         <td data-l="Planned %">
-          <Cell sec="report" i={w - 1} f="planPct" value={typed} type="pct" cls="w-sm n" placeholder={x.plan == null ? '–' : pc(x.plan)} label={'Week ' + w + ' planned percent. Follows due dates; type a number to override'} />
+          <Cell sec="report" i={w - 1} f="planPct" value={typed} type="pct" cls="w-sm n" placeholder={x.plan == null ? '–' : pc(x.plan)} label={'Week ' + w + ' planned percent of the project budget. Follows due dates; type a number to override'} />
         </td>
         <td data-l="Earned %" className="r mono"><span className="cell">{pc(x.earn)}</span></td>
         <td data-l="Actual cost" className="r mono"><span className="cell">{x.ac == null ? '–' : money(x.ac)}</span></td>
@@ -99,7 +98,7 @@ function ProjectWeekly() {
             <p className="hint">
               Everything here is worked out from your work items and costs. Each work item carries a share of the project budget ({money(projectBAC(S))}),{' '}
               {P.weighted ? 'weighted by its effort hours' : 'shared equally (add effort hours to weight them)'}. <b>Planned</b> follows due dates, <b>Earned</b> follows when items were marked done,
-              and <b>Actual cost</b> is the cost entries on the Budget tab. A week's budget is {money(B)}. You can type a Planned % to override a week; clear it to go back to the due dates.
+              and <b>Actual cost</b> is the cost entries on the Budget tab. Planned % and Earned % are shares of the project budget ({money(projectBAC(S))}), so each column adds up to 100% over the whole project. You can type a Planned % (share of the project budget) to override a week; clear it to go back to the due dates.
             </p>
           </div>
           <Controls />

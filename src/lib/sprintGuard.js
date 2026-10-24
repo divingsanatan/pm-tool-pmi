@@ -1,5 +1,6 @@
 import { addDays, DAY, pd } from './dates';
 import { findTask } from './tasks';
+import { leafTasks } from './hier';
 
 /* Work items must stay inside the dates of their sprint. These helpers decide what is inside, what is not,
    and what the sensible ways out are (the choices are shown to the user by store/useTasks.js). */
@@ -55,7 +56,8 @@ export function datePatchViolations(S, ids, patch) {
 }
 
 // Work items of sprint c that fall outside the dates it would have after an edit
-export const tasksOutside = (c, w) => c.tasks.filter((t) => !inWin(w, t.start) || !inWin(w, t.due));
+// (only lowest-level items: a parent's dates are rolled up from its children)
+export const tasksOutside = (c, w) => leafTasks(c.tasks).filter((t) => !inWin(w, t.start) || !inWin(w, t.due));
 
 // A free stretch of calendar, not overlapping any existing sprint, that covers dates lo..hi: where a new sprint can go
 export function gapWindow(S, lo, hi, weeks) {

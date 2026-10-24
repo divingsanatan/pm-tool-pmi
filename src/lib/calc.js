@@ -311,21 +311,22 @@ export function workPlan(S) {
 
 export function wk(S, w) {
   const r = S.report[w - 1] || {};
-  const B = weeklyBAC(S);
   const BAC = projectBAC(S);
   const P = workPlan(S);
   const manual = r.planPct != null;
+  // Planned % and Earned % are shares of the whole project budget (BAC), the same base the work items use for
+  // earned value. Using the weekly budget here left out one-time lines and made the two columns disagree.
   // planned: a typed value for the week wins; otherwise it follows the due dates
   let pv = null;
-  if (manual) pv = r.planPct * B;
+  if (manual) pv = r.planPct * BAC;
   else if (P.total > 0) pv = (P.plan[w - 1] / P.total) * BAC;
   // earned: counted for weeks up to today (future weeks have nothing to report yet)
   let ev = null;
   if (P.total > 0 && started(S) && w <= curWeek(S)) ev = (P.done[w - 1] / P.total) * BAC;
   return {
     w,
-    plan: pv == null ? null : B ? pv / B : null,
-    earn: ev == null ? null : B ? ev / B : null,
+    plan: pv == null ? null : BAC ? pv / BAC : null,
+    earn: ev == null ? null : BAC ? ev / BAC : null,
     manualPlan: manual,
     ac: weekAc(S, w),
     note: r.note || '',
