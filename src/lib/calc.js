@@ -99,8 +99,23 @@ export const hourly = (S) => S.team.reduce((a, t) => {
   const p = personOf(S, t.person);
   return a + (p ? nz(p.rate) * nz(p.cap) : 0);
 }, 0);
-export const dailyCap = (S) => hourly(S) * nz(S.meta.hoursPerDay);
-export const sprintCap = (S) => dailyCap(S) * nz(S.meta.sprintDays);
+// Labour cost of one stakeholder on this project, from numbers typed in the Labour budget:
+//   available hours = (total hours on the project - off hours) x capacity %
+//   cost            = available hours x hourly rate
+// Rate and capacity live on the stakeholder; total hours and off hours belong to this project (the budget team row).
+export function labourOf(S, t) {
+  const p = personOf(S, t.person);
+  if (!p) return null;
+  const total = Math.max(0, nz(t.hours)), off = Math.max(0, nz(t.off));
+  const net = Math.max(0, total - off);
+  const avail = net * nz(p.cap);
+  return { total, off, net, cap: nz(p.cap), rate: nz(p.rate), avail, cost: avail * nz(p.rate), overOff: off > total };
+}
+export const labourRows = (S) => S.team.map((t) => labourOf(S, t)).filter(Boolean);
+export const labourTotal = (S) => labourRows(S).reduce((a, r) => a + r.cost, 0);
+// Labour is a project total now. The weekly figure below is only that total spread evenly over the project weeks,
+// kept for the Dashboard and Weekly tracker (period budgets, planned value); the Budget tab does not use it.
+export const sprintCap = (S) => labourTotal(S) / Math.max(1, nW(S));
 // planned cost of one budget line, expressed per week (one-time lines are not time-phased)
 export function lineWeekly(S, l) {
   if (l.per === 'week') return nz(l.amount);
@@ -642,6 +657,13 @@ export function normalize(S) {
 
   // number of weeks: always from the data (latest dated task, sprint, completion or cost)
   m.weeks = autoWeeks(S);
+  // labour budget rows hold total hours and off hours; rows from earlier versions start at the hours they used to imply
+  // (weeks x hours per day x working days), so the budget does not change until the hours are edited
+  S.team.forEach((t) => {
+    if (t.hours == null) t.hours = Math.round(m.weeks * nz(m.hoursPerDay) * nz(m.sprintDays) * 100) / 100;
+    t.hours = Math.max(0, nz(t.hours));
+    t.off = Math.max(0, nz(t.off));
+  });
   // budget lines get ids so the activity log can tell them apart
   (S.lines || []).forEach((l) => {
     if (!l.id) l.id = uid();

@@ -4,7 +4,7 @@ import { useCosts } from '../store/useCosts';
 import { Cell, SelectCell } from '../components/Field';
 import { Modal } from '../components/UI';
 import WeeksControl from '../components/WeeksControl';
-import { costBy, curWeek, dailyCap, hourly, ledgerTotal, lineOnce, lineWeekly, lineWeeklySum, nW, personOf, projectBAC, sprintCap, weekAc, weeklyBAC } from '../lib/calc';
+import { costBy, curWeek, labourOf, labourTotal, ledgerTotal, lineOnce, lineWeekly, lineWeeklySum, nW, personOf, projectBAC, weekAc } from '../lib/calc';
 import { fdate, today } from '../lib/dates';
 import { hrsf, money, nz, pc } from '../lib/format';
 import { parseCosts } from '../lib/parse';
@@ -128,6 +128,8 @@ function AddLabour({ onClose }) {
   const [pid, setPid] = useState(free[0] ? free[0].id : '');
   const [rate, setRate] = useState(free[0] ? String(free[0].rate == null ? '' : free[0].rate) : '');
   const [cap, setCap] = useState(free[0] ? fmtCap(free[0]) : '100');
+  const [hrs, setHrs] = useState('');
+  const [off, setOff] = useState('');
   const pick = (id) => {
     setPid(id);
     const e = S.people.find((p) => p.id === id);
@@ -143,7 +145,7 @@ function AddLabour({ onClose }) {
       if (!per) return;
       if (rate !== '') per.rate = parseFloat(rate) || 0;
       if (cap !== '') per.cap = (parseFloat(cap) || 0) / 100;
-      if (!p.team.some((t) => t.person === pid)) p.team.push({ person: pid });
+      if (!p.team.some((t) => t.person === pid)) p.team.push({ person: pid, hours: Math.max(0, parseFloat(hrs) || 0), off: Math.max(0, parseFloat(off) || 0) });
     });
     onClose();
   };
@@ -167,7 +169,9 @@ function AddLabour({ onClose }) {
         </label>
         <label className="fld">Hourly rate<input className="c n" type="number" step="any" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} placeholder="0" /></label>
         <label className="fld">Capacity for this project (%)<input className="c n" type="number" step="any" inputMode="decimal" value={cap} onChange={(e) => setCap(e.target.value)} placeholder="100" /></label>
-        <p className="msg" style={{ gridColumn: '1 / -1', margin: 0 }}>Capacity is the share of their working time available to this project.</p>
+        <label className="fld">Total hours on the project<input className="c n" type="number" step="any" inputMode="decimal" value={hrs} onChange={(e) => setHrs(e.target.value)} placeholder="0" /></label>
+        <label className="fld">Off hours (to deduct)<input className="c n" type="number" step="any" inputMode="decimal" value={off} onChange={(e) => setOff(e.target.value)} placeholder="0" /></label>
+        <p className="msg" style={{ gridColumn: '1 / -1', margin: 0 }}>Available hours = (total hours − off hours) × capacity. Cost = available hours × hourly rate.</p>
         <div className="row" style={{ gridColumn: '1 / -1', justifyContent: 'flex-end' }}>
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn primary" onClick={save}>Add to budget</button>
@@ -182,39 +186,41 @@ function LabourRegister() {
   const [adding, setAdding] = useState(false);
   const used = new Set(S.team.map((t) => t.person));
   const setPerson = (id, patch) => update((s) => void Object.assign(s.people.find((x) => x.id === id), patch));
-  const hpw = (per) => nz(per.cap) * nz(S.meta.hoursPerDay) * nz(S.meta.sprintDays);
-  const rows = S.team.map((t, i) => ({ t, i, per: personOf(S, t.person) })).filter((r) => r.per);
-  const totalH = rows.reduce((a, r) => a + hpw(r.per), 0);
-  const totalC = rows.reduce((a, r) => a + nz(r.per.rate) * hpw(r.per), 0);
+  const setTeam = (i, patch) => update((s) => void Object.assign(s.team[i], patch));
+  const rows = S.team.map((t, i) => ({ t, i, per: personOf(S, t.person), L: labourOf(S, t) })).filter((r) => r.per && r.L);
+  const sum = (f) => rows.reduce((a, r) => a + f(r.L), 0);
 
   return (
     <div className="card">
       <div className="row sp">
         <div>
           <h2>Labour budget</h2>
-          <p className="hint">Pick a stakeholder from your list, then set their hourly rate and the share of their time available to this project. People are added and renamed on the Stakeholders tab.</p>
+          <p className="hint">Pick a stakeholder, then set their hourly rate, the share of their time available to this project (capacity), the total hours on the project and any off hours to deduct. Available hours = (total hours − off hours) × capacity. Cost = available hours × hourly rate.</p>
         </div>
         <button className="btn primary" onClick={() => setAdding(true)}>+ Add stakeholder</button>
       </div>
       <div className="scroll">
         <table className="tbl rwd">
-          <thead><tr><th>Stakeholder</th><th className="r">Hourly rate</th><th className="r">Capacity for project</th><th className="r">Hours / week</th><th className="r">Weekly cost</th><th></th></tr></thead>
+          <thead><tr><th>Stakeholder</th><th className="r">Hourly rate</th><th className="r">Capacity for project</th><th className="r">Total hrs</th><th className="r">Off hours</th><th className="r">Available hrs</th><th className="r">Total cost</th><th></th></tr></thead>
           <tbody>
-            {rows.map(({ t, i, per }) => (
+            {rows.map(({ t, i, per, L }) => (
               <tr key={per.id + ':' + i}>
                 <td data-l="Stakeholder"><SelectCell value={t.person} options={S.people.filter((x) => x.id === t.person || !used.has(x.id)).map((x) => [x.id, x.name || '(unnamed)'])} cls="w-md" onCommit={(v) => update((s) => { s.team[i].person = v; })} /></td>
                 <td data-l="Hourly rate"><Cell value={per.rate} type="num" cls="w-md n" label="Hourly rate" onCommit={(v) => setPerson(per.id, { rate: v == null ? 0 : v })} /></td>
                 <td data-l="Capacity %"><Cell value={per.cap} type="pct" cls="w-md n" label="Capacity for this project in percent" onCommit={(v) => setPerson(per.id, { cap: v == null ? 0 : v })} /></td>
-                <td data-l="Hours / week" className="r mono"><span className="cell">{hrsf(hpw(per))}</span></td>
-                <td data-l="Weekly cost" className="r mono"><span className="cell">{money(nz(per.rate) * hpw(per))}</span></td>
+                <td data-l="Total hrs"><Cell value={t.hours} type="num" cls="w-md n" label="Total hours on the project" onCommit={(v) => setTeam(i, { hours: v == null ? 0 : Math.max(0, v) })} /></td>
+                <td data-l="Off hours"><Cell value={t.off} type="num" cls="w-md n" label="Off hours deducted from the total" onCommit={(v) => setTeam(i, { off: v == null ? 0 : Math.max(0, v) })} /></td>
+                <td data-l="Available hrs" className="r mono"><span className="cell" title={L.overOff ? 'Off hours are more than the total hours, so no hours are available' : undefined} style={L.overOff ? { color: 'var(--bad)' } : undefined}>{hrsf(L.avail)}</span></td>
+                <td data-l="Total cost" className="r mono"><span className="cell">{money(L.cost)}</span></td>
                 <td data-l=""><button className="x" onClick={() => update((s) => { s.team.splice(i, 1); })} aria-label="Remove from the labour budget" title="Remove from the labour budget (they stay in RACI)">✕</button></td>
               </tr>
             ))}
-            {!rows.length && (<tr className="empty-row"><td colSpan="6"><span className="cell msg">Nobody in the labour budget yet. Use “+ Add stakeholder”.</span></td></tr>)}
+            {!rows.length && (<tr className="empty-row"><td colSpan="8"><span className="cell msg">Nobody in the labour budget yet. Use “+ Add stakeholder”.</span></td></tr>)}
           </tbody>
-          {rows.length > 0 && (<tfoot><tr><td>Total</td><td className="r mono">{money(hourly(S))}/h</td><td></td><td className="r mono">{hrsf(totalH)}</td><td className="r mono">{money(totalC)}</td><td></td></tr></tfoot>)}
+          {rows.length > 0 && (<tfoot><tr><td>Total</td><td></td><td></td><td className="r mono">{hrsf(sum((l) => l.total))}</td><td className="r mono">{hrsf(sum((l) => l.off))}</td><td className="r mono">{hrsf(sum((l) => l.avail))}</td><td className="r mono">{money(sum((l) => l.cost))}</td><td></td></tr></tfoot>)}
         </table>
       </div>
+      {rows.some((r) => r.L.overOff) && <p className="msg lateTxt" style={{ marginTop: 8 }}>Off hours are higher than total hours for at least one stakeholder, so their available hours are counted as 0.</p>}
       {adding && <AddLabour onClose={() => setAdding(false)} />}
     </div>
   );
@@ -222,7 +228,8 @@ function LabourRegister() {
 
 export default function Budget() {
   const { S, update } = useStore();
-  const dc = dailyCap(S), sc = sprintCap(S), wB = weeklyBAC(S), pB = projectBAC(S), Nw = nW(S);
+  const lab = labourTotal(S), pB = projectBAC(S), Nw = nW(S);
+  const recur = lineWeeklySum(S) * Nw;
   const ac = ledgerTotal(S);
   const cw = curWeek(S);
   const thisWeek = weekAc(S, cw);
@@ -248,14 +255,8 @@ export default function Budget() {
           <h2>Budget summary</h2>
           <p className="hint">Planned cost baseline, and what has actually been spent.</p>
           <div className="totals">
-            <span>Working hours per day</span><Cell sec="meta" f="hoursPerDay" value={S.meta.hoursPerDay} type="num" cls="w-sm n" />
-            <span>Working days per week</span><Cell sec="meta" f="sprintDays" value={S.meta.sprintDays} type="num" cls="w-sm n" />
-            <span>Daily team cap</span><span className="mono">{money(dc)}</span>
-            <span>Weekly team cap</span><span className="mono">{money(sc)}</span>
-            <span>Recurring line items (per week)</span><span className="mono">{money(lineWeeklySum(S))}</span>
-            <div className="sep" />
-            <span className="big">Weekly BAC</span><span className="mono big">{money(wB)}</span>
-            <span>× {Nw} weeks</span><span className="mono">{money(wB * Nw)}</span>
+            <span>Team labour</span><span className="mono">{money(lab)}</span>
+            <span>Recurring line items</span><span className="mono">{money(recur)}</span>
             <span>One-time line items</span><span className="mono">{money(lineOnce(S))}</span>
             <span className="big">Project BAC</span><span className="mono big">{money(pB)}</span>
             <div className="sep" />
@@ -278,14 +279,13 @@ export default function Budget() {
         </div>
         <div className="scroll">
           <table className="tbl rwd">
-            <thead><tr><th>Line item</th><th className="r">Amount</th><th>Basis</th><th className="r">Per week</th><th className="r">Project total</th><th></th></tr></thead>
+            <thead><tr><th>Line item</th><th className="r">Amount</th><th>Basis</th><th className="r">Project total</th><th></th></tr></thead>
             <tbody>
               <tr>
-                <td data-l="Line item"><span className="cell">Team labour (from the register)</span></td>
-                <td data-l="Amount" className="r mono"><span className="cell">{money(sc)}</span></td>
-                <td data-l="Basis"><span className="cell msg">Per week</span></td>
-                <td data-l="Per week" className="r mono"><span className="cell">{money(sc)}</span></td>
-                <td data-l="Project total" className="r mono"><span className="cell">{money(sc * Nw)}</span></td>
+                <td data-l="Line item"><span className="cell">Team labour (from the labour budget)</span></td>
+                <td data-l="Amount" className="r mono"><span className="cell">{money(lab)}</span></td>
+                <td data-l="Basis"><span className="cell msg">Project total</span></td>
+                <td data-l="Project total" className="r mono"><span className="cell">{money(lab)}</span></td>
                 <td data-l=""></td>
               </tr>
               {S.lines.map((l, i) => {
@@ -295,14 +295,13 @@ export default function Budget() {
                     <td data-l="Line item"><Cell sec="lines" i={i} f="name" value={l.name} cls="w-name" placeholder="Line item name" /></td>
                     <td data-l="Amount"><Cell sec="lines" i={i} f="amount" value={l.amount} type="num" cls="w-md n" /></td>
                     <td data-l="Basis"><SelectCell sec="lines" i={i} f="per" value={l.per} options={BASES} cls="w-md" /></td>
-                    <td data-l="Per week" className="r mono"><span className="cell">{once ? '–' : money(lineWeekly(S, l))}</span></td>
                     <td data-l="Project total" className="r mono"><span className="cell">{money(once ? nz(l.amount) : lineWeekly(S, l) * Nw)}</span></td>
                     <td data-l=""><button className="x" onClick={() => update((s) => s.lines.splice(i, 1))} aria-label="Delete line item">✕</button></td>
                   </tr>
                 );
               })}
             </tbody>
-            <tfoot><tr><td>Total</td><td></td><td></td><td className="r mono">{money(wB)}</td><td className="r mono">{money(pB)}</td><td></td></tr></tfoot>
+            <tfoot><tr><td>Total</td><td></td><td></td><td className="r mono">{money(pB)}</td><td></td></tr></tfoot>
           </table>
         </div>
       </div>
