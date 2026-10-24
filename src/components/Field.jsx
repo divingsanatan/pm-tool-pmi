@@ -29,16 +29,22 @@ const conv = (type, v) => {
  * 'pct' is stored as a fraction (0.5) and shown as a percent (50).
  * Text/number edits commit on blur or Enter; dates commit immediately.
  */
-export function Cell({ sec, i = 0, f, value, type = 'text', cls = '', placeholder, label, onCommit, list, disabled }) {
+export function Cell({ sec, i = 0, f, value, type = 'text', cls = '', placeholder, label, onCommit, list, disabled, min }) {
   const { setField } = useStore();
   const shown = toDisplay(type, value);
   const [draft, setDraft] = useState(shown);
+  const [bad, setBad] = useState(false); // a value below `min` was refused
   const shownRef = useRef(shown);
   shownRef.current = shown;
   useEffect(() => setDraft(shown), [shown]);
 
   const commit = (v) => {
     if (v === shown) return;
+    if (min != null && (type === 'num' || type === 'int') && v !== '' && parseFloat(v) < min) {
+      setBad(true); // refuse it; the field snaps back to the stored value
+      setTimeout(() => setBad(false), 2500);
+      return;
+    }
     if (onCommit) onCommit(conv(type, v));
     else setField(sec, i, f, conv(type, v));
   };
@@ -47,8 +53,11 @@ export function Cell({ sec, i = 0, f, value, type = 'text', cls = '', placeholde
 
   return (
     <input
-      className={'c ' + cls}
+      className={'c ' + cls + (bad ? ' bad' : '')}
       type={inputType}
+      min={numeric && min != null ? min : undefined}
+      aria-invalid={bad || undefined}
+      title={bad ? 'Must be ' + min + ' or more' : undefined}
       step={numeric ? 'any' : undefined}
       inputMode={numeric ? 'decimal' : undefined}
       value={draft}

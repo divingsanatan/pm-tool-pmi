@@ -3,7 +3,7 @@ import { useStore } from '../store/StoreContext';
 import { seedWorkspace } from '../lib/seed';
 
 export default function DataPanel() {
-  const { W, replace } = useStore();
+  const { W, replace, track } = useStore();
   const [paste, setPaste] = useState('');
   const [msg, setMsg] = useState('');
   const [armReset, setArmReset] = useState(false);
@@ -22,6 +22,7 @@ export default function DataPanel() {
     const txt = JSON.stringify(W, null, 2);
     try {
       await navigator.clipboard.writeText(txt);
+      track('data', 'Copied the workspace data to the clipboard');
       setMsg('Copied to clipboard.');
     } catch (e) {
       setPaste(txt);
@@ -40,6 +41,7 @@ export default function DataPanel() {
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 500);
+      track('data', 'Downloaded the workspace data as a JSON file');
       setMsg('Download started. If nothing downloads, use Copy instead.');
     } catch (e) {
       setMsg('Download is not available here. Use Copy instead.');

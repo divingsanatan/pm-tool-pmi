@@ -3,6 +3,7 @@ import { seedWorkspace } from '../lib/seed';
 import { normalize } from '../lib/calc';
 import { fixNav, isV3, toWorkspace } from '../lib/migrate';
 import { stampDone } from '../lib/tasks';
+import { addActivity, autoEvents, diffProject, statusSnapshot } from '../lib/activity';
 import { supabase } from '../lib/supabase';
 import { createCloud, fetchCloud, markSynced, newSyncState, pushCloud, workspaceFromRows } from '../lib/cloud';
 import { CloudImport, Splash } from '../components/CloudScreens';
@@ -44,6 +45,8 @@ export function StoreProvider({ children, cloud }) {
   const [problem, setProblem] = useState('');
   const [conflict, setConflict] = useState(false);
 
+  const by = useRef('You');
+  by.current = cloud ? cloud.email || 'You' : 'You';
   const sync = useRef(newSyncState());
   const latest = useRef(W);
   latest.current = W;
@@ -149,26 +152,52 @@ export function StoreProvider({ children, cloud }) {
     return () => document.removeEventListener('visibilitychange', h);
   }, [isCloud, status, flush]);
 
+  // Every edit is compared with the project as it was, and what changed is written to the project's activity log
+  // with the time the edit was made (taken here, when it happens, not when the screen next redraws).
   // update((project, workspace) => { ...mutate... }) edits the CURRENT project on a clone
   const update = useCallback((fn) => {
+    const at = new Date().toISOString();
+    const who = by.current;
     setW((prev) => {
       const next = structuredClone(prev);
       const p = curOf(next);
       const before = curOf(prev);
       fn(p, next);
+      const events = diffProject(before, p);
+      const snap = statusSnapshot(p);
       stampDone(before, p);
       normalize(p);
+      addActivity(p, events.concat(autoEvents(p, snap)), at, who);
       return next;
     });
   }, []);
 
   // updateW(workspace => { ... }) edits anything (projects list, navigation)
   const updateW = useCallback((fn) => {
+    const at = new Date().toISOString();
+    const who = by.current;
     setW((prev) => {
       const next = structuredClone(prev);
       fn(next);
+      const found = new Map();
+      next.projects.forEach((pn) => {
+        const pb = prev.projects.find((x) => x.id === pn.id);
+        found.set(pn.id, pb ? diffProject(pb, pn) : [{ cat: 'project', act: 'created', text: 'Project “' + (pn.meta.name || 'New project') + '” created' }]);
+      });
       next.projects.forEach(normalize);
+      next.projects.forEach((pn) => addActivity(pn, found.get(pn.id), at, who));
       return fixNav(next);
+    });
+  }, []);
+
+  // Records something that happened but is not a change to the data (an export, for example)
+  const track = useCallback((cat, text) => {
+    const at = new Date().toISOString();
+    const who = by.current;
+    setW((prev) => {
+      const next = structuredClone(prev);
+      addActivity(curOf(next), [{ cat, act: 'event', text }], at, who);
+      return next;
     });
   }, []);
 
@@ -176,7 +205,10 @@ export function StoreProvider({ children, cloud }) {
 
   const replace = useCallback((next) => {
     const w = toWorkspace(next);
-    if (w) setW(w);
+    if (w) {
+      addActivity(curOf(w), [{ cat: 'data', act: 'imported', text: 'The workspace data was replaced by an import or reset' }], new Date().toISOString(), by.current);
+      setW(w);
+    }
     return !!w;
   }, []);
 
@@ -209,7 +241,7 @@ export function StoreProvider({ children, cloud }) {
 
   const S = curOf(W);
   return (
-    <Ctx.Provider value={{ W, S, nav: W.nav, saved, cloud: cloud ? { email: cloud.email, signOut: cloud.signOut } : null, update, updateW, setNav, replace, setField }}>
+    <Ctx.Provider value={{ W, S, nav: W.nav, saved, cloud: cloud ? { email: cloud.email, signOut: cloud.signOut } : null, update, updateW, setNav, replace, setField, track }}>
       {children}
       {conflict && (
         <div role="alert" style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 50, padding: '12px 16px', background: 'var(--bad-bg)', color: 'var(--bad)', display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', borderTop: '1px solid var(--bad)' }}>

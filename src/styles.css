@@ -602,3 +602,25 @@ label.fld{max-width:100%;min-width:0}
 .g-bar.ms>i{display:none}
 .g-row.g-sum .g-lab{background:var(--row)}
 @media print{.w-add,.w-open,.w-grip{display:none}}
+
+/* ---- activity ---- */
+.live{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;color:var(--good);background:var(--good-bg);border-radius:999px;padding:2px 9px;vertical-align:middle;margin-left:6px;text-transform:uppercase;letter-spacing:.05em}
+.live>i{width:7px;height:7px;border-radius:50%;background:var(--good)}
+.act-sum{display:flex;gap:18px;flex-wrap:wrap;margin:6px 0 12px;color:var(--muted);font-size:13px}
+.act-sum b{color:var(--ink)}
+.act-day{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:18px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--line)}
+.act-list{list-style:none;margin:0;padding:0}
+.act{display:grid;grid-template-columns:78px 26px minmax(0,1fr) auto;gap:10px;align-items:start;padding:8px 6px;border-bottom:1px solid var(--line)}
+.act.new{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+.act-t{font-size:12.5px;color:var(--muted);padding-top:2px}
+.act-ic{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border:1px solid;border-radius:50%;font-size:11px;font-weight:700}
+.act-x{overflow-wrap:anywhere}
+.act-d{margin:4px 0 0;padding-left:16px;font-size:12.5px;color:var(--muted)}
+.act-d li{list-style:disc}
+.act-m{font-size:11.5px;margin-top:2px}
+.act-more{padding:0;font-size:12px;text-decoration:underline}
+.d-hist{list-style:none;margin:0;padding:0;font-size:13px}
+.d-hist li{padding:5px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+.c.bad{border-color:var(--bad)!important;background:var(--bad-bg)}
+@media (prefers-reduced-motion:no-preference){.live>i{animation:livepulse 1.6s ease-in-out infinite}@keyframes livepulse{50%{opacity:.25}}.act.new{transition:background .6s}}
+@media (max-width:720px){.act{grid-template-columns:62px 24px minmax(0,1fr)}.act>.x{grid-column:3}}

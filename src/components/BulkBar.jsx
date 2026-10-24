@@ -12,7 +12,8 @@ function ValueDialog({ kind, count, tasks, container, onApply, onClose }) {
   const isDate = kind === 'start' || kind === 'due';
   const title = { start: 'Set start date', due: 'Set due date', effort: 'Set effort (hours)' }[kind];
   const [v, setV] = useState('');
-  const ok = v !== '' && (isDate || !isNaN(parseFloat(v)));
+  const neg = !isDate && v !== '' && parseFloat(v) < 0;
+  const ok = v !== '' && (isDate || (!isNaN(parseFloat(v)) && !neg));
   const outside = isDate && v && container.start && container.end && (v < container.start || v > container.end);
   const clash = isDate && v ? tasks.filter((t) => (kind === 'start' ? t.due && t.due < v : t.start && t.start > v)).length : 0;
   const apply = () => {
@@ -26,6 +27,7 @@ function ValueDialog({ kind, count, tasks, container, onApply, onClose }) {
         <label className="fld">{isDate ? 'Date' : 'Hours'}
           <input className="c" type={isDate ? 'date' : 'number'} step={isDate ? undefined : 'any'} min={isDate ? undefined : 0} autoFocus value={v} onChange={(e) => setV(e.target.value)} />
         </label>
+        {neg && <p className="msg" style={{ color: 'var(--bad)' }} role="alert">Effort cannot be negative. Enter 0 or more hours.</p>}
         {outside && <p className="msg" style={{ color: 'var(--warn)' }}>This date is outside the sprint ({fdate(container.start)} – {fdate(container.end)}). It will stretch the project timeline and budget.</p>}
         {clash > 0 && <p className="msg" style={{ color: 'var(--warn)' }}>{clash} selected item{clash > 1 ? 's have' : ' has'} a {kind === 'start' ? 'due date before this start date' : 'start date after this due date'}.</p>}
         <div className="row" style={{ justifyContent: 'flex-end', marginTop: 14 }}>

@@ -8,6 +8,7 @@ import { AssigneeMenu } from '../components/Pickers';
 import { PRIORITIES, allContainers, childTypeFor, findTask, isDoneStatus, nameOf, statusOf, statusesOf, typeOf, typesOf } from '../lib/tasks';
 import { ancestorsOf, flatTree, subtreeIds } from '../lib/hier';
 import { fdate } from '../lib/dates';
+import { clock, dayLabel } from '../lib/activity';
 import { hrsf, nz, pc } from '../lib/format';
 
 export default function TaskDrawer({ taskId, onClose, onOpen }) {
@@ -100,7 +101,7 @@ export default function TaskDrawer({ taskId, onClose, onOpen }) {
             <SelectCell value={t.priority} options={[['', 'None']].concat(PRIORITIES.map((p) => [p.id, p.label]))} onCommit={(v) => tk.patch(t.id, { priority: v })} />
           </label>
           <label className="fld">Effort (hours){effortRolled && <span className="msg"> · Σ from children</span>}
-            {effortRolled ? <span className="c ro-field n">{hrsf(t.effort)}</span> : <Cell value={t.effort} type="num" cls="n" placeholder={milestone ? 'Milestones carry no effort' : '–'} disabled={milestone} onCommit={(v) => tk.patch(t.id, { effort: v })} />}
+            {effortRolled ? <span className="c ro-field n">{hrsf(t.effort)}</span> : <Cell value={t.effort} type="num" min={0} cls="n" placeholder={milestone ? 'Milestones carry no effort' : '–'} disabled={milestone} onCommit={(v) => tk.patch(t.id, { effort: v })} />}
           </label>
           {!back && (
             <>
@@ -148,6 +149,14 @@ export default function TaskDrawer({ taskId, onClose, onOpen }) {
             <button className="btn" onClick={addSub}>Add</button>
           </div>
         </div>
+
+        <h3 className="d-h">History</h3>
+        <ul className="d-hist">
+          {(S.activity || []).filter((e) => e.ref && e.ref.id === t.id).slice(-8).reverse().map((e) => (
+            <li key={e.id}><span className="mono msg" title={new Date(e.at).toString()}>{dayLabel(e.at)} {clock(e.at)}</span> {e.text}</li>
+          ))}
+          {!(S.activity || []).some((e) => e.ref && e.ref.id === t.id) && <li className="msg">No recorded changes yet.</li>}
+        </ul>
 
         <div style={{ marginTop: 20 }}>
           <button

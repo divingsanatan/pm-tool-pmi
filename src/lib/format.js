@@ -1,5 +1,12 @@
 export const nz = (v) => (v == null || isNaN(v) ? 0 : v);
 
+// Effort in hours is never negative: anything below zero is refused (null = no estimate)
+export const cleanEffort = (v) => {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, n) : null;
+};
+
 export function cl(v, a, b) {
   v = parseInt(v, 10);
   if (isNaN(v)) v = a;

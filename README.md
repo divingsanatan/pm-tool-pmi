@@ -36,6 +36,16 @@ ClickUp-style workspace:
 - **WBS tab** (whole project: every sprint is a branch, the Backlog last) and the **WBS view** inside a sprint: numbered WBS codes (1, 1.1, 1.1.1), expand / collapse, show N levels, type filter, search. Keyboard: Enter = item below, Tab / Shift+Tab = indent / outdent, Alt+Up / Down = reorder. Drag the grip to reorder, or drop onto the middle of an item to nest under it. The List view, Backlog, Timeline and RACI chart all show the same tree.
 - Deleting, moving or duplicating an item applies to everything below it. Old checklist subtasks are converted to real child items of type Subtask the first time a project loads.
 
+## Activity log
+
+- **Activity tab** (next to Change control) lists everything that happens in the project, newest first, each entry with the exact time it happened (to the second, in your local time; hover for the full timestamp), who did it, and what changed (for example *T-4 “Login”: Status To do → In progress*). It updates live and highlights new entries for a few seconds.
+- It is built by comparing the project before and after every edit (`src/lib/activity.js`, called from the store), so any screen or action is covered: work items (create, delete, move, nest, rename, status, assignees, priority, dates, effort, description, RACI), sprints, stakeholders, budget lines, the budget team, cost entries, the weekly tracker, RAID items, change requests and baselines, statuses, work item types, project settings, and data imports and exports. A parent that becomes Done because its children are done is logged too. A bulk change (one action touching 4 or more items) is one entry. View settings (selected week, timeline zoom) are not logged.
+- Stored in `project.activity` (inside the same project data, nothing to change in Supabase). The latest 1000 events are kept; **Export CSV** saves the log. The History section of a work item shows that item's own changes.
+
+## Rules for values
+
+- **Effort in hours is never negative.** The field refuses a negative number (it snaps back and flags the cell), bulk "Set effort" will not apply one, and anything negative that arrives through an import or an old file is set to 0.
+
 ## Project layout
 
 ```

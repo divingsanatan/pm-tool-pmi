@@ -57,7 +57,7 @@ function Row({ t, depth, kidList, expanded, onToggle, onOpen, selected, onSelect
         {effortRolled ? (
           <span className="cell roll n w-sm" title="Rolled up from child items">Σ {hrsf(t.effort)}</span>
         ) : (
-          <Cell value={t.effort} type="num" cls="n w-sm" label="Effort in hours" placeholder={milestone ? '' : '–'} disabled={milestone} onCommit={(v) => tk.patch(t.id, { effort: v })} />
+          <Cell value={t.effort} type="num" cls="n w-sm" label="Effort in hours" min={0} placeholder={milestone ? '' : '–'} disabled={milestone} onCommit={(v) => tk.patch(t.id, { effort: v })} />
         )}
       </div>
       <div className="c-open"><button className="x" onClick={() => onOpen(t.id)} aria-label="Open details" title="Open details">⤢</button></div>

@@ -6,6 +6,7 @@ import Dashboard from './tabs/Dashboard';
 import Weekly from './tabs/Weekly';
 import Timeline from './tabs/Timeline';
 import Wbs from './tabs/Wbs';
+import Activity from './tabs/Activity';
 import Budget from './tabs/Budget';
 import Raci from './tabs/Raci';
 import Stakeholders from './tabs/Stakeholders';
@@ -14,7 +15,7 @@ import Change from './tabs/Change';
 import SprintView from './tabs/SprintView';
 import BacklogView from './tabs/BacklogView';
 
-const VIEWS = { dash: Dashboard, weekly: Weekly, wbs: Wbs, time: Timeline, budget: Budget, people: Stakeholders, raci: Raci, raid: Raid, change: Change };
+const VIEWS = { dash: Dashboard, weekly: Weekly, wbs: Wbs, time: Timeline, budget: Budget, people: Stakeholders, raci: Raci, raid: Raid, change: Change, activity: Activity };
 
 export default function App() {
   const { S, nav } = useStore();

@@ -14,6 +14,7 @@ export const TABS = [
   ['raci', 'RACI'],
   ['raid', 'RAID log'],
   ['change', 'Change control'],
+  ['activity', 'Activity'],
 ];
 
 export default function Header() {

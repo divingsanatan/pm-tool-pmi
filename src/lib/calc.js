@@ -1,7 +1,8 @@
 import { DAY, pd, today, fsh } from './dates';
-import { nz, cl, money as money0 } from './format';
+import { nz, cl, cleanEffort, money as money0 } from './format';
 import { DEFAULT_STATUSES, DEFAULT_TYPES, allContainers, firstOpenStatus, isDoneStatus, makeTask, statusPct, typeOf, uid } from './tasks';
 import { flatTree, leafTasks, rollupContainer } from './hier';
+import { ACTIVITY_MAX } from './activity';
 
 /* ---------- timeline helpers ---------- */
 export const nW = (S) => S.meta.weeks;
@@ -565,6 +566,9 @@ export function normalize(S) {
   const typeIds = new Set(S.types.map((x) => x.id));
   const fallbackType = typeIds.has('task') ? 'task' : S.types[0].id;
   allContainers(S).forEach((c) => {
+    c.tasks.forEach((t) => {
+      t.effort = cleanEffort(t.effort); // hours are never negative
+    });
     // earlier versions kept subtasks as a small checklist inside a task; they are real child work items now
     const born = [];
     c.tasks.forEach((t) => {
@@ -638,6 +642,15 @@ export function normalize(S) {
 
   // number of weeks: always from the data (latest dated task, sprint, completion or cost)
   m.weeks = autoWeeks(S);
+  // budget lines get ids so the activity log can tell them apart
+  (S.lines || []).forEach((l) => {
+    if (!l.id) l.id = uid();
+  });
+  // activity log: a list of stamped entries, capped
+  if (!Array.isArray(S.activity)) {
+    S.activity = [{ id: uid(), at: new Date().toISOString(), by: 'System', cat: 'project', act: 'info', text: 'Activity tracking started for this project' }];
+  }
+  S.activity = S.activity.filter((e) => e && e.at && e.text).slice(-ACTIVITY_MAX);
   m.sprintWeeks = Math.max(1, Math.round(nz(m.sprintWeeks)) || 2);
   while (S.report.length < m.weeks) S.report.push({ planPct: null, earnPct: null, note: '' });
 

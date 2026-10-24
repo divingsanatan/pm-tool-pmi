@@ -210,7 +210,7 @@ export default function WbsTree({ ids, onOpen }) {
           {back ? <span className="msg">–</span> : datesRolled ? <span className={'cell roll' + (late ? ' od' : '')} title="Rolled up from child items">Σ {t.due ? fdate(t.due) : '–'}</span> : <Cell value={t.due} type="date" cls={'w-date' + (late ? ' od' : '')} label={ty.milestone ? 'Date' : 'Due date'} onCommit={(v) => tk.patch(t.id, { due: v })} />}
         </div>
         <div className="w-c">
-          {effortRolled ? <span className="cell roll n w-sm" title="Rolled up from child items">Σ {hrsf(t.effort)}</span> : <Cell value={t.effort} type="num" cls="n w-sm" label="Effort in hours" placeholder={ty.milestone ? '' : '–'} disabled={ty.milestone} onCommit={(v) => tk.patch(t.id, { effort: v })} />}
+          {effortRolled ? <span className="cell roll n w-sm" title="Rolled up from child items">Σ {hrsf(t.effort)}</span> : <Cell value={t.effort} type="num" cls="n w-sm" label="Effort in hours" min={0} placeholder={ty.milestone ? '' : '–'} disabled={ty.milestone} onCommit={(v) => tk.patch(t.id, { effort: v })} />}
         </div>
         <div className="w-c w-pct">
           {pct == null ? <span className="msg">–</span> : (<><div className="bar"><i style={{ width: Math.min(100, pct * 100) + '%' }} /></div><span className="mono">{pc(pct, 0)}</span></>)}

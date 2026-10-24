@@ -3,6 +3,10 @@ import { useStore } from './StoreContext';
 import { alignSprintDates } from '../lib/calc';
 import { childTypeFor, containerById, findTask, firstOpenStatus, isDoneStatus, makeTask, uid } from '../lib/tasks';
 import { leafTasks, subtreeIds } from '../lib/hier';
+import { cleanEffort } from '../lib/format';
+
+// effort in hours can never be negative
+const safe = (f) => (f && 'effort' in f ? { ...f, effort: cleanEffort(f.effort) } : f);
 
 // Only the highest items of a selection: an item is dropped when one of its ancestors is selected too
 function topIds(c, ids) {
@@ -80,6 +84,7 @@ export function useTasks() {
     () => ({
       // a new top-level work item
       add(cid, fields = {}) {
+        fields = safe(fields);
         const id = fields.id || uid();
         update((p) => {
           const c = containerById(p, cid);
@@ -89,6 +94,7 @@ export function useTasks() {
       },
       // a new work item under another one (its type steps down the ladder: epic > feature > story > task > subtask)
       addChild(parentId, fields = {}) {
+        fields = safe(fields);
         const id = fields.id || uid();
         update((p) => {
           const f = findTask(p, parentId);
@@ -100,6 +106,7 @@ export function useTasks() {
       },
       // a new work item right after another one, at the same level
       addSibling(afterId, fields = {}) {
+        fields = safe(fields);
         const id = fields.id || uid();
         update((p) => {
           const f = findTask(p, afterId);
@@ -110,6 +117,7 @@ export function useTasks() {
         return id;
       },
       patch(id, patch) {
+        patch = safe(patch);
         update((p) => {
           const f = findTask(p, id);
           if (f) Object.assign(f.t, patch);
@@ -121,6 +129,7 @@ export function useTasks() {
       },
       // change several work items in one update (one render, one save)
       patchMany(ids, patch) {
+        patch = safe(patch);
         update((p) => {
           ids.forEach((id) => {
             const f = findTask(p, id);
