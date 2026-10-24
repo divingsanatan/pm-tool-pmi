@@ -20,6 +20,33 @@ export const PRIORITIES = [
 ];
 export const SPRINT_STATUSES = ['Not started', 'Active', 'Done'];
 
+// Work item types are per project and editable. A milestone is a point in time (no effort, not counted in earned value);
+// "raci" says whether the RACI check expects an Accountable and a Responsible for items of that type.
+export const DEFAULT_TYPES = [
+  { id: 'milestone', label: 'Milestone', color: 'var(--s4)', icon: '◆', milestone: true, raci: true },
+  { id: 'epic', label: 'Epic', color: 'var(--s5)', icon: 'E', milestone: false, raci: true },
+  { id: 'feature', label: 'Feature', color: 'var(--s3)', icon: 'F', milestone: false, raci: true },
+  { id: 'story', label: 'Story', color: 'var(--s6)', icon: 'S', milestone: false, raci: true },
+  { id: 'task', label: 'Task', color: 'var(--accent)', icon: 'T', milestone: false, raci: true },
+  { id: 'subtask', label: 'Subtask', color: 'var(--muted)', icon: 's', milestone: false, raci: false },
+  { id: 'bug', label: 'Bug', color: 'var(--bad)', icon: 'B', milestone: false, raci: true },
+];
+export const TYPE_COLORS = STATUS_COLORS;
+const LADDER = ['epic', 'feature', 'story', 'task', 'subtask'];
+export const typesOf = (p) => (p.types && p.types.length ? p.types : DEFAULT_TYPES);
+export const typeOf = (p, id) => typesOf(p).find((x) => x.id === id) || typesOf(p).find((x) => x.id === 'task') || typesOf(p)[0];
+// the type a new child gets: one step down the ladder (epic > feature > story > task > subtask)
+export function childTypeFor(p, parentType) {
+  const have = new Set(typesOf(p).map((x) => x.id));
+  const i = LADDER.indexOf(parentType);
+  if (i >= 0) {
+    for (let k = i + 1; k < LADDER.length; k++) if (have.has(LADDER[k])) return LADDER[k];
+    return parentType;
+  }
+  if (parentType === 'milestone') return have.has('task') ? 'task' : typesOf(p)[0].id;
+  return have.has('subtask') ? 'subtask' : have.has('task') ? 'task' : typesOf(p)[0].id;
+}
+
 export const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);
 export const statusesOf = (p) => (p.statuses && p.statuses.length ? p.statuses : DEFAULT_STATUSES);
 export const firstOpenStatus = (p) => (statusesOf(p).find((s) => !s.done) || statusesOf(p)[0]).id;
@@ -51,6 +78,8 @@ export function makeTask(p, fields) {
     id: uid(),
     code: 'T-' + n,
     name: 'New task',
+    type: 'task',
+    parent: '',
     status: firstOpenStatus(p),
     assignees: [],
     priority: 'normal',
@@ -58,7 +87,6 @@ export function makeTask(p, fields) {
     due: '',
     effort: null,
     description: '',
-    subtasks: [],
     raci: {},
     ...fields,
   };
@@ -102,6 +130,7 @@ export function blankProject(name, id) {
     cr: [],
     baselines: [],
     statuses: DEFAULT_STATUSES.map((x) => ({ ...x })),
+    types: DEFAULT_TYPES.map((x) => ({ ...x })),
     sprints: [{ id: uid(), name: 'Sprint 1', status: 'Not started', start, end: addDays(start, 13), tasks: [] }],
     backlog: { id: 'backlog', name: 'Backlog', tasks: [] },
     counter: 1,

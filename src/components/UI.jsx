@@ -1,10 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import DataPanel from './DataPanel';
 import StatusManager from './StatusManager';
+import TypeManager from './TypeManager';
 import { useStore } from '../store/StoreContext';
 import { useCosts } from '../store/useCosts';
 import { today } from '../lib/dates';
-import './toast.css';
 
 const Ctx = createContext(null);
 export const useUI = () => useContext(Ctx);
@@ -64,40 +64,15 @@ export function UIProvider({ children }) {
   const [data, setData] = useState(false);
   const [cost, setCost] = useState(null);
   const [stat, setStat] = useState(false);
+  const [typ, setTyp] = useState(false);
   const openStatuses = useCallback(() => setStat(true), []);
+  const openTypes = useCallback(() => setTyp(true), []);
   const addCost = useCallback((init = {}) => setCost(init), []);
   const ask = useCallback((o) => setDlg(o), []);
-  // toast({ id, tone: 'info' | 'warn' | 'bad', text, ttl, actions: [{ label, primary, onClick }] }); a toast with the same id replaces the old one
-  const [toasts, setToasts] = useState([]);
-  const dismiss = useCallback((id) => setToasts((t) => t.filter((x) => x.id !== id)), []);
-  const toast = useCallback((o) => {
-    const id = o.id || Math.random().toString(36).slice(2);
-    setToasts((t) => t.filter((x) => x.id !== id).concat({ ...o, id, n: Date.now() + Math.random() }));
-  }, []);
-  useEffect(() => {
-    const timed = toasts.filter((t) => t.ttl && !(t.actions && t.actions.length));
-    if (!timed.length) return undefined;
-    const ids = timed.map((t) => setTimeout(() => dismiss(t.id), t.ttl));
-    return () => ids.forEach(clearTimeout);
-  }, [toasts, dismiss]);
   const openData = useCallback(() => setData(true), []);
   return (
-    <Ctx.Provider value={{ ask, openData, addCost, openStatuses, toast, dismiss }}>
+    <Ctx.Provider value={{ ask, openData, addCost, openStatuses, openTypes }}>
       {children}
-      <div className="toasts" role="region" aria-live="polite" aria-label="Notifications">
-        {toasts.map((t) => (
-          <div key={t.id} className={'toast ' + (t.tone || 'info')} role={t.actions && t.actions.length ? 'alertdialog' : 'status'}>
-            <p>{t.text}</p>
-            <div className="toast-act">
-              {(t.actions || []).map((a, i) => (
-                <button key={i} className={'btn' + (a.primary ? ' primary' : '')} onClick={() => { dismiss(t.id); a.onClick(); }}>{a.label}</button>
-              ))}
-              {t.actions && t.actions.length > 0 && <button className="btn" onClick={() => dismiss(t.id)}>Cancel</button>}
-            </div>
-            <button className="x toast-x" onClick={() => dismiss(t.id)} aria-label="Dismiss">✕</button>
-          </div>
-        ))}
-      </div>
       {dlg && (
         <Modal title={dlg.title} onClose={() => setDlg(null)}>
           <p className="hint" style={{ marginBottom: 16 }}>{dlg.body}</p>
@@ -120,6 +95,11 @@ export function UIProvider({ children }) {
       {stat && (
         <Modal title="Task statuses" onClose={() => setStat(false)} wide>
           <StatusManager />
+        </Modal>
+      )}
+      {typ && (
+        <Modal title="Work item types" onClose={() => setTyp(false)} wide>
+          <TypeManager />
         </Modal>
       )}
       {cost && (

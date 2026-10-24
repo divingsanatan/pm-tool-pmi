@@ -88,3 +88,11 @@ export function BacklogIcon({ size = 16 }) {
     </svg>
   );
 }
+
+// small coloured badge for a work item type (a milestone is drawn as a bare diamond)
+export function TypeBadge({ type, size = 18 }) {
+  const t = type || {};
+  const color = t.color || 'var(--muted)';
+  if (t.milestone) return <span className="tb ms" style={{ width: size, height: size, color, fontSize: size * 0.95 }} title={t.label}>{t.icon || '◆'}</span>;
+  return <span className="tb" style={{ width: size, height: size, background: color, fontSize: size * 0.58 }} title={t.label}>{t.icon || (t.label || '?').charAt(0)}</span>;
+}

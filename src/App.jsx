@@ -5,6 +5,7 @@ import { useStore } from './store/StoreContext';
 import Dashboard from './tabs/Dashboard';
 import Weekly from './tabs/Weekly';
 import Timeline from './tabs/Timeline';
+import Wbs from './tabs/Wbs';
 import Budget from './tabs/Budget';
 import Raci from './tabs/Raci';
 import Stakeholders from './tabs/Stakeholders';
@@ -12,9 +13,8 @@ import Raid from './tabs/Raid';
 import Change from './tabs/Change';
 import SprintView from './tabs/SprintView';
 import BacklogView from './tabs/BacklogView';
-import OutsideBanner from './components/OutsideBanner';
 
-const VIEWS = { dash: Dashboard, weekly: Weekly, time: Timeline, budget: Budget, people: Stakeholders, raci: Raci, raid: Raid, change: Change };
+const VIEWS = { dash: Dashboard, weekly: Weekly, wbs: Wbs, time: Timeline, budget: Budget, people: Stakeholders, raci: Raci, raid: Raid, change: Change };
 
 export default function App() {
   const { S, nav } = useStore();
@@ -37,7 +37,6 @@ export default function App() {
         ) : (
           <div className="wrap" key={S.id}>
             <Header />
-            <OutsideBanner />
             <main>
               <View />
             </main>

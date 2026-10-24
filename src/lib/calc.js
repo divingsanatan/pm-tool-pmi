@@ -1,9 +1,7 @@
 import { DAY, pd, today, fsh } from './dates';
 import { nz, cl, money as money0 } from './format';
-import { DEFAULT_STATUSES, allContainers, firstOpenStatus, isDoneStatus, makeTask, statusPct, uid } from './tasks';
-import { budgetModel, sumRange, weekOf, workDaysOf, validDate } from './budget';
-
-export { budgetModel, sumRange, weekOf, workDaysOf };
+import { DEFAULT_STATUSES, DEFAULT_TYPES, allContainers, firstOpenStatus, isDoneStatus, makeTask, statusPct, typeOf, uid } from './tasks';
+import { flatTree, leafTasks, rollupContainer } from './hier';
 
 /* ---------- timeline helpers ---------- */
 export const nW = (S) => S.meta.weeks;
@@ -42,33 +40,34 @@ export function curWeek(S) {
 export const started = (S) => pd(today()) >= pd(S.meta.start);
 
 /* ---------- work breakdown (derived from sprints and their tasks) ---------- */
-// Flat list used by the Timeline and Dashboard: one Phase row per sprint, then its tasks as WP rows.
+// Flat list used by the Timeline and Dashboard: one Phase row per sprint, then its work items in tree order.
+// Items without children are WP rows (the real work); items with children are Sum rows (their values are roll-ups).
 // The Backlog is not a sprint and is not scheduled work, so it is not part of this list.
 export function wbsOf(S) {
   const rows = [];
-  let n = 0;
-  const add = (sp, id) => {
-    rows.push({ id, name: sp.name, type: 'Phase', sprintId: sp.id });
-    sp.tasks.forEach((t) =>
+  S.sprints.forEach((sp, i) => {
+    const n = String(i + 1);
+    rows.push({ id: n, name: sp.name, type: 'Phase', sprintId: sp.id });
+    flatTree(sp.tasks, { prefix: n }).forEach((r) => {
+      const t = r.t;
       rows.push({
-        id: t.code, name: t.name, type: 'WP', sprintId: sp.id, taskId: t.id, assignees: t.assignees,
-        hrs: t.effort, start: t.start || '', finish: t.due || '', pct: statusPct(S, t.status),
-      })
-    );
-  };
-  S.sprints.forEach((sp) => {
-    n++;
-    add(sp, String(n));
+        id: t.code, wbs: r.wbs, depth: r.depth, name: t.name, type: r.kids ? 'Sum' : 'WP', kind: t.type, sprintId: sp.id, taskId: t.id,
+        parentId: t.parent || '', kids: r.kids, assignees: t.assignees, hrs: t.effort, start: t.start || '', finish: t.due || '',
+        pct: r.kids ? nz(t.pct) : statusPct(S, t.status),
+      });
+    });
   });
   return rows;
 }
 
 export const wps = (S) => wbsOf(S).filter((x) => x.type === 'WP');
 
-// Roll-up for one Phase row: hours, dates and completion (weighted by effort when tasks have it)
+// Roll-up for one Phase row: hours, dates and completion (weighted by effort when items have it).
+// Top-level items already hold their children's totals, so only they are added up (nothing is counted twice).
 export function roll(S, p) {
-  const k = wbsOf(S).filter((x) => x.type === 'WP' && x.sprintId === p.sprintId);
-  const o = { hrs: 0, pct: null, n: k.length, s: null, f: null };
+  const all = wbsOf(S).filter((x) => x.type !== 'Phase' && x.sprintId === p.sprintId);
+  const k = all.filter((x) => x.depth === 0);
+  const o = { hrs: 0, pct: null, n: all.filter((x) => x.type === 'WP').length, s: null, f: null };
   const weighted = k.some((x) => nz(x.hrs) > 0);
   let wsum = 0, e = 0;
   k.forEach((x) => {
@@ -92,8 +91,6 @@ export function wstat(x) {
 }
 
 /* ---------- budget ---------- */
-// The budget is counted day by day (lib/budget.js): labour = working days x hours x rates, recurring line items are
-// charged on the days they cover, one-time items once. A part week only gets the days that fall inside the project.
 // The labour budget is a list of stakeholders ({ person: id }); their rate and capacity live on the stakeholder itself,
 // so the Budget register and the RACI chart always show the same numbers.
 export const personOf = (S, id) => S.people.find((p) => p.id === id);
@@ -102,11 +99,9 @@ export const hourly = (S) => S.team.reduce((a, t) => {
   return a + (p ? nz(p.rate) * nz(p.cap) : 0);
 }, 0);
 export const dailyCap = (S) => hourly(S) * nz(S.meta.hoursPerDay);
-export const sprintCap = (S) => dailyCap(S) * workDaysOf(S.meta).length;
-// What one budget line would cost over a COMPLETE week. This is only a run rate for reference; the real cost
-// of a line follows the days of the project (see budgetModel).
+export const sprintCap = (S) => dailyCap(S) * nz(S.meta.sprintDays);
+// planned cost of one budget line, expressed per week (one-time lines are not time-phased)
 export function lineWeekly(S, l) {
-  if (l.per === 'day') return nz(l.amount) * workDaysOf(S.meta).length;
   if (l.per === 'week') return nz(l.amount);
   if (l.per === 'month') return (nz(l.amount) * 12) / 52;
   if (l.per === 'sprint') return nz(l.amount) / Math.max(1, S.meta.sprintWeeks);
@@ -114,10 +109,9 @@ export function lineWeekly(S, l) {
 }
 export const lineWeeklySum = (S) => S.lines.reduce((a, l) => a + lineWeekly(S, l), 0);
 export const lineOnce = (S) => S.lines.reduce((a, l) => a + (l.per === 'project' ? nz(l.amount) : 0), 0);
-// run rate of one full week (reference only)
 export const weeklyBAC = (S) => sprintCap(S) + lineWeeklySum(S);
-export const projectBAC = (S) => budgetModel(S).totals.bac;
-export const projectEnd = (S) => budgetModel(S).end;
+export const projectBAC = (S) => weeklyBAC(S) * nW(S) + lineOnce(S);
+export const projectEnd = (S) => pd(S.meta.start) + (nW(S) * 7 - 1) * DAY;
 
 /* ---------- actual cost ledger ---------- */
 export const ledgerTotal = (S) => S.ledger.reduce((a, e) => a + nz(e.amount), 0);
@@ -152,7 +146,6 @@ export function autoWeeks(S) {
     });
   });
   S.ledger.forEach((e) => take(e.date));
-  if (S.meta.endMode === 'fixed') take(S.meta.end);
   return Math.max(1, Math.min(104, Math.ceil(((end - start) / DAY + 1) / 7)));
 }
 
@@ -160,11 +153,10 @@ const mStart = (ms) => Date.UTC(new Date(ms).getUTCFullYear(), new Date(ms).getU
 const mNext = (ms) => Date.UTC(new Date(ms).getUTCFullYear(), new Date(ms).getUTCMonth() + 1, 1);
 const norm = (x) => (x || '').trim().toLowerCase();
 
-/** Planned vs actual cost grouped by 'week' | 'month' | 'sprint' | 'element'. Planned comes from the day-by-day budget. */
+/** Planned vs actual cost grouped by 'week' | 'month' | 'sprint' | 'element'. */
 export function costBy(S, mode) {
-  const M = budgetModel(S);
-  const start = M.start, end = M.end;
-  const shownEnd = wkE(S, nW(S)); // last day covered by the weekly rows (costs can run past the planned end)
+  const wB = weeklyBAC(S), perDay = wB / 7;
+  const start = pd(S.meta.start), end = projectEnd(S);
   const led = S.ledger.map((e) => ({ amount: nz(e.amount), element: e.element, t: e.date ? pd(e.date) : null }));
   const sumIn = (a, b) => {
     let s = 0, n = 0;
@@ -176,27 +168,27 @@ export function costBy(S, mode) {
     });
     return { s, n };
   };
-  const plan = (a, b) => sumRange(M, a, b).total;
+  const overlap = (a, b) => {
+    const lo = Math.max(a, start), hi = Math.min(b, end);
+    return hi >= lo ? (hi - lo) / DAY + 1 : 0;
+  };
   const rows = [];
-  const unplaced = M.totals.onceUnphased;
   if (mode === 'week') {
     for (let w = 1; w <= nW(S); w++) {
       const a = wkS(S, w), b = wkE(S, w), { s, n } = sumIn(a, b);
-      rows.push({ key: 'w' + w, label: 'Week ' + w, sub: fsh(a) + ' – ' + fsh(b), planned: weekOf(M, w).total, actual: s, n });
+      rows.push({ key: 'w' + w, label: 'Week ' + w, sub: fsh(a) + ' – ' + fsh(b), planned: wB, actual: s, n });
     }
-    const out = led.filter((e) => e.t == null || e.t < start || e.t > shownEnd);
-    if (out.length) rows.push({ key: 'out', label: 'Outside the project weeks', sub: 'No date, or dated before the start or after the last week', planned: 0, actual: out.reduce((a, e) => a + e.amount, 0), n: out.length });
-    if (unplaced > 0) rows.push({ key: 'once', label: 'One-time items without a date', sub: 'Not placed in a week', planned: unplaced, actual: 0, n: 0 });
+    const out = led.filter((e) => e.t == null || e.t < start || e.t > end);
+    if (out.length) rows.push({ key: 'out', label: 'Outside the project weeks', sub: 'Dated before the start or after the last week', planned: 0, actual: out.reduce((a, e) => a + e.amount, 0), n: out.length });
   } else if (mode === 'month') {
     const dated = led.filter((e) => e.t != null).map((e) => e.t);
     const lo = mStart(Math.min(start, ...dated)), hi = Math.max(end, ...dated);
     for (let m = lo; m <= hi; m = mNext(m)) {
       const b = mNext(m) - DAY, { s, n } = sumIn(m, b);
-      rows.push({ key: 'm' + m, label: new Date(m).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }), sub: '', planned: plan(m, b), actual: s, n });
+      rows.push({ key: 'm' + m, label: new Date(m).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }), sub: '', planned: overlap(m, b) * perDay, actual: s, n });
     }
     const nd = led.filter((e) => e.t == null);
     if (nd.length) rows.push({ key: 'nd', label: 'No date', sub: '', planned: 0, actual: nd.reduce((a, e) => a + e.amount, 0), n: nd.length });
-    if (unplaced > 0) rows.push({ key: 'once', label: 'One-time items without a date', sub: 'Not placed in a month', planned: unplaced, actual: 0, n: 0 });
   } else if (mode === 'sprint') {
     const covered = new Set();
     S.sprints.forEach((sp) => {
@@ -206,7 +198,7 @@ export function costBy(S, mode) {
       }
       const a = pd(sp.start), b = pd(sp.end), { s, n } = sumIn(a, b);
       led.forEach((e, i) => e.t != null && e.t >= a && e.t <= b && covered.add(i));
-      rows.push({ key: sp.id, label: sp.name, sub: fsh(a) + ' – ' + fsh(b), planned: plan(a, b), actual: s, n });
+      rows.push({ key: sp.id, label: sp.name, sub: fsh(a) + ' – ' + fsh(b), planned: overlap(a, b) * perDay, actual: s, n });
     });
     const rest = led.filter((e, i) => !covered.has(i));
     if (rest.length) rows.push({ key: 'none', label: 'Not in any sprint', sub: '', planned: 0, actual: rest.reduce((a, e) => a + e.amount, 0), n: rest.length });
@@ -217,9 +209,9 @@ export function costBy(S, mode) {
       if (!map.has(k)) map.set(k, { key: k, label: (name || '').trim() || '(no element)', sub: '', planned: 0, actual: 0, n: 0 });
       return map.get(k);
     };
-    get('Team labour').planned += M.totals.labour;
-    M.lines.forEach((l) => {
-      get(l.name || 'Line item').planned += l.total;
+    get('Team labour').planned += sprintCap(S) * nW(S);
+    S.lines.forEach((l) => {
+      get(l.name || 'Line item').planned += l.per === 'project' ? nz(l.amount) : lineWeekly(S, l) * nW(S);
     });
     led.forEach((e) => {
       const r = get(e.element);
@@ -246,7 +238,7 @@ const raciOk = (roles) => {
 export const raciOkFor = raciOk;
 export function raciGaps(S) {
   const out = [];
-  S.sprints.forEach((c) => c.tasks.forEach((t) => !isDoneStatus(S, t.status) && !raciOk(t.raci) && out.push(t.code)));
+  S.sprints.forEach((c) => c.tasks.forEach((t) => typeOf(S, t.type).raci !== false && !isDoneStatus(S, t.status) && !raciOk(t.raci) && out.push(t.code)));
   return out;
 }
 
@@ -266,7 +258,8 @@ export function worst(a, b) {
 export function workPlan(S) {
   const N = nW(S);
   const items = [];
-  S.sprints.forEach((sp) => sp.tasks.forEach((t) => items.push({ t, sp })));
+  // only items without children count (a parent is the sum of its children), and milestones carry no work
+  S.sprints.forEach((sp) => leafTasks(sp.tasks).forEach((t) => !typeOf(S, t.type).milestone && items.push({ t, sp })));
   const weighted = items.some((x) => nz(x.t.effort) > 0);
   const wt = (x) => (weighted ? nz(x.t.effort) : 1);
   const idx = (date) => Math.max(1, Math.min(N, weekOfDate(S, date))) - 1;
@@ -294,9 +287,8 @@ export function workPlan(S) {
 
 export function wk(S, w) {
   const r = S.report[w - 1] || {};
-  const M = budgetModel(S);
-  const B = weekOf(M, w).total; // this week's own budget: only the days of the project that fall in it
-  const BAC = M.totals.bac;
+  const B = weeklyBAC(S);
+  const BAC = projectBAC(S);
   const P = workPlan(S);
   const manual = r.planPct != null;
   // planned: a typed value for the week wins; otherwise it follows the due dates
@@ -311,7 +303,6 @@ export function wk(S, w) {
     plan: pv == null ? null : B ? pv / B : null,
     earn: ev == null ? null : B ? ev / B : null,
     manualPlan: manual,
-    budget: B,
     ac: weekAc(S, w),
     note: r.note || '',
     pv,
@@ -324,14 +315,9 @@ export function hasData(S, w) {
 }
 
 export function agg(S, a, b) {
-  const M = budgetModel(S);
-  const o = { pv: 0, ev: 0, ac: 0, pvR: 0, evR: 0, evC: 0, acC: 0, weeks: b - a + 1, reported: 0, spiS: [], cpiS: [], budget: 0, work: 0, hours: 0 };
+  const o = { pv: 0, ev: 0, ac: 0, pvR: 0, evR: 0, evC: 0, acC: 0, weeks: b - a + 1, reported: 0, spiS: [], cpiS: [] };
   for (let w = a; w <= b; w++) {
     const x = wk(S, w);
-    const bw = weekOf(M, w);
-    o.budget += bw.total;
-    o.work += bw.work;
-    o.hours += bw.hours;
     if (x.pv != null && x.ev != null) {
       o.pvR += x.pv;
       o.evR += x.ev;
@@ -349,8 +335,7 @@ export function agg(S, a, b) {
   }
   o.spi = o.pvR ? o.evR / o.pvR : null;
   o.cpi = o.acC ? o.evC / o.acC : null;
-  // the whole project also carries one-time items that have no date, so its budget equals the BAC
-  if (a <= 1 && b >= M.weeks.length) o.budget += M.totals.onceUnphased;
+  o.budget = weeklyBAC(S) * (b - a + 1);
   return o;
 }
 
@@ -399,13 +384,13 @@ export function alerts(S) {
       text:
         late.length + ' work package' + (late.length > 1 ? 's are' : ' is') + ' past the finish date and not complete: ' + late.map((x) => x.id).join(', ') + '.',
     });
-  const M = budgetModel(S);
+  const wb = weeklyBAC(S);
   const over = [];
   for (let k = 1; k <= nW(S); k++) {
     const x = wk(S, k);
-    if (x.ac != null && x.ac > weekOf(M, k).total + 0.005) over.push(k);
+    if (x.ac != null && x.ac > wb) over.push(k);
   }
-  if (over.length) a.push({ cls: 'bad', text: 'Actual cost is above that week\'s budget in week' + (over.length > 1 ? 's ' : ' ') + over.join(', ') + '.' });
+  if (over.length) a.push({ cls: 'bad', text: 'Actual cost is above the weekly budget in week' + (over.length > 1 ? 's ' : ' ') + over.join(', ') + '.' });
   const outs = outsideSprint(S);
   if (outs.length) {
     const now = ifAligned(S);
@@ -440,14 +425,13 @@ export function newRaidId(S, type) {
 /* ---------- work items dated outside their sprint ---------- */
 // The project length follows the latest date in the plan, so one work item due after its sprint ends
 // stretches the whole project (and its budget). These helpers find such items and pull them back in.
-const clampDate = (d, sp) => (!d ? d : sp.start && d < sp.start ? sp.start : sp.end && d > sp.end ? sp.end : d);
-const isOut = (d, sp) => !!d && ((sp.start && d < sp.start) || (sp.end && d > sp.end));
+const clampDate = (d, lo, hi) => (!d ? d : d < lo ? lo : d > hi ? hi : d);
 export function outsideSprint(S) {
   const out = [];
   S.sprints.forEach((sp) => {
-    if (!sp.start && !sp.end) return;
-    sp.tasks.forEach((t) => {
-      if (isOut(t.due, sp) || isOut(t.start, sp)) out.push({ sp, t });
+    if (!sp.start || !sp.end) return;
+    leafTasks(sp.tasks).forEach((t) => {
+      if ((t.due && (t.due < sp.start || t.due > sp.end)) || (t.start && (t.start < sp.start || t.start > sp.end))) out.push({ sp, t });
     });
   });
   return out;
@@ -456,9 +440,9 @@ export function outsideSprint(S) {
 export function alignSprintDates(S, sprintId) {
   let n = 0;
   S.sprints.forEach((sp) => {
-    if ((sprintId && sp.id !== sprintId) || (!sp.start && !sp.end)) return;
+    if ((sprintId && sp.id !== sprintId) || !sp.start || !sp.end) return;
     sp.tasks.forEach((t) => {
-      const s = clampDate(t.start, sp), d = clampDate(t.due, sp);
+      const s = clampDate(t.start, sp.start, sp.end), d = clampDate(t.due, sp.start, sp.end);
       if (s !== t.start || d !== t.due) {
         t.start = s;
         t.due = d;
@@ -566,6 +550,60 @@ export function normalize(S) {
     })
   );
 
+  // work item types (per project, editable)
+  if (!Array.isArray(S.types) || !S.types.length) S.types = DEFAULT_TYPES.map((x) => ({ ...x }));
+  const tySeen = new Set();
+  S.types = S.types.filter((x) => x && x.id && !tySeen.has(x.id) && tySeen.add(x.id));
+  if (!S.types.length) S.types = DEFAULT_TYPES.map((x) => ({ ...x }));
+  S.types.forEach((x) => {
+    x.label = (x.label || '').trim() || 'Type';
+    x.color = x.color || 'var(--accent)';
+    x.icon = (x.icon || '').trim().slice(0, 2) || x.label.charAt(0).toUpperCase();
+    x.milestone = !!x.milestone;
+    x.raci = x.raci !== false;
+  });
+  const typeIds = new Set(S.types.map((x) => x.id));
+  const fallbackType = typeIds.has('task') ? 'task' : S.types[0].id;
+  allContainers(S).forEach((c) => {
+    // earlier versions kept subtasks as a small checklist inside a task; they are real child work items now
+    const born = [];
+    c.tasks.forEach((t) => {
+      (t.subtasks || []).forEach((st) => {
+        const fin = S.statuses.find((x) => x.done);
+        born.push(
+          makeTask(S, {
+            name: (st.name || '').trim() || 'Subtask',
+            type: typeIds.has('subtask') ? 'subtask' : fallbackType,
+            parent: t.id,
+            status: c.id === 'backlog' ? '' : st.done && fin ? fin.id : firstOpenStatus(S),
+            assignees: st.person ? [st.person] : [],
+          })
+        );
+      });
+      delete t.subtasks;
+    });
+    c.tasks.push(...born);
+    // every item has a valid type, and a parent that exists in the same list (no loops)
+    const byId = new Map(c.tasks.map((t) => [t.id, t]));
+    c.tasks.forEach((t) => {
+      if (!typeIds.has(t.type)) t.type = fallbackType;
+      if (typeof t.parent !== 'string' || t.parent === t.id || !byId.has(t.parent)) t.parent = '';
+    });
+    c.tasks.forEach((t) => {
+      const walked = new Set([t.id]);
+      let up = t.parent;
+      while (up) {
+        if (walked.has(up)) {
+          t.parent = '';
+          break;
+        }
+        walked.add(up);
+        up = (byId.get(up) || {}).parent;
+      }
+    });
+    rollupContainer(S, c);
+  });
+
   const ids = new Set(S.people.map((p) => p.id));
   const seen = new Set();
   S.team = S.team.filter((t) => ids.has(t.person) && !seen.has(t.person) && seen.add(t.person));
@@ -596,33 +634,6 @@ export function normalize(S) {
   tasks.forEach((t) => {
     prune(t.raci);
     t.assignees = t.assignees.filter((id, i) => ids.has(id) && t.assignees.indexOf(id) === i);
-    (t.subtasks || []).forEach((st) => {
-      if (st.person && !ids.has(st.person)) st.person = '';
-    });
-  });
-
-  // working calendar and budget settings (older projects only had "days per week")
-  m.workDays = workDaysOf(m);
-  m.sprintDays = m.workDays.length;
-  if (m.endMode !== 'fixed') m.endMode = 'auto';
-  if (!validDate(m.end)) m.end = '';
-  if (!Array.isArray(S.holidays)) S.holidays = [];
-  S.holidays = S.holidays.filter((h) => h && typeof h === 'object');
-  S.holidays.forEach((h) => {
-    if (!h.id) h.id = uid();
-    h.from = h.from || '';
-    h.to = h.to || '';
-    h.label = h.label || '';
-  });
-  (S.lines || []).forEach((l) => {
-    if (!['day', 'week', 'month', 'sprint', 'project'].includes(l.per)) l.per = 'week';
-    l.spread = l.spread === 'work' ? 'work' : 'cal';
-    l.from = validDate(l.from) ? l.from : '';
-    l.to = validDate(l.to) ? l.to : '';
-  });
-  S.team.forEach((t) => {
-    t.from = validDate(t.from) ? t.from : '';
-    t.to = validDate(t.to) ? t.to : '';
   });
 
   // number of weeks: always from the data (latest dated task, sprint, completion or cost)

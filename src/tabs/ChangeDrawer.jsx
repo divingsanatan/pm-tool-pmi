@@ -271,7 +271,7 @@ export default function ChangeDrawer({ id, onClose }) {
                 <p className="msg" style={{ margin: '8px 0 0', color: rec.mismatch ? 'var(--bad)' : 'var(--good)' }}>
                   {rec.mismatch
                     ? 'The plan does not match the approval (budget off by ' + money(Math.abs(rec.diffCost)) + ', finish off by ' + Math.abs(rec.diffDays) + ' days). Update the plan, or explain the difference below.'
-                    : 'The plan matches the approved impact.' + (rec.b.calc === 'days' ? '' : ' This baseline was taken before the budget was counted day by day, so a finish within a week of the expected date counts as matching.')}
+                    : 'The plan matches the approved impact. The plan runs in whole weeks, so a finish within a week of the expected date counts as matching.'}
                 </p>
                 {rec.mismatch && (
                   <label className="fld" style={{ marginTop: 8 }}>Why the plan differs from the approval

@@ -1,10 +1,11 @@
 import { useStore } from '../store/StoreContext';
 import { useSelect } from '../lib/useSelect';
 import RaciBar from '../components/RaciBulk';
-import { TriBox } from './SprintView';
+import { TriBox } from '../components/ListBits';
+import { TypeBadge } from '../components/Bits';
 import { Fld } from '../components/Field';
 import { raciOkFor, wkE, wkS, nW } from '../lib/calc';
-import { findTask } from '../lib/tasks';
+import { findTask, typeOf } from '../lib/tasks';
 import { fdate } from '../lib/dates';
 import { DEFAULT_RF, RF_SCOPES, workItems } from '../lib/raci';
 
@@ -119,6 +120,7 @@ export default function Raci() {
 }
 
 function RowsFor({ g, people, cols, onCycle, sel, onSelect, onGroup }) {
+  const { S } = useStore();
   const all = g.tasks.length > 0 && g.tasks.every((t) => sel.has(t.id));
   const some = g.tasks.some((t) => sel.has(t.id));
   return (
@@ -135,7 +137,10 @@ function RowsFor({ g, people, cols, onCycle, sel, onSelect, onGroup }) {
         <tr key={t.id} className={sel.has(t.id) ? 'sel' : ''}>
           <td className="sticky-l" title={t.name}>
             <input type="checkbox" className="tg-sel" checked={sel.has(t.id)} onChange={() => {}} onClick={(e) => onSelect(t.id, e.shiftKey)} aria-label={'Select ' + t.name} />
-            <span className="mono msg">{t.code}</span> <span className="cell" style={{ display: 'inline' }}>{t.name}</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, paddingLeft: (g.depth.get(t.id) || 0) * 14 }}>
+              <TypeBadge type={typeOf(S, t.type)} size={14} />
+              <span className="mono msg">{t.code}</span> <span className="cell" style={{ display: 'inline', fontWeight: g.depth.has(t.id) && g.tasks.some((x) => x.parent === t.id) ? 600 : 400 }}>{t.name}</span>
+            </span>
           </td>
           {people.map((p) => {
             const v = (t.raci || {})[p.id] || '';

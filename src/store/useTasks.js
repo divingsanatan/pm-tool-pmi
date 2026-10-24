@@ -1,225 +1,84 @@
-import { useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import { useStore } from './StoreContext';
-import { useUI } from '../components/UI';
 import { alignSprintDates } from '../lib/calc';
-import { containerById, findTask, firstOpenStatus, isDoneStatus, makeTask, uid } from '../lib/tasks';
-import { fdate } from '../lib/dates';
-import { clampDates, datePatchViolations, gapWindow, insertAt, inWin, rollover, sane, sprintCovers, tasksOutside, windowOf } from '../lib/sprintGuard';
+import { childTypeFor, containerById, findTask, firstOpenStatus, isDoneStatus, makeTask, uid } from '../lib/tasks';
+import { leafTasks, subtreeIds } from '../lib/hier';
 
-const plural = (n, a, b) => (n === 1 ? a : b);
-const span = (c) => (c.start ? fdate(c.start) : '…') + ' – ' + (c.end ? fdate(c.end) : '…');
+// Only the highest items of a selection: an item is dropped when one of its ancestors is selected too
+function topIds(c, ids) {
+  const set = new Set(ids);
+  const by = new Map(c.tasks.map((t) => [t.id, t]));
+  return ids.filter((id) => {
+    let x = by.get(id);
+    let up = x && x.parent;
+    let guard = 0;
+    while (up && guard++ < 50) {
+      if (set.has(up)) return false;
+      up = (by.get(up) || {}).parent;
+    }
+    return !!x;
+  });
+}
 
-// Moves work items to another container. In the Backlog they lose status and dates; in a sprint they get a status
-// and their dates are pulled inside that sprint. Returns how many items had dates changed.
-function relocate(p, ids, toId) {
-  const to = containerById(p, toId);
-  if (!to) return 0;
-  const w = windowOf(to);
-  let changed = 0;
+// take one item and everything below it out of its list and put it in another (it becomes a top-level item there)
+function moveSubtree(p, id, to, clearDates) {
+  const f = findTask(p, id);
+  if (!f || f.c === to) return;
+  const set = new Set(subtreeIds(f.c.tasks, id));
+  const moving = f.c.tasks.filter((t) => set.has(t.id));
+  f.c.tasks = f.c.tasks.filter((t) => !set.has(t.id));
+  f.t.parent = '';
+  moving.forEach((t) => {
+    if (to.id === 'backlog') {
+      t.status = '';
+      if (clearDates) {
+        t.start = '';
+        t.due = '';
+      }
+    } else if (!t.status) t.status = firstOpenStatus(p);
+    to.tasks.push(t);
+  });
+}
+
+// put an item under `parent` (or at the top when ''), right before or after the sibling `ref` (or last when no ref)
+function place(p, id, { parent = '', ref = '', pos = 'after' }) {
+  const f = findTask(p, id);
+  if (!f) return false;
+  const c = f.c;
+  if (parent) {
+    if (!c.tasks.some((x) => x.id === parent)) return false;
+    if (subtreeIds(c.tasks, id).includes(parent)) return false; // cannot go inside itself
+  }
+  if (ref === id) return false;
+  c.tasks.splice(f.i, 1);
+  f.t.parent = parent;
+  let at = c.tasks.length;
+  if (ref) {
+    const j = c.tasks.findIndex((x) => x.id === ref);
+    if (j >= 0) at = pos === 'before' ? j : j + 1;
+  }
+  c.tasks.splice(at, 0, f.t);
+  return true;
+}
+
+// delete items and everything below them
+function removeIds(p, ids) {
+  const gone = new Set();
   ids.forEach((id) => {
     const f = findTask(p, id);
-    if (!f || f.c === to) return;
-    f.c.tasks.splice(f.i, 1);
-    if (to.id === 'backlog') {
-      f.t.status = '';
-      f.t.start = '';
-      f.t.due = '';
-    } else {
-      if (!f.t.status) f.t.status = firstOpenStatus(p);
-      const o = rollover(f.t, w);
-      if (Object.keys(o).length) {
-        Object.assign(f.t, o);
-        changed++;
-      }
-    }
-    to.tasks.push(f.t);
+    if (f) subtreeIds(f.c.tasks, id).forEach((x) => gone.add(x));
   });
-  return changed;
+  [...p.sprints, p.backlog].forEach((c) => (c.tasks = c.tasks.filter((t) => !gone.has(t.id))));
 }
 
-// Dry run of relocate, for the message shown afterwards
-function previewMove(S, ids, toId) {
-  const to = containerById(S, toId);
-  const w = to && to.id !== 'backlog' ? windowOf(to) : null;
-  return ids.filter((id) => {
-    const f = findTask(S, id);
-    return f && f.c !== to && w && Object.keys(rollover(f.t, w)).length;
-  }).length;
-}
-
-function addSprintFor(p, lo, hi) {
-  const win = gapWindow(p, lo, hi, p.meta.sprintWeeks || 2);
-  const sp = { id: uid(), name: 'Sprint ' + (p.sprints.length + 1), status: 'Not started', start: win.start, end: win.end, tasks: [] };
-  p.sprints.splice(insertAt(p, win.start), 0, sp);
-  return sp;
-}
+const siblingsOf = (c, t) => c.tasks.filter((x) => (x.parent || '') === (t.parent || ''));
 
 // All task / sprint mutations in one place. Every function edits the current project.
-// Work items can never be dated outside their sprint: edits that would do so are held back and the user is
-// offered the ways out (move the date inside, use or create another sprint, extend the sprint, or send to the Backlog).
 export function useTasks() {
-  const { update, S } = useStore();
-  const ui = useUI();
-  const sRef = useRef(S);
-  sRef.current = S;
-  const uRef = useRef(ui);
-  uRef.current = ui;
-
-  return useMemo(() => {
-    const say = (o) => uRef.current && uRef.current.toast && uRef.current.toast(o);
-    const clear = () => uRef.current && uRef.current.dismiss && uRef.current.dismiss('guard');
-    const withDecision = (o) => say({ id: 'guard', tone: 'warn', ...o });
-
-    // applies a start / due patch to the listed items, each pulled inside its own sprint
-    const applyClamped = (p, ids, patch) =>
-      ids.forEach((id) => {
-        const f = findTask(p, id);
-        if (!f) return;
-        const w = windowOf(f.c);
-        const base = { ...f.t, ...patch };
-        Object.assign(f.t, patch, w ? clampDates(w, base) : {});
-      });
-
-    // Returns true when the edit was held back (the user is now choosing what to do)
-    function guardDates(ids, patch) {
-      const dates = ['start', 'due'].map((k) => patch[k]).filter(Boolean);
-      if (dates.some((d) => !sane(d))) return true; // half-typed date: ignore until it is complete
-      const viol = datePatchViolations(sRef.current, ids, patch);
-      if (!viol.length) {
-        clear();
-        return false;
-      }
-      const sprints = Array.from(new Set(viol.map((x) => x.sprint.id))).map((id) => viol[viol.findIndex((x) => x.sprint.id === id)].sprint);
-      const one = sprints.length === 1 ? sprints[0] : null;
-      const vids = viol.map((x) => x.id);
-      const sorted = dates.slice().sort();
-      const lo = sorted[0], hi = sorted[sorted.length - 1];
-      const label = viol.length === 1 ? '“' + viol[0].task.name + '”' : viol.length + ' work items';
-      const dtxt = dates.length === 1 ? fdate(dates[0]) : fdate(lo) + ' – ' + fdate(hi);
-      const where = one ? one.name + ' runs ' + span(one) : 'their sprints do not cover that date';
-      const actions = [];
-
-      actions.push({
-        label: viol.length === 1 && one ? 'Use ' + fdate(clampDates(windowOf(one), { ...viol[0].task, ...patch })[patch.start ? 'start' : 'due'] || windowOf(one).lo) : 'Move dates inside the sprint',
-        primary: true,
-        onClick: () => update((p) => applyClamped(p, ids, patch)),
-      });
-      if (one) {
-        const cover = sRef.current.sprints.find((s) => s.id !== one.id && dates.every((d) => sprintCovers(s, d)));
-        if (cover) {
-          actions.push({
-            label: 'Move to ' + cover.name,
-            onClick: () =>
-              update((p) => {
-                relocate(p, vids, cover.id);
-                applyClamped(p, ids, patch);
-              }),
-          });
-        } else {
-          const win = gapWindow(sRef.current, lo, hi, sRef.current.meta.sprintWeeks || 2);
-          actions.push({
-            label: 'New sprint ' + fdate(win.start) + ' – ' + fdate(win.end),
-            onClick: () =>
-              update((p) => {
-                const sp = addSprintFor(p, lo, hi);
-                relocate(p, vids, sp.id);
-                applyClamped(p, ids, patch);
-              }),
-          });
-        }
-        actions.push({
-          label: 'Extend ' + one.name,
-          onClick: () =>
-            update((p) => {
-              const c = containerById(p, one.id);
-              if (c) {
-                if (!c.start || lo < c.start) c.start = lo;
-                if (!c.end || hi > c.end) c.end = hi;
-              }
-              applyClamped(p, ids, patch);
-            }),
-        });
-      }
-      actions.push({
-        label: 'Move to Backlog',
-        onClick: () =>
-          update((p) => {
-            relocate(p, vids, 'backlog');
-            applyClamped(p, ids.filter((id) => !vids.includes(id)), patch);
-          }),
-      });
-      withDecision({ text: label + ' cannot be dated ' + dtxt + ' because ' + where + '. Dates must stay inside the sprint. What would you like to do?', actions });
-      return true;
-    }
-
-    // A sprint's dates are changing: say what happens to the work items that would end up outside them
-    function guardSprint(cid, patch) {
-      const S0 = sRef.current;
-      const c = containerById(S0, cid);
-      if (!c || cid === 'backlog') return false;
-      const next = { start: 'start' in patch ? patch.start || '' : c.start || '', end: 'end' in patch ? patch.end || '' : c.end || '' };
-      if ((next.start && !sane(next.start)) || (next.end && !sane(next.end))) return true;
-      if (next.start && next.end && next.start > next.end) {
-        say({ id: 'guard', tone: 'bad', text: 'A sprint cannot end before it starts.', ttl: 6000 });
-        return true;
-      }
-      const w = { lo: next.start, hi: next.end };
-      const out = next.start || next.end ? tasksOutside(c, w) : [];
-      if (!out.length) {
-        clear();
-        return false;
-      }
-      const ids = out.map((t) => t.id);
-      const dates = out.flatMap((t) => [t.start, t.due]).filter((d) => d && !inWin(w, d)).sort();
-      const after = dates.every((d) => w.hi && d > w.hi), before = dates.every((d) => w.lo && d < w.lo);
-      const setSprint = (p) => Object.assign(containerById(p, cid), patch);
-      const actions = [
-        {
-          label: 'Move their dates inside',
-          primary: true,
-          onClick: () =>
-            update((p) => {
-              setSprint(p);
-              const sp = containerById(p, cid);
-              sp.tasks.forEach((t) => {
-                if (ids.includes(t.id)) Object.assign(t, clampDates(windowOf(sp), t));
-              });
-            }),
-        },
-      ];
-      if (after || before) {
-        const win = gapWindow({ ...S0, sprints: S0.sprints.map((s) => (s.id === cid ? { ...s, start: next.start, end: next.end } : s)) }, dates[0], dates[dates.length - 1], S0.meta.sprintWeeks || 2);
-        actions.push({
-          label: 'New sprint ' + fdate(win.start) + ' – ' + fdate(win.end),
-          onClick: () =>
-            update((p) => {
-              setSprint(p);
-              const sp = addSprintFor(p, dates[0], dates[dates.length - 1]);
-              relocate(p, ids, sp.id);
-            }),
-        });
-      }
-      actions.push({
-        label: 'Move ' + ids.length + ' to Backlog',
-        onClick: () =>
-          update((p) => {
-            setSprint(p);
-            relocate(p, ids, 'backlog');
-          }),
-      });
-      withDecision({
-        text: ids.length + ' work ' + plural(ids.length, 'item is', 'items are') + ' dated outside ' + c.name + ' (' + span({ start: next.start, end: next.end }) + '). Dates must stay inside the sprint. What would you like to do with ' + plural(ids.length, 'it', 'them') + '? Choosing nothing keeps the old sprint dates.',
-        actions,
-      });
-      return true;
-    }
-
-    const moveNote = (n, toId) => {
-      const to = containerById(sRef.current, toId);
-      if (n > 0 && to && to.id !== 'backlog') say({ id: 'moved', tone: 'info', ttl: 8000, text: n + ' ' + plural(n, 'date was', 'dates were') + ' moved inside ' + to.name + ' (' + span(to) + ') so the work item stays within the sprint.' });
-    };
-
-    return {
+  const { update } = useStore();
+  return useMemo(
+    () => ({
+      // a new top-level work item
       add(cid, fields = {}) {
         const id = fields.id || uid();
         update((p) => {
@@ -228,8 +87,29 @@ export function useTasks() {
         });
         return id;
       },
+      // a new work item under another one (its type steps down the ladder: epic > feature > story > task > subtask)
+      addChild(parentId, fields = {}) {
+        const id = fields.id || uid();
+        update((p) => {
+          const f = findTask(p, parentId);
+          if (!f) return;
+          const type = fields.type || childTypeFor(p, f.t.type);
+          f.c.tasks.push(makeTask(p, { ...fields, type, id, parent: parentId, ...(f.c.id === 'backlog' ? { status: '' } : {}) }));
+        });
+        return id;
+      },
+      // a new work item right after another one, at the same level
+      addSibling(afterId, fields = {}) {
+        const id = fields.id || uid();
+        update((p) => {
+          const f = findTask(p, afterId);
+          if (!f) return;
+          const t = makeTask(p, { name: 'New task', ...fields, type: fields.type || f.t.type, id, parent: f.t.parent || '', ...(f.c.id === 'backlog' ? { status: '' } : {}) });
+          f.c.tasks.splice(f.i + 1, 0, t);
+        });
+        return id;
+      },
       patch(id, patch) {
-        if (('start' in patch || 'due' in patch) && guardDates([id], patch)) return;
         update((p) => {
           const f = findTask(p, id);
           if (f) Object.assign(f.t, patch);
@@ -241,7 +121,6 @@ export function useTasks() {
       },
       // change several work items in one update (one render, one save)
       patchMany(ids, patch) {
-        if (('start' in patch || 'due' in patch) && guardDates(ids, patch)) return;
         update((p) => {
           ids.forEach((id) => {
             const f = findTask(p, id);
@@ -260,62 +139,105 @@ export function useTasks() {
           });
         });
       },
+      // moving an item moves everything below it too
       moveMany(ids, cid) {
-        moveNote(previewMove(sRef.current, ids, cid), cid);
-        update((p) => void relocate(p, ids, cid));
-      },
-      removeMany(ids) {
         update((p) => {
+          const to = containerById(p, cid);
+          if (!to) return;
+          const groups = new Map();
           ids.forEach((id) => {
             const f = findTask(p, id);
-            if (f) f.c.tasks.splice(f.i, 1);
+            if (f && f.c !== to) groups.set(f.c, (groups.get(f.c) || []).concat(id));
           });
-        });
-      },
-      // copies are placed right after their originals with new codes
-      duplicateMany(ids) {
-        update((p) => {
-          ids.forEach((id) => {
-            const f = findTask(p, id);
-            if (!f) return;
-            const n = p.counter || 1;
-            p.counter = n + 1;
-            const copy = structuredClone(f.t);
-            copy.id = uid();
-            copy.code = 'T-' + n;
-            copy.name = f.t.name + ' (copy)';
-            copy.subtasks = (copy.subtasks || []).map((s) => ({ ...s, id: uid() }));
-            f.c.tasks.splice(f.i + 1, 0, copy);
-          });
-        });
-      },
-      remove(id) {
-        update((p) => {
-          const f = findTask(p, id);
-          if (f) f.c.tasks.splice(f.i, 1);
+          groups.forEach((list, c) => topIds(c, list).forEach((id) => moveSubtree(p, id, to, true)));
         });
       },
       move(id, cid) {
-        moveNote(previewMove(sRef.current, [id], cid), cid);
-        update((p) => void relocate(p, [id], cid));
-      },
-      addSub(id, name) {
         update((p) => {
-          const f = findTask(p, id);
-          if (f) f.t.subtasks.push({ id: uid(), name, done: false, person: '' });
+          const to = containerById(p, cid);
+          if (to) moveSubtree(p, id, to, false);
         });
       },
-      patchSub(id, sid, patch) {
+      // deleting an item deletes everything below it
+      removeMany(ids) {
+        update((p) => void removeIds(p, ids));
+      },
+      remove(id) {
+        update((p) => void removeIds(p, [id]));
+      },
+      // copies (with everything below them) are placed right after their originals with new codes
+      duplicateMany(ids) {
         update((p) => {
-          const f = findTask(p, id);
-          const s = f && f.t.subtasks.find((x) => x.id === sid);
-          if (s) Object.assign(s, patch);
+          const groups = new Map();
+          ids.forEach((id) => {
+            const f = findTask(p, id);
+            if (f) groups.set(f.c, (groups.get(f.c) || []).concat(id));
+          });
+          groups.forEach((list, c) =>
+            topIds(c, list).forEach((id) => {
+              const i = c.tasks.findIndex((t) => t.id === id);
+              if (i < 0) return;
+              const set = new Set(subtreeIds(c.tasks, id));
+              const origs = c.tasks.filter((t) => set.has(t.id));
+              const map = new Map();
+              const copies = origs.map((t) => {
+                const n = p.counter || 1;
+                p.counter = n + 1;
+                const copy = structuredClone(t);
+                copy.id = uid();
+                copy.code = 'T-' + n;
+                map.set(t.id, copy.id);
+                return copy;
+              });
+              copies.forEach((cp, k) => {
+                const orig = origs[k];
+                cp.parent = orig.id === id ? orig.parent || '' : map.get(orig.parent) || '';
+                if (orig.id === id) cp.name = orig.name + ' (copy)';
+              });
+              c.tasks.splice(i + 1, 0, ...copies);
+            })
+          );
         });
       },
-      removeSub(id, sid) {
+      // put an item under a parent (or at the top level) at an exact spot: used by drag and drop, indent, outdent
+      place(id, where) {
+        update((p) => void place(p, id, where));
+      },
+      // make it a child of the item just above it at the same level
+      indent(id) {
         update((p) => {
           const f = findTask(p, id);
-          if (f) f.t.subtasks = f.t.subtasks.filter((x) => x.id !== sid);
+          if (!f) return;
+          const sibs = siblingsOf(f.c, f.t);
+          const k = sibs.findIndex((x) => x.id === id);
+          if (k > 0) place(p, id, { parent: sibs[k - 1].id });
+        });
+      },
+      // move it up one level, right after its old parent
+      outdent(id) {
+        update((p) => {
+          const f = findTask(p, id);
+          if (!f || !f.t.parent) return;
+          const par = f.c.tasks.find((x) => x.id === f.t.parent);
+          if (par) place(p, id, { parent: par.parent || '', ref: par.id, pos: 'after' });
+        });
+      },
+      moveUp(id) {
+        update((p) => {
+          const f = findTask(p, id);
+          if (!f) return;
+          const sibs = siblingsOf(f.c, f.t);
+          const k = sibs.findIndex((x) => x.id === id);
+          if (k > 0) place(p, id, { parent: f.t.parent || '', ref: sibs[k - 1].id, pos: 'before' });
+        });
+      },
+      moveDown(id) {
+        update((p) => {
+          const f = findTask(p, id);
+          if (!f) return;
+          const sibs = siblingsOf(f.c, f.t);
+          const k = sibs.findIndex((x) => x.id === id);
+          if (k >= 0 && k < sibs.length - 1) place(p, id, { parent: f.t.parent || '', ref: sibs[k + 1].id, pos: 'after' });
         });
       },
       toggleAssignee(id, personId) {
@@ -327,24 +249,23 @@ export function useTasks() {
         });
       },
       patchContainer(cid, patch) {
-        if (('start' in patch || 'end' in patch) && guardSprint(cid, patch)) return;
         update((p) => {
           const c = containerById(p, cid);
           if (c) Object.assign(c, patch);
         });
       },
-      // unfinished work moves on to another sprint (or the Backlog); finished work stays
+      // unfinished top-level items (with everything below them) move to another sprint or the Backlog
       moveOpen(from, to) {
-        const S0 = sRef.current;
-        const a = containerById(S0, from);
-        if (a) moveNote(previewMove(S0, a.tasks.filter((t) => !(isDoneStatus(S0, t.status) && t.status)).map((t) => t.id), to), to);
         update((p) => {
-          const src = containerById(p, from);
-          if (!src || !containerById(p, to) || src === containerById(p, to)) return;
-          const ids = src.tasks.filter((t) => !(isDoneStatus(p, t.status) && t.status)).map((t) => t.id);
-          relocate(p, ids, to);
+          const a = containerById(p, from);
+          const b = containerById(p, to);
+          if (!a || !b || a === b) return;
+          const leaves = new Set(leafTasks(a.tasks).filter((t) => !(t.status && isDoneStatus(p, t.status))).map((t) => t.id));
+          const roots = a.tasks.filter((t) => !t.parent && subtreeIds(a.tasks, t.id).some((x) => leaves.has(x)));
+          roots.forEach((t) => moveSubtree(p, t.id, b, false));
         });
       },
-    };
-  }, [update]);
+    }),
+    [update]
+  );
 }

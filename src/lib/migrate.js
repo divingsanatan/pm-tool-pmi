@@ -33,7 +33,7 @@ export function projectFromV2(o) {
     const c = container(prefix);
     c.tasks.push({
       id: uid(), code: x.id, name: x.name, status: statusFromPct(x.pct || 0), assignees: [], priority: 'normal',
-      start: x.start || '', due: x.finish || '', effort: x.hrs == null ? null : x.hrs, description: '', subtasks: [],
+      start: x.start || '', due: x.finish || '', effort: x.hrs == null ? null : x.hrs, description: '',
     });
   });
   p.sprints.forEach((c) => {

@@ -7,7 +7,7 @@ function ot(id, type, cost, days, st, due) {
   return { id, type, desc: '', owner: '', p: N, i: N, probPct: N, cost, days, status: st, resp: '', due, rev: '2026-10-16' };
 }
 function task(code, name, status, effort, start, due) {
-  return { id: 't' + code.replace('.', ''), code, name, status, assignees: ['u2'], priority: 'normal', start, due, effort, description: '', subtasks: [], raci: { u1: 'A', u2: 'R', u3: 'I', u4: 'C', u5: 'I' } };
+  return { id: 't' + code.replace('.', ''), code, name, status, assignees: ['u2'], priority: 'normal', start, due, effort, description: '', raci: { u1: 'A', u2: 'R', u3: 'I', u4: 'C', u5: 'I' } };
 }
 
 export function seedProject() {

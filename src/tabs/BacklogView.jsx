@@ -3,14 +3,17 @@ import { useStore } from '../store/StoreContext';
 import { useTasks } from '../store/useTasks';
 import { Cell } from '../components/Field';
 import Menu from '../components/Menu';
-import { Avatar, BacklogIcon } from '../components/Bits';
-import { AssigneeMenu, PriorityMenu } from '../components/Pickers';
-import { nameOf } from '../lib/tasks';
-import { hrsf } from '../lib/format';
+import { BacklogIcon } from '../components/Bits';
+import { AssigneeMenu, PriorityMenu, TypeMenu } from '../components/Pickers';
+import { typeOf } from '../lib/tasks';
+import { hrsf, nz } from '../lib/format';
+import { kidsMap, leafTasks, rootTasks, withAncestors } from '../lib/hier';
 import TaskDrawer from './TaskDrawer';
 import BulkBar from '../components/BulkBar';
+import WbsTree from '../components/WbsTree';
 import { useSelect } from '../lib/useSelect';
-import { AddRow, TriBox, groupsOf } from './SprintView';
+import { AddRow, TriBox } from '../components/ListBits';
+import { groupsOf } from './SprintView';
 
 function MoveMenu({ task, className = 'btn' }) {
   const { S } = useStore();
@@ -21,49 +24,52 @@ function MoveMenu({ task, className = 'btn' }) {
   return <Menu className={className} label="Move to sprint ▾" title={'Move ' + task.name + ' to a sprint'} items={items} />;
 }
 
-function Row({ t, expanded, onToggle, onOpen, selected, onSelect }) {
+function Row({ t, depth, kidList, expanded, onToggle, onOpen, selected, onSelect }) {
   const tk = useTasks();
   const { S } = useStore();
-  const subDone = t.subtasks.filter((s) => s.done).length;
+  const parent = kidList.length > 0;
+  const effortRolled = parent && kidList.some((k) => nz(k.effort) > 0);
+  const milestone = typeOf(S, t.type).milestone;
+  return (
+    <div className={'tg-row' + (selected ? ' sel' : '') + (parent ? ' par' : '')}>
+      <div className="tg-name" style={depth ? { paddingLeft: depth * 18 } : undefined}>
+        <input type="checkbox" className="tg-sel" checked={selected} onChange={() => {}} onClick={(e) => onSelect(t.id, e.shiftKey)} aria-label={'Select ' + t.name} />
+        <button className="x tg-exp" onClick={onToggle} aria-label={expanded ? 'Hide child items' : 'Show child items'} title={parent ? (expanded ? 'Collapse' : 'Expand') : 'Add a child item'}>{expanded ? '▾' : '▸'}</button>
+        <TypeMenu task={t} size={16} />
+        <button className={'tg-title' + (parent ? ' bold' : '')} onClick={() => onOpen(t.id)} title="Open work item">{t.name}</button>
+        {parent && <span className="subc" title="Direct child items">⑂ {kidList.length}</span>}
+      </div>
+      <div className="c-ass"><AssigneeMenu task={t} /></div>
+      <div className="c-pri"><PriorityMenu task={t} /></div>
+      <div className="c-eff">
+        {effortRolled ? (
+          <span className="cell roll n w-sm" title="Rolled up from child items">Σ {hrsf(t.effort)}</span>
+        ) : (
+          <Cell value={t.effort} type="num" cls="n w-sm" label="Effort in hours" placeholder={milestone ? '' : '–'} disabled={milestone} onCommit={(v) => tk.patch(t.id, { effort: v })} />
+        )}
+      </div>
+      <div className="c-move">{!t.parent && <MoveMenu task={t} />}</div>
+      <div className="c-open"><button className="x" onClick={() => onOpen(t.id)} aria-label="Open details" title="Open details">⤢</button></div>
+    </div>
+  );
+}
+
+function Branch({ t, depth, ctx }) {
+  const all = ctx.kids.get(t.id) || [];
+  const list = all.filter((k) => ctx.visible.has(k.id));
+  const expanded = ctx.isExp(t);
   return (
     <>
-      <div className={'tg-row' + (selected ? ' sel' : '')}>
-        <div className="tg-name">
-          <input type="checkbox" className="tg-sel" checked={selected} onChange={() => {}} onClick={(e) => onSelect(t.id, e.shiftKey)} aria-label={'Select ' + t.name} />
-          <button className="x tg-exp" onClick={onToggle} aria-label={expanded ? 'Hide subtasks' : 'Show subtasks'}>{expanded ? '▾' : '▸'}</button>
-          <button className="tg-title" onClick={() => onOpen(t.id)} title="Open work item">{t.name}</button>
-          {t.subtasks.length > 0 && <span className="subc" title="Subtasks done">⑂ {subDone}/{t.subtasks.length}</span>}
-        </div>
-        <div className="c-ass"><AssigneeMenu task={t} /></div>
-        <div className="c-pri"><PriorityMenu task={t} /></div>
-        <div className="c-eff"><Cell value={t.effort} type="num" cls="n w-sm" label="Effort in hours" placeholder="–" onCommit={(v) => tk.patch(t.id, { effort: v })} /></div>
-        <div className="c-move"><MoveMenu task={t} /></div>
-        <div className="c-open"><button className="x" onClick={() => onOpen(t.id)} aria-label="Open details" title="Open details">⤢</button></div>
-      </div>
+      <Row t={t} depth={depth} kidList={all} expanded={expanded} onToggle={() => ctx.toggle(t)} onOpen={ctx.onOpen} selected={ctx.sel.has(t.id)} onSelect={ctx.onSelect} />
       {expanded && (
-        <div className="tg-sub">
-          {t.subtasks.map((s) => (
-            <div key={s.id} className="tg-row sub">
-              <div className="tg-name">
-                <input type="checkbox" checked={s.done} onChange={(e) => tk.patchSub(t.id, s.id, { done: e.target.checked })} aria-label="Subtask done" />
-                <Cell value={s.name} cls={s.done ? 'strike' : ''} label="Subtask name" onCommit={(v) => v && tk.patchSub(t.id, s.id, { name: v })} />
-              </div>
-              <div className="c-ass">
-                <Menu
-                  className="x ass-btn"
-                  label={<Avatar name={nameOf(S, s.person)} size={20} />}
-                  title="Subtask assignee"
-                  items={[{ label: 'Unassigned', active: !s.person, onClick: () => tk.patchSub(t.id, s.id, { person: '' }) }].concat(
-                    S.people.map((x) => ({ label: x.name || '(unnamed)', active: x.id === s.person, onClick: () => tk.patchSub(t.id, s.id, { person: x.id }) }))
-                  )}
-                />
-              </div>
-              <div /><div /><div />
-              <div className="c-open"><button className="x" onClick={() => tk.removeSub(t.id, s.id)} aria-label="Delete subtask">✕</button></div>
+        <>
+          {list.map((k) => (<Branch key={k.id} t={k} depth={depth + 1} ctx={ctx} />))}
+          {!ctx.filtering && (
+            <div className="tg-row sub" style={{ paddingLeft: 40 + depth * 18 }}>
+              <div className="tg-name"><AddRow label="Add child item" onAdd={(n) => ctx.tk.addChild(t.id, { name: n })} /></div>
             </div>
-          ))}
-          <div className="tg-row sub"><div className="tg-name"><AddRow label="Add subtask" onAdd={(n) => tk.addSub(t.id, n)} /></div></div>
-        </div>
+          )}
+        </>
       )}
     </>
   );
@@ -83,20 +89,32 @@ export default function BacklogView() {
   const [shut, setShut] = useState({});
   const people = S.people.filter((p) => p.name);
 
-  const tasks = useMemo(() => {
-    const ql = q.trim().toLowerCase();
-    return c.tasks.filter((t) => (!ql || t.name.toLowerCase().includes(ql)) && (who === 'all' || (who === 'none' ? !(t.assignees || []).length : (t.assignees || []).includes(who))));
-  }, [c, q, who]);
-
-  const totalH = c.tasks.reduce((a, t) => a + (t.effort || 0), 0);
-  const missing = c.tasks.filter((t) => !t.effort).length;
-  const assigned = c.tasks.filter((t) => (t.assignees || []).length).length;
-  const pctA = c.tasks.length ? Math.round((assigned / c.tasks.length) * 100) : null;
+  const kids = useMemo(() => kidsMap(c.tasks), [c]);
   const filtering = !!q.trim() || who !== 'all';
-  const groups = groupsOf(tasks, by, S, false);
+  // items matching the search and assignee filter; their parents stay visible so you can see where they live
+  const shown = useMemo(() => {
+    if (!filtering) return new Set(c.tasks.map((t) => t.id));
+    const ql = q.trim().toLowerCase();
+    const hit = c.tasks.filter((t) => (!ql || t.name.toLowerCase().includes(ql)) && (who === 'all' || (who === 'none' ? !(t.assignees || []).length : (t.assignees || []).includes(who)))).map((t) => t.id);
+    return withAncestors(c.tasks, hit);
+  }, [c, q, who, filtering]);
+  const tasks = useMemo(() => c.tasks.filter((t) => shown.has(t.id)), [c, shown]);
+
+  const leaves = leafTasks(c.tasks);
+  const work = leaves.filter((t) => !typeOf(S, t.type).milestone);
+  const totalH = rootTasks(c.tasks).reduce((a, t) => a + (t.effort || 0), 0); // top-level items already hold their children's hours
+  const missing = work.filter((t) => !t.effort).length;
+  const assigned = leaves.filter((t) => (t.assignees || []).length).length;
+  const pctA = leaves.length ? Math.round((assigned / leaves.length) * 100) : null;
+  const tops = tasks.filter((t) => !t.parent);
+  const groups = groupsOf(tops, by, S, false);
   const addTo = (defaults) => (name) => tk.add('backlog', { name, ...defaults });
+  const isExp = (t) => (exp[t.id] != null ? exp[t.id] : (kids.get(t.id) || []).length > 0);
+  const toggle = (t) => setExp({ ...exp, [t.id]: !isExp(t) });
+  const branchIds = (t) => [t.id].concat(isExp(t) ? (kids.get(t.id) || []).filter((k) => shown.has(k.id)).flatMap(branchIds) : []);
+  const allBranchIds = (t) => [t.id].concat((kids.get(t.id) || []).filter((k) => shown.has(k.id)).flatMap(allBranchIds));
   const order = [];
-  groups.forEach((g) => !shut[g.key] && g.tasks.forEach((t) => !order.includes(t.id) && order.push(t.id)));
+  groups.forEach((g) => !shut[g.key] && g.tasks.forEach((t) => branchIds(t).forEach((id) => !order.includes(id) && order.push(id))));
   const pick = useSelect(tasks.map((t) => t.id), order, S.id);
 
   return (
@@ -152,9 +170,9 @@ export default function BacklogView() {
                 {by !== 'none' && (
                   <div className="g-hd">
                     <TriBox
-                      all={g.tasks.length > 0 && g.tasks.every((t) => pick.sel.has(t.id))}
-                      some={g.tasks.some((t) => pick.sel.has(t.id))}
-                      onChange={(e) => pick.setMany(g.tasks.map((t) => t.id), e.target.checked)}
+                      all={g.tasks.length > 0 && g.tasks.flatMap(allBranchIds).every((id) => pick.sel.has(id))}
+                      some={g.tasks.flatMap(allBranchIds).some((id) => pick.sel.has(id))}
+                      onChange={(e) => pick.setMany(g.tasks.flatMap(allBranchIds), e.target.checked)}
                       label={'Select all in ' + g.label}
                     />
                     <button className="x" onClick={() => setShut({ ...shut, [g.key]: !hide })} aria-label={hide ? 'Expand group' : 'Collapse group'}>{hide ? '▸' : '▾'}</button>
@@ -163,7 +181,7 @@ export default function BacklogView() {
                   </div>
                 )}
                 {!hide && g.tasks.map((t) => (
-                  <Row key={t.id} t={t} expanded={!!exp[t.id]} onToggle={() => setExp({ ...exp, [t.id]: !exp[t.id] })} onOpen={setOpen} selected={pick.sel.has(t.id)} onSelect={pick.toggleOne} />
+                  <Branch key={t.id} t={t} depth={0} ctx={{ kids, visible: shown, isExp, toggle, onOpen: setOpen, sel: pick.sel, onSelect: pick.toggleOne, filtering, tk }} />
                 ))}
               </div>
             );
@@ -173,7 +191,7 @@ export default function BacklogView() {
         </div>
       </div>
 
-      {open && <TaskDrawer taskId={open} onClose={() => setOpen(null)} />}
+      {open && <TaskDrawer taskId={open} onClose={() => setOpen(null)} onOpen={setOpen} />}
     </div>
   );
 }

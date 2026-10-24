@@ -2,6 +2,7 @@ import { DAY, pd, today } from './dates';
 import { curWeek, nW, projectEnd, wkE, wkS } from './calc';
 import { allContainers } from './tasks';
 import { autoSprint } from './gantt';
+import { flatTree } from './hier';
 
 export const RF_SCOPES = [['project', 'Entire project'], ['sprint', 'Sprint'], ['week', 'Week'], ['month', 'Month'], ['custom', 'Custom']];
 export const DEFAULT_RF = { scope: 'project', sprintId: '', week: 0, month: '', from: '', to: '' };
@@ -52,7 +53,13 @@ export function workItems(S, rf) {
         return !!s && pd(f) >= a && pd(s) <= b; // a work item belongs to a period when its dates overlap it
       });
     }
-    if (list.length) groups.push({ id: c.id, name: c.name, tasks: list });
+    // show the work items as a tree: parents first, children indented under them
+    const keep = new Set(list.map((t) => t.id));
+    const depth = new Map();
+    const ordered = flatTree(c.tasks).filter((r) => keep.has(r.t.id));
+    ordered.forEach((r) => depth.set(r.t.id, r.depth));
+    list = ordered.map((r) => r.t);
+    if (list.length) groups.push({ id: c.id, name: c.name, tasks: list, depth });
   });
   return { R, groups, shown: groups.reduce((a, g) => a + g.tasks.length, 0), total };
 }

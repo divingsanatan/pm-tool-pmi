@@ -1,10 +1,12 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useStore } from '../store/StoreContext';
 import { roll, wbsOf, wstat } from '../lib/calc';
 import { DAY, fdate, pd } from '../lib/dates';
 import { nz, pc } from '../lib/format';
 import { DEFAULT_TL, SCALES, SCOPES, buildAxis, pickedSprint } from '../lib/gantt';
 import { Fld } from '../components/Field';
+import { TypeBadge } from '../components/Bits';
+import { typeOf } from '../lib/tasks';
 
 const HH = 78; // three header rows of 26px
 
@@ -35,6 +37,7 @@ function Bar({ s, f, pct, cls, ax, tip }) {
 export default function Timeline() {
   const { S, update } = useStore();
   const box = useRef(null);
+  const [shut, setShut] = useState(() => new Set()); // collapsed parents
   const tl = { ...DEFAULT_TL, ...(S.tl || {}) };
   const set = (patch) => update((p) => { p.tl = { ...DEFAULT_TL, ...(p.tl || {}), ...patch }; });
   const sp = pickedSprint(S, tl);
@@ -50,10 +53,22 @@ export default function Timeline() {
       return !!s && pd(f) >= ax.r0 && pd(s) <= ax.r1;
     };
     const keep = new Set();
-    rows.forEach((x) => x.type === 'WP' && vis(x) && keep.add(x.sprintId));
-    hidden = rows.filter((x) => x.type === 'WP' && !vis(x)).length;
+    rows.forEach((x) => x.type !== 'Phase' && vis(x) && keep.add(x.sprintId));
+    hidden = rows.filter((x) => x.type !== 'Phase' && !vis(x)).length;
     rows = rows.filter((x) => (x.type === 'Phase' ? keep.has(x.sprintId) : vis(x)));
   }
+
+  // hide everything below a collapsed parent
+  const gone = new Set();
+  rows = rows.filter((x) => {
+    if (x.type === 'Phase' || !x.parentId) return true;
+    if (shut.has(x.parentId) || gone.has(x.parentId)) {
+      gone.add(x.taskId);
+      return false;
+    }
+    return true;
+  });
+  const flip = (id) => setShut((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const setScope = (scope) => set({ scope, scale: scope === 'sprint' ? 'day' : scope === 'project' ? 'week' : tl.scale });
   const jumpToday = () => {
@@ -69,7 +84,7 @@ export default function Timeline() {
       <div className="row sp">
         <div>
           <h2>Timeline</h2>
-          <p className="hint">Every task from your sprints. The filled part is percent complete, red is late, and the red line is today.</p>
+          <p className="hint">Every work item from your sprints, as a tree. Parents show a bracket that spans their children. The filled part is percent complete, red is late, and the red line is today.</p>
         </div>
       </div>
 
@@ -135,10 +150,20 @@ export default function Timeline() {
               );
             }
             const st = wstat(x);
+            const sum = x.type === 'Sum';
+            const ty = typeOf(S, x.kind);
             return (
-              <div key={i} className="g-row">
-                <div className="g-lab" title={x.name}><span className="mono" style={{ color: 'var(--muted)' }}>{x.id}</span> {x.name}</div>
-                <div className="g-trk"><Bar s={x.start} f={x.finish} pct={x.pct} cls={st === 'Done' ? 'done' : st === 'Late' ? 'late' : ''} ax={ax} /></div>
+              <div key={i} className={'g-row' + (sum ? ' g-sum' : '')}>
+                <div className="g-lab" title={x.wbs + ' ' + x.name} style={{ paddingLeft: 8 + (x.depth || 0) * 14 }}>
+                  {sum ? (
+                    <button className="x g-exp" onClick={() => flip(x.taskId)} aria-label={shut.has(x.taskId) ? 'Expand ' + x.name : 'Collapse ' + x.name}>{shut.has(x.taskId) ? '▸' : '▾'}</button>
+                  ) : (
+                    <span className="g-exp" />
+                  )}
+                  <TypeBadge type={ty} size={14} />{' '}
+                  <span className="mono" style={{ color: 'var(--muted)' }}>{x.wbs}</span> {sum ? <b>{x.name}</b> : x.name}
+                </div>
+                <div className="g-trk"><Bar s={x.start} f={x.finish} pct={x.pct} cls={sum ? 'sum' : ty.milestone ? 'ms' : st === 'Done' ? 'done' : st === 'Late' ? 'late' : ''} ax={ax} tip={x.name} /></div>
               </div>
             );
           })}

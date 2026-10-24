@@ -4,6 +4,7 @@ import { useUI } from './UI';
 import Menu from './Menu';
 import { BacklogIcon, FolderIcon, SprintIcon } from './Bits';
 import { blankProject, isOpen, newSprint, uid } from '../lib/tasks';
+import { leafTasks } from '../lib/hier';
 
 function InlineEdit({ value, onDone }) {
   const [v, setV] = useState(value);
@@ -127,7 +128,7 @@ export default function Sidebar({ onNavigate }) {
                 <div className="sb-kids">
                   {p.sprints.map((s) => {
                     const sk = 's:' + s.id;
-                    const n = s.tasks.filter((t) => isOpen(p, t)).length;
+                    const n = leafTasks(s.tasks).filter((t) => isOpen(p, t)).length;
                     return (
                       <div key={s.id} className={'sb-row kid' + (isCur && nav.view === 'sprint' && nav.sprintId === s.id ? ' on' : '')}>
                         {editing === sk ? (

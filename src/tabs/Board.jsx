@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { useStore } from '../store/StoreContext';
 import { useTasks } from '../store/useTasks';
-import { AvatarStack, Flag, StatusIcon } from '../components/Bits';
-import { isDoneStatus, nameOf, statusesOf } from '../lib/tasks';
+import { AvatarStack, Flag, StatusIcon, TypeBadge } from '../components/Bits';
+import { findTask, isDoneStatus, nameOf, statusesOf, typeOf } from '../lib/tasks';
 import { fdate, today } from '../lib/dates';
 
 function Card({ t, onOpen }) {
   const { S } = useStore();
   const done = isDoneStatus(S, t.status);
   const late = !done && t.due && t.due < today();
+  const up = t.parent ? findTask(S, t.parent) : null;
   return (
     <div
       className="kcard"
@@ -22,13 +23,13 @@ function Card({ t, onOpen }) {
       tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && onOpen(t.id)}
     >
-      <div className={'k-title' + (done ? ' done' : '')}>{t.name}</div>
+      {up && <div className="msg k-up" title="Parent work item">↳ {up.t.name}</div>}
+      <div className={'k-title' + (done ? ' done' : '')}><TypeBadge type={typeOf(S, t.type)} size={15} /> {t.name}</div>
       <div className="row k-meta">
         <AvatarStack names={(t.assignees || []).map((id) => nameOf(S, id))} size={20} />
         <Flag priority={t.priority} size={14} />
         {t.due && <span className={'msg' + (late ? ' lateTxt' : '')}>{fdate(t.due)}</span>}
         {t.effort ? <span className="msg mono">{t.effort}h</span> : null}
-        {t.subtasks.length > 0 && <span className="msg">⑂ {t.subtasks.filter((s) => s.done).length}/{t.subtasks.length}</span>}
       </div>
     </div>
   );

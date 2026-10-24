@@ -2,8 +2,8 @@ import { useStore } from '../store/StoreContext';
 import { useTasks } from '../store/useTasks';
 import { useUI } from './UI';
 import Menu from './Menu';
-import { AvatarStack, Flag, StatusIcon } from './Bits';
-import { PRIORITIES, nameOf, statusOf, statusesOf } from '../lib/tasks';
+import { AvatarStack, Flag, StatusIcon, TypeBadge } from './Bits';
+import { PRIORITIES, nameOf, statusOf, statusesOf, typeOf, typesOf } from '../lib/tasks';
 
 // Several stakeholders can be assigned to one work item
 export function AssigneeMenu({ task, className = 'x ass-btn', label, size = 24 }) {
@@ -39,4 +39,32 @@ export function StatusMenu({ task, className = 'x st-btn' }) {
   }));
   items.push({ sep: true }, { label: 'Edit statuses…', onClick: ui.openStatuses });
   return <Menu className={className} label={<StatusIcon status={statusOf(S, task.status)} />} title="Change status" items={items} />;
+}
+
+// the type of a work item (Epic, Story, Task, Bug, or your own); the badge is the button
+export function TypeMenu({ task, className = 'x type-btn', size = 18 }) {
+  const { S } = useStore();
+  const tk = useTasks();
+  const ui = useUI();
+  const items = typesOf(S).map((ty) => ({
+    label: (<span className="sm-item"><TypeBadge type={ty} size={16} />{ty.label}</span>),
+    active: ty.id === task.type,
+    onClick: () => tk.patch(task.id, { type: ty.id }),
+  }));
+  items.push({ sep: true }, { label: 'Manage types…', onClick: ui.openTypes });
+  return <Menu className={className} label={<TypeBadge type={typeOf(S, task.type)} size={size} />} title={'Type: ' + typeOf(S, task.type).label + '. Click to change.'} items={items} />;
+}
+
+// "+" menu that adds a child work item of the chosen type under a parent
+export function AddChildMenu({ parent, className = 'x w-add', label = '＋', onAdded }) {
+  const { S } = useStore();
+  const tk = useTasks();
+  const items = typesOf(S).map((ty) => ({
+    label: (<span className="sm-item"><TypeBadge type={ty} size={16} />Add {ty.label.toLowerCase()}</span>),
+    onClick: () => {
+      const id = tk.addChild(parent.id, { type: ty.id, name: 'New ' + ty.label.toLowerCase() });
+      onAdded && onAdded(id);
+    },
+  }));
+  return <Menu className={className} label={label} title={'Add a child under ' + parent.name} items={items} />;
 }

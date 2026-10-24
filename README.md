@@ -28,6 +28,14 @@ ClickUp-style workspace:
   - **RACI:** every work item of every sprint (and the Backlog) is listed automatically; only the roles can be marked. Filters: Entire project, a Sprint, a Week, a Month, or Custom dates (a work item belongs to a period when its dates overlap it). Stakeholder columns come from the Stakeholders list.
 - **Responsive:** sidebar becomes a slide-out menu, task lists and tables become cards on phones, the Board scrolls with snapping, 16px inputs avoid iOS zoom, larger tap targets on touch screens.
 
+## Work items, types and the WBS
+
+- Every sprint (and the Backlog) holds a flat list of work items. Each item has a **type** (`type`) and an optional **parent** (`parent`, the id of another item in the same list). The order of the list is the order of siblings, so the tree needs no extra storage and nothing changes in Supabase.
+- **Types** are per project and editable (WBS tab or any type badge > *Manage types*): Milestone, Epic, Feature, Story, Task, Subtask and Bug come standard, add your own with a name, icon letter and colour. *Milestone* = a point in time (no effort, left out of earned value). *Needs RACI* = whether the RACI completeness check expects an A and an R for that type. A new child gets the next type down (Epic > Feature > Story > Task > Subtask).
+- **Roll-up** (`src/lib/hier.js`, run inside `normalize`): a parent's effort is the sum of its children, its start is the earliest child start, its due date the latest child due date, and its status and progress are calculated from the children (weighted by effort, else equally). Those fields are read-only on a parent (shown with a Σ). A parent keeps its own estimate only while none of its children has hours. Earned value, late counts and sprint totals use the lowest-level items only, so nothing is counted twice.
+- **WBS tab** (whole project: every sprint is a branch, the Backlog last) and the **WBS view** inside a sprint: numbered WBS codes (1, 1.1, 1.1.1), expand / collapse, show N levels, type filter, search. Keyboard: Enter = item below, Tab / Shift+Tab = indent / outdent, Alt+Up / Down = reorder. Drag the grip to reorder, or drop onto the middle of an item to nest under it. The List view, Backlog, Timeline and RACI chart all show the same tree.
+- Deleting, moving or duplicating an item applies to everything below it. Old checklist subtasks are converted to real child items of type Subtask the first time a project loads.
+
 ## Project layout
 
 ```
