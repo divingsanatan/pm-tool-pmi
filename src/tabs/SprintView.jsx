@@ -8,10 +8,10 @@ import { SprintIcon, StatusIcon } from '../components/Bits';
 import { AssigneeMenu, PriorityMenu, StatusMenu, TypeMenu } from '../components/Pickers';
 import { AddRow, TriBox } from '../components/ListBits';
 import { PRIORITIES, SPRINT_STATUSES, containerById, isDoneStatus, isOpen, priorityOf, statusOf, statusesOf, typeOf } from '../lib/tasks';
-import { DAY, fdate, pd, today } from '../lib/dates';
-import { outsideSprint, sprintHours, sprintShares } from '../lib/calc';
-import { hrsf, nz, pc } from '../lib/format';
-import { crCls } from '../lib/change';
+import { fdate, today } from '../lib/dates';
+import { outsideSprint, sprintEvm, stCls } from '../lib/calc';
+import { hrsf, money, nz, pc } from '../lib/format';
+import { crCls, signedMoney } from '../lib/change';
 import { kidsMap, leafTasks, rootTasks, withAncestors } from '../lib/hier';
 import BulkBar from '../components/BulkBar';
 import WbsTree from '../components/WbsTree';
@@ -105,6 +105,129 @@ export function groupsOf(tasks, by, S, showEmpty) {
   return g.filter((x) => x.tasks.length || (showEmpty && by === 'status'));
 }
 
+// One tile of the sprint panel. Every tile has the same label, value and note styles, so the row lines up.
+function Tile({ l, s, cls = '', vcls = '', title, children, bar }) {
+  return (
+    <div className={'kpi sp-t ' + cls} title={title}>
+      <div className="l">{l}</div>
+      <div className={'v ' + vcls}>{children}</div>
+      {s != null && <div className="s">{s}</div>}
+      {bar}
+    </div>
+  );
+}
+const Bar = ({ f, tone, label }) => <div className={'bar ' + (tone || '')} role="img" aria-label={label}><i style={{ width: Math.max(0, Math.min(100, f * 100)) + '%' }} /></div>;
+const ratio = (v) => (v == null ? '–' : v.toFixed(2) + ' (' + Math.round(v * 100) + '%)');
+
+// Sprint plan, live progress and earned value for one sprint, with the working shown underneath.
+function SprintPanel({ S, c, E, cr, tk, setNav }) {
+  const hasPlan = E.typed && E.planned > 0;
+  const over = E.planned > 0 && E.itemsH > E.planned;
+  const tone = (cls) => (cls === 'good' || cls === 'warn' || cls === 'bad' ? cls : '');
+  const sMoney = (n) => (n == null ? '–' : signedMoney(n, money));
+  const rows = [
+    ['Project budget (BAC)', 'From the Budget tab', '', money(E.bac)],
+    ['Share of the project plan', 'Planned hours ÷ planned hours of all sprints', hrsf(E.planned) + ' h ÷ ' + hrsf(E.total) + ' h' + (E.typed ? '' : ' (no planned hours typed, so its work item hours are used)'), pc(E.share, 2)],
+    ['Sprint budget', 'BAC × share', money(E.bac) + ' × ' + pc(E.share, 2), money(E.budget)],
+    ['Planned % (time gone)', 'Days gone ÷ days in the sprint', E.hasDates ? E.elapsed + ' ÷ ' + E.days + ' days' : 'no dates', pc(E.plannedPct, 1)],
+    ['Planned value (PV)', 'Sprint budget × planned %', money(E.budget) + ' × ' + pc(E.plannedPct, 1), money(E.pv)],
+    ['Earned % (work done)', 'Done work item hours ÷ planned hours, at most 100%', hrsf(E.doneH) + ' h ÷ ' + hrsf(E.planned) + ' h', pc(E.earnedPct, 1)],
+    ['Earned value (EV)', 'Sprint budget × earned %', money(E.budget) + ' × ' + pc(E.earnedPct, 1), money(E.ev)],
+    ['Schedule performance (SPI)', 'EV ÷ PV', E.pv > 0 ? money(E.ev) + ' ÷ ' + money(E.pv) : 'planned value is 0 so far', ratio(E.spi)],
+    ['Actual cost (AC)', 'Cost entries dated inside the sprint, up to today', E.entries.length + ' entr' + (E.entries.length === 1 ? 'y' : 'ies'), money(E.ac)],
+    ['Cost performance (CPI)', 'EV ÷ AC', E.ac > 0 ? money(E.ev) + ' ÷ ' + money(E.ac) : 'no cost entries yet', ratio(E.cpi)],
+    ['Schedule variance (SV)', 'EV − PV', money(E.ev) + ' − ' + money(E.pv), sMoney(E.sv)],
+    ['Cost variance (CV)', 'EV − AC', E.ac > 0 ? money(E.ev) + ' − ' + money(E.ac) : 'no cost entries yet', sMoney(E.cv)],
+  ];
+  return (
+    <section className="sp-wrap" aria-label="Sprint plan and performance">
+      <div>
+        <h3 className="sp-h">Plan</h3>
+        <div className="sp-grid">
+          <Tile l="Start date" s="Editable">
+            <Cell value={c.start} type="date" label="Sprint start" onCommit={(v) => v && tk.patchContainer(c.id, { start: v })} />
+          </Tile>
+          <Tile l="End date" s={E.days ? E.days + ' day' + (E.days === 1 ? '' : 's') + ' · editable' : 'Editable'}>
+            <Cell value={c.end} type="date" label="Sprint end" onCommit={(v) => v && tk.patchContainer(c.id, { end: v })} />
+          </Tile>
+          <Tile l={'Planned hours' + (hasPlan ? '' : ' · required')} cls={hasPlan ? '' : 'need'} s={hasPlan ? pc(E.share, 1) + ' of the project plan (' + hrsf(E.total) + ' h) · editable' : 'Enter how many hours this sprint can take'}>
+            <Cell value={c.plannedHours} type="num" min={0} placeholder="Enter hours" label="Planned hours" onCommit={(v) => tk.patchContainer(c.id, { plannedHours: v })} />
+          </Tile>
+          <Tile l="Sprint budget" s={hasPlan || E.planned > 0 ? 'BAC ' + money(E.bac) + ' × ' + pc(E.share, 1) : 'Needs planned hours'} title="BAC × the sprint's share of the planned hours">
+            {money(E.budget)}
+          </Tile>
+        </div>
+      </div>
+
+      <div>
+        <h3 className="sp-h">Progress · live</h3>
+        <div className="sp-grid">
+          <Tile l="Work item hours" vcls={over ? 'bad' : ''} s={E.nItems + ' item' + (E.nItems === 1 ? '' : 's') + ' · ' + hrsf(E.doneH) + ' h done · ' + hrsf(E.openH) + ' h open'}
+            bar={E.planned > 0 && <Bar f={E.itemsH / E.planned} tone={over ? 'bad' : 'good'} label={pc(E.itemsH / E.planned, 0) + ' of planned hours'} />}>
+            {hrsf(E.itemsH)} h
+          </Tile>
+          <Tile l="Planned %" s={E.hasDates ? (E.started ? 'Day ' + Math.min(E.elapsed, E.days) + ' of ' + E.days : 'Starts ' + fdate(c.start)) : 'Needs dates'} title="Days gone ÷ days in the sprint"
+            bar={E.hasDates && <Bar f={E.plannedPct} label={pc(E.plannedPct, 0) + ' of the time has gone'} />}>
+            {E.hasDates ? pc(E.plannedPct, 0) : '–'}
+          </Tile>
+          <Tile l="Earned %" s={E.planned > 0 ? hrsf(E.doneH) + ' of ' + hrsf(E.planned) + ' planned hours done' : 'Needs planned hours'} title="Done work item hours ÷ planned hours"
+            bar={E.planned > 0 && <Bar f={E.earnedPct} tone="good" label={pc(E.earnedPct, 0) + ' of the work is done'} />}>
+            {E.planned > 0 ? pc(E.earnedPct, 0) : '–'}
+          </Tile>
+          <Tile l="Status" s={E.why}>
+            <span className={'pill lg ' + E.cls}>{E.status}</span>
+          </Tile>
+        </div>
+      </div>
+
+      <div>
+        <h3 className="sp-h">Earned value · as of {fdate(today())}</h3>
+        <div className="sp-grid sp-grid5">
+          <Tile l="PV · planned value" s="Sprint budget × planned %" title="What should be earned by today">{E.hasDates && E.planned > 0 ? money(E.pv) : '–'}</Tile>
+          <Tile l="EV · earned value" s="Sprint budget × earned %" title="What the finished work is worth">{E.planned > 0 ? money(E.ev) : '–'}</Tile>
+          <Tile l="AC · actual cost" s={E.entries.length + ' cost entr' + (E.entries.length === 1 ? 'y' : 'ies') + ' in the sprint'} title="Cost entries dated inside the sprint, up to today">{money(E.ac)}</Tile>
+          <Tile l="SPI · schedule" vcls={tone(stCls(E.spi))} s={E.spi == null ? 'Not started yet' : 'EV ÷ PV · SV ' + sMoney(E.sv)} title="EV ÷ PV. Above 100% is ahead.">{E.spi == null ? '–' : pc(E.spi, 0)}</Tile>
+          <Tile l="CPI · cost" vcls={tone(E.costCls)} s={E.cpi == null ? 'No cost entries yet' : E.costStatus + ' · CV ' + sMoney(E.cv)} title="EV ÷ AC. Above 100% is under budget.">{E.cpi == null ? '–' : pc(E.cpi, 0)}</Tile>
+        </div>
+      </div>
+
+      <details className="card sp-calc">
+        <summary>How these numbers are calculated</summary>
+        <p className="hint" style={{ marginTop: 10 }}>Worked out automatically as of {fdate(today())} from this sprint's planned hours, dates, work items and cost entries. Only the planned hours and dates are typed in. Everything updates when you change a work item's status or a date, and as days pass.</p>
+        <div className="scroll">
+          <table className="tbl rwd sp-tbl">
+            <thead><tr><th>Measure</th><th>Formula</th><th>With this sprint's numbers</th><th className="r">Result</th></tr></thead>
+            <tbody>
+              {rows.map((r) => (<tr key={r[0]}><td data-l="Measure"><b>{r[0]}</b></td><td data-l="Formula" className="msg">{r[1]}</td><td data-l="Numbers" className="mono">{r[2]}</td><td data-l="Result" className="r mono"><b>{r[3]}</b></td></tr>))}
+            </tbody>
+          </table>
+        </div>
+        {E.entries.length > 0 && (
+          <>
+            <h4 className="sp-h" style={{ margin: '14px 0 6px' }}>Cost entries counted in actual cost</h4>
+            <div className="scroll">
+              <table className="tbl rwd sp-tbl">
+                <thead><tr><th>Date</th><th>Cost element</th><th>Description</th><th className="r">Amount</th></tr></thead>
+                <tbody>
+                  {E.entries.map((e, i) => (<tr key={e.id || i}><td data-l="Date" className="mono">{fdate(e.date)}</td><td data-l="Element">{e.element || '–'}</td><td data-l="Description" className="msg">{e.desc || ''}</td><td data-l="Amount" className="r mono">{money(nz(e.amount))}</td></tr>))}
+                  <tr><td data-l=""></td><td data-l=""></td><td data-l="Total" className="msg"></td><td data-l="Total" className="r mono"><b>{money(E.ac)}</b></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+        <h4 className="sp-h" style={{ margin: '14px 0 6px' }}>Status rules</h4>
+        <ul className="msg" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+          <li><b>Complete:</b> every work item in the sprint is done. <b>Overdue:</b> the end date has passed with work still open.</li>
+          <li>Otherwise by SPI: <b>Ahead</b> 105% or more, <b>On track</b> 95% to 105%, <b>At risk</b> 80% to 95%, <b>Behind</b> below 80%. Cost status uses CPI: under budget at 100% or more, slightly over from 90%, over budget below 90%.</li>
+          <li>Days are calendar days and today counts as gone, so planned value reaches 100% on the sprint's last day. Cost entries dated outside every sprint are not counted in any sprint.</li>
+          <li>The Dashboard works in whole weeks, so its sprint figures can differ slightly from these day-by-day figures.</li>
+        </ul>
+      </details>
+    </section>
+  );
+}
+
 export default function SprintView() {
   const { S, nav, setNav } = useStore();
   const tk = useTasks();
@@ -132,6 +255,8 @@ export default function SprintView() {
   const tasks = useMemo(() => (c ? c.tasks.filter((t) => shown.has(t.id)) : []), [c, shown]);
   // a selection belongs to one sprint and one view
   useEffect(() => { setSel(new Set()); last.current = null; }, [nav.sprintId, nav.sprintView]);
+  const [, setTick] = useState(0);
+  useEffect(() => { const t = setInterval(() => setTick((n) => n + 1), 60000); return () => clearInterval(t); }, []); // keeps today-based figures current on a page left open
   if (!c) return <div className="card">This sprint no longer exists. Pick another from the left.</div>;
 
   const idx = S.sprints.findIndex((s) => s.id === c.id);
@@ -140,13 +265,8 @@ export default function SprintView() {
   const work = leaves.filter((t) => !typeOf(S, t.type).milestone); // milestones carry no effort
   const unfinished = leaves.filter((t) => isOpen(S, t));
   const outside = outsideSprint(S).filter((x) => x.sp.id === c.id).length;
-  const H = sprintHours(S, c); // planned (typed) vs. work-item hours (live)
-  const mine = sprintShares(S).rows.find((r) => r.sp.id === c.id); // this sprint's share of the project plan (planned hours / all planned hours)
+  const E = sprintEvm(S, c); // live earned value figures for this sprint, recalculated on every change
   const cr = c.crId ? S.cr.find((x) => x.id === c.crId) : null;
-  const hasPlan = H.planned != null && H.planned > 0;
-  const left = hasPlan ? H.planned - H.items : null;
-  const over = hasPlan && left < 0;
-  const days = c.start && c.end ? Math.round((pd(c.end) - pd(c.start)) / DAY) + 1 : null;
   const missing = work.filter((t) => !t.effort).length;
   const assigned = leaves.filter((t) => (t.assignees || []).length).length;
   const pctA = leaves.length ? Math.round((assigned / leaves.length) * 100) : null;
@@ -209,34 +329,7 @@ export default function SprintView() {
         </div>
       </div>
 
-      <section className="s-plan" aria-label="Sprint plan">
-        <div className="sp-card">
-          <span className="sp-l">Start date</span>
-          <Cell value={c.start} type="date" cls="w-date" label="Sprint start" onCommit={(v) => v && tk.patchContainer(c.id, { start: v })} />
-          <span className="sp-s">Editable</span>
-        </div>
-        <div className="sp-card">
-          <span className="sp-l">End date</span>
-          <Cell value={c.end} type="date" cls="w-date" label="Sprint end" onCommit={(v) => v && tk.patchContainer(c.id, { end: v })} />
-          <span className="sp-s">{days ? days + ' day' + (days === 1 ? '' : 's') : 'Editable'}</span>
-        </div>
-        <div className={'sp-card' + (hasPlan ? '' : ' need')}>
-          <span className="sp-l">Planned hours{hasPlan ? '' : ' · required'}</span>
-          <Cell value={c.plannedHours} type="num" min={0} cls="sp-in n" placeholder="Enter hours" label="Planned hours" onCommit={(v) => tk.patchContainer(c.id, { plannedHours: v })} />
-          <span className="sp-s">{hasPlan ? pc(mine ? mine.share : null, 1) + ' of the project plan · editable' : 'Enter how many hours this sprint can take'}</span>
-        </div>
-        <div className="sp-card">
-          <span className="sp-l">Work item hours</span>
-          <b className="sp-big mono">{hrsf(H.items)} h</b>
-          <span className="sp-s">{H.n} item{H.n === 1 ? '' : 's'} · {hrsf(H.done)} h done · updates live</span>
-          {hasPlan && <div className={'bar ' + (over ? 'bad' : 'good')} role="img" aria-label={pc(H.items / H.planned, 0) + ' of planned hours'}><i style={{ width: Math.min(100, (H.items / H.planned) * 100) + '%' }} /></div>}
-        </div>
-        <div className={'sp-card' + (over ? ' over' : '')}>
-          <span className="sp-l">{!hasPlan ? 'Planned vs work items' : over ? 'Over plan by' : 'Still to plan'}</span>
-          <b className="sp-big mono">{hasPlan ? hrsf(Math.abs(left)) + ' h' : '–'}</b>
-          <span className="sp-s">{hasPlan ? pc(H.items / H.planned, 0) + ' of planned hours used' : 'Set planned hours to compare'}</span>
-        </div>
-      </section>
+      <SprintPanel S={S} c={c} E={E} cr={cr} tk={tk} setNav={setNav} />
 
       <div className="vtabs" role="tablist">
         {[['list', 'List'], ['board', 'Board'], ['wbs', 'WBS']].map(([id, l]) => (

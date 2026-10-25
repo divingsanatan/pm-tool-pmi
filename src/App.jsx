@@ -3,7 +3,6 @@ import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import { useStore } from './store/StoreContext';
 import Dashboard from './tabs/Dashboard';
-import Weekly from './tabs/Weekly';
 import Timeline from './tabs/Timeline';
 import Wbs from './tabs/Wbs';
 import Activity from './tabs/Activity';
@@ -16,7 +15,7 @@ import SprintView from './tabs/SprintView';
 import BacklogView from './tabs/BacklogView';
 import OutsideBanner from './components/OutsideBanner';
 
-const VIEWS = { dash: Dashboard, weekly: Weekly, wbs: Wbs, time: Timeline, budget: Budget, people: Stakeholders, raci: Raci, raid: Raid, change: Change, activity: Activity };
+const VIEWS = { dash: Dashboard, wbs: Wbs, time: Timeline, budget: Budget, people: Stakeholders, raci: Raci, raid: Raid, change: Change, activity: Activity };
 
 export default function App() {
   const { S, nav } = useStore();

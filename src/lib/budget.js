@@ -13,8 +13,8 @@ import { nz } from './format';
        one-time items    = charged once (on their date when they have one)
 
    A project that ends on a Tuesday therefore only pays for the days up to that Tuesday, never for the
-   rest of the week. Everything the Budget tab shows is read from this one model, so the tab, the
-   Dashboard and the Weekly tracker can never disagree.
+   rest of the week. Everything the Budget tab shows is read from this one model, so the tab and the
+   Dashboard can never disagree.
    --------------------------------------------------------------------------------------------- */
 
 export const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -192,7 +192,7 @@ export function budgetModel(S) {
     days.push({ i, ms, date: isoOf(ms), dow: d, planned, working, holiday, hours, labour, lines: rec, once, total: labour + rec + once });
   }
 
-  // calendar weeks counted from the start date, so they match the weekly tracker
+  // calendar weeks counted from the start date, so they match the Dashboard weeks
   const weeks = [];
   for (let w = 1, n = Math.ceil(nDays / 7); w <= n; w++) {
     const s = start + (w - 1) * 7 * DAY;

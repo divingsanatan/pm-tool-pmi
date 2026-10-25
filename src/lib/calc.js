@@ -358,17 +358,82 @@ export function workPlan(S) {
   return o;
 }
 
+// Actual cost of each sprint: cost entries (Budget tab) dated inside the sprint's own dates. An entry that falls in no sprint is not counted in any.
+export function sprintLedger(S) {
+  const by = {};
+  S.sprints.forEach((sp) => (by[sp.id] = []));
+  (S.ledger || []).forEach((e) => {
+    if (!e.date) return;
+    const sp = S.sprints.find((s) => s.start && s.end && e.date >= s.start && e.date <= s.end);
+    if (sp) by[sp.id].push(e);
+  });
+  return by;
+}
+
+/* Earned value measures for one sprint, as of a date (today by default). Nothing is typed in; every figure is worked out from
+   the sprint's planned hours, dates, work items and cost entries, and sprintEvm returns the working so the screen can show it.
+     budget     = BAC x the sprint's share of the planned hours
+     planned %  = days of the sprint gone (counting today) / days in the sprint
+     earned %   = done work item hours / planned hours, never above 100%
+     PV = budget x planned %     EV = budget x earned %     AC = cost entries dated inside the sprint up to the date
+     SPI = EV / PV               CPI = EV / AC */
+export function sprintEvm(S, sp, asOf = today()) {
+  const { rows, total } = sprintShares(S);
+  const row = rows.find((r) => r.sp.id === sp.id);
+  const bac = projectBAC(S);
+  const planned = row ? row.planned : 0;
+  const share = row ? row.share : 0;
+  const budget = bac * share;
+  const hasDates = !!(sp.start && sp.end && pd(sp.end) >= pd(sp.start));
+  const days = hasDates ? Math.round((pd(sp.end) - pd(sp.start)) / DAY) + 1 : 0;
+  const started = hasDates && pd(asOf) >= pd(sp.start);
+  const ended = hasDates && pd(asOf) > pd(sp.end);
+  const elapsed = hasDates ? Math.max(0, Math.min(days, Math.round((pd(asOf) - pd(sp.start)) / DAY) + 1)) : 0;
+  const plannedPct = days ? elapsed / days : 0;
+  const h = sprintHours(S, sp);
+  const open = Math.max(0, h.items - h.done);
+  const earnedPct = planned > 0 ? Math.min(1, h.done / planned) : 0;
+  const pv = budget * plannedPct;
+  const ev = budget * earnedPct;
+  const entries = (sprintLedger(S)[sp.id] || []).filter((e) => e.date <= asOf).sort((x, y) => (x.date < y.date ? -1 : 1));
+  const ac = entries.reduce((a, e) => a + nz(e.amount), 0);
+  const spi = pv > 0 ? ev / pv : null;
+  const cpi = ac > 0 ? ev / ac : null;
+  // real-time status from the numbers above
+  let status, cls, why;
+  const left = hasDates ? Math.round((pd(sp.end) - pd(asOf)) / DAY) : 0;
+  if (!(planned > 0) || !hasDates) {
+    status = 'Set up needed'; cls = 'warn'; why = 'Enter planned hours and the start and end dates.';
+  } else if (!started) {
+    status = 'Not started'; cls = 'neutral'; why = 'Starts in ' + Math.round((pd(sp.start) - pd(asOf)) / DAY) + ' day' + (Math.round((pd(sp.start) - pd(asOf)) / DAY) === 1 ? '' : 's') + '.';
+  } else if (h.items > 0 && open < 0.001) {
+    status = 'Complete'; cls = 'good'; why = 'All work items are done' + (earnedPct < 1 ? '; ' + Math.round((planned - h.done) * 100) / 100 + ' h of the planned hours were not used.' : '.');
+  } else if (ended) {
+    status = 'Overdue'; cls = 'bad'; why = 'The sprint ended ' + Math.abs(left) + ' day' + (Math.abs(left) === 1 ? '' : 's') + ' ago with ' + Math.round(open * 100) / 100 + ' h of work items still open.';
+  } else if (spi >= 1.05) {
+    status = 'Ahead'; cls = 'good'; why = 'Earned value is ahead of planned value.';
+  } else if (spi >= 0.95) {
+    status = 'On track'; cls = 'good'; why = 'Earned value matches planned value.';
+  } else if (spi >= 0.8) {
+    status = 'At risk'; cls = 'warn'; why = 'Earned value is slightly behind planned value.';
+  } else {
+    status = 'Behind'; cls = 'bad'; why = 'Earned value is well behind planned value.';
+  }
+  const costStatus = cpi == null ? 'No cost entries yet' : cpi >= 1 ? 'Under budget' : cpi >= 0.9 ? 'Slightly over budget' : 'Over budget';
+  return {
+    bac, planned, total, share, typed: !!(row && row.typed), budget, hasDates, days, elapsed, left, started, ended,
+    plannedPct, earnedPct, doneH: h.done, itemsH: h.items, openH: open, nItems: h.n,
+    pv, ev, ac, entries, spi, cpi, sv: ev - pv, cv: ac > 0 ? ev - ac : null, status, cls, why, costStatus,
+    costCls: cpi == null ? 'neutral' : cpi >= 1 ? 'good' : cpi >= 0.9 ? 'warn' : 'bad',
+  };
+}
+
 export function wk(S, w) {
-  const r = S.report[w - 1] || {};
   const BAC = projectBAC(S);
   const P = workPlan(S);
-  const manual = r.planPct != null;
-  // Planned % and Earned % are shares of the whole project budget (BAC), the same base the work items use for
-  // earned value. Using the weekly budget here left out one-time lines and made the two columns disagree.
-  // planned: a typed value for the week wins; otherwise it follows the due dates
-  let pv = null;
-  if (manual) pv = r.planPct * BAC;
-  else if (P.total > 0) pv = (P.plan[w - 1] / P.total) * BAC;
+  // Planned % and Earned % are shares of the whole project budget (BAC), the same base the sprint plan uses.
+  // planned: follows the sprint plan (each sprint's share of BAC, spread over its dates)
+  const pv = P.total > 0 ? (P.plan[w - 1] / P.total) * BAC : null;
   // earned: counted for weeks up to today (future weeks have nothing to report yet)
   let ev = null;
   if (P.total > 0 && started(S) && w <= curWeek(S)) ev = (P.done[w - 1] / P.total) * BAC;
@@ -376,9 +441,7 @@ export function wk(S, w) {
     w,
     plan: pv == null ? null : BAC ? pv / BAC : null,
     earn: ev == null ? null : BAC ? ev / BAC : null,
-    manualPlan: manual,
     ac: weekAc(S, w),
-    note: r.note || '',
     pv,
     ev,
   };

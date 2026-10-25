@@ -56,7 +56,7 @@ export default function BudgetCalc() {
       <div className="row sp">
         <div>
           <h2>How this budget is calculated</h2>
-          <p className="hint">Nothing here is typed in. Every figure is worked out from the calendar below, day by day, so you can check it by hand. The Dashboard, Weekly tracker and cost views all read this same calculation.</p>
+          <p className="hint">Nothing here is typed in. Every figure is worked out from the calendar below, day by day, so you can check it by hand. The Dashboard and cost views all read this same calculation.</p>
         </div>
         <button className="btn" onClick={download}>Download day-by-day (CSV)</button>
       </div>
