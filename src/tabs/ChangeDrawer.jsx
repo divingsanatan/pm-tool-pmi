@@ -7,7 +7,7 @@ import { addDays, fdate, today } from '../lib/dates';
 import { newRaidId } from '../lib/calc';
 import { money, nz } from '../lib/format';
 import { allContainers, uid } from '../lib/tasks';
-import { AREAS, CR_PRIORITIES, KINDS, NEXT, WORKFLOW, checksFor, crCls, currentBaseline, missing, reconcile, signedDays, signedMoney, stageOf } from '../lib/change';
+import { AREAS, CR_PRIORITIES, KINDS, NEXT, WORKFLOW, checksFor, crCls, currentBaseline, implementPlan, missing, reconcile, signedDays, signedMoney, stageOf } from '../lib/change';
 
 // A list of chosen items shown as chips, with a dropdown to add more
 function Picker({ ids, options, onChange, disabled, label, empty }) {
@@ -352,14 +352,33 @@ export default function ChangeDrawer({ id, onClose }) {
               className="btn primary"
               disabled={!go('Implemented').ok || !base}
               title={go('Implemented').ok ? '' : 'Still needed: ' + go('Implemented').m.map((x) => x.label).join('; ')}
-              onClick={() =>
-                ui.ask({
-                  title: 'Implement and create a new baseline?',
-                  body: 'The current plan becomes the next baseline version. This cannot be undone.',
-                  confirm: 'Create baseline',
-                  onConfirm: () => ch.implement(cr.id),
-                })
-              }
+              onClick={() => {
+                const pl = implementPlan(cr, S);
+                if (!pl) return;
+                const body = (
+                  <>
+                    <p style={{ margin: '0 0 8px' }}>The new baseline is the current one ({pl.prev.version}) plus what was approved:</p>
+                    <ul style={{ margin: '0 0 10px', paddingLeft: 18 }}>
+                      <li>Budget at completion: {money(pl.prev.bac)} → <b>{money(pl.bac)}</b> ({signedMoney(pl.apCost, money)})</li>
+                      <li>Finish date: {fdate(pl.prev.end)} → <b>{fdate(pl.end)}</b> ({signedDays(pl.apDays)})</li>
+                    </ul>
+                    {pl.needsBudget
+                      ? <p style={{ margin: '0 0 8px' }}>Your Budget tab currently totals <b>{money(pl.liveBac)}</b>, which does not include the approved {signedMoney(pl.apCost, money)}. Should the app add it as a cost line named “{cr.code} {cr.title || 'Change request'}”?</p>
+                      : <p style={{ margin: '0 0 8px' }}>Your Budget tab already matches ({money(pl.liveBac)}), so nothing is added to it.</p>}
+                    <p style={{ margin: 0 }}>This cannot be undone.</p>
+                  </>
+                );
+                ui.ask(pl.needsBudget
+                  ? {
+                      title: 'Implement ' + cr.code + ' and create a new baseline?',
+                      body,
+                      actions: [
+                        { label: (pl.apCost > 0 ? 'Add ' : 'Take off ') + money(Math.abs(pl.apCost)) + ' to the Budget and create baseline', primary: true, onClick: () => ch.implement(cr.id, true) },
+                        { label: 'I have updated the Budget myself', onClick: () => ch.implement(cr.id, false) },
+                      ],
+                    }
+                  : { title: 'Implement ' + cr.code + ' and create a new baseline?', body, confirm: 'Create baseline', onConfirm: () => ch.implement(cr.id, false) });
+              }}
             >
               Implement and update baseline
             </button>

@@ -85,7 +85,8 @@ export function useChange() {
         });
       },
       // Records the new baseline for an approved request and marks it implemented
-      implement(id) {
+      // addBudgetLine: true adds the approved cost to the Budget tab as one line named after the request (the user chose this in the dialog)
+      implement(id, addBudgetLine) {
         update((p) => {
           const c = p.cr.find((x) => x.id === id);
           if (!c || c.status !== 'Approved' || missing(c, 'Implemented', p).length || !currentBaseline(p)) return;
@@ -95,8 +96,8 @@ export function useChange() {
           // live plan, so a cost or schedule change that was approved but not typed in elsewhere never reached it.)
           const bac = Math.round((prev.bac + apCost) * 100) / 100;
           const end = addDays(prev.end, apDays);
-          // the plan's budget takes the approved cost too, as one line on the Budget tab, unless it already holds it
-          if (apCost && Math.abs(snapshot(p).bac - bac) > 1)
+          // the approved cost goes into the plan's budget only when the user asked for it
+          if (apCost && addBudgetLine === true)
             p.lines.push({ id: uid(), name: c.code + ' ' + (c.title || 'Change request'), amount: apCost, per: 'project' });
           const version = 'v1.' + p.baselines.length;
           const bid = uid();

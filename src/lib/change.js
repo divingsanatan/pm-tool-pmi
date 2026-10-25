@@ -144,6 +144,16 @@ export function checksFor(cr, to, S) {
   if (to === 'Closed') return closeChecks(cr);
   return [];
 }
+// What implementing an approved request will do: the new baseline is the current one plus the approved cost and days.
+// needsBudget is true when the plan's budget (Budget tab) does not already include the approved cost.
+export function implementPlan(cr, S) {
+  const prev = currentBaseline(S);
+  if (!prev) return null;
+  const apCost = nz(cr.apCost), apDays = nz(cr.apDays);
+  const bac = Math.round((prev.bac + apCost) * 100) / 100;
+  const liveBac = Math.round(projectBAC(S) * 100) / 100;
+  return { prev, apCost, apDays, bac, end: addDays(prev.end, apDays), liveBac, needsBudget: apCost !== 0 && Math.abs(liveBac - bac) > 1 };
+}
 export const missing = (cr, to, S) => checksFor(cr, to, S).filter((c) => c.req && !c.ok);
 
 // The main forward step from the current status, with its checklist

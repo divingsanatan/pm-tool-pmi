@@ -230,20 +230,22 @@ export function UIProvider({ children }) {
       </div>
       {dlg && (
         <Modal title={dlg.title} onClose={() => setDlg(null)}>
-          <p className="hint" style={{ marginBottom: 16 }}>{dlg.body}</p>
+          <div className="hint" style={{ marginBottom: 16 }}>{dlg.body}</div>
           <div className="row" style={{ justifyContent: 'flex-end' }}>
             <button className="btn" onClick={() => setDlg(null)}>Cancel</button>
-            <button
-              className={'btn ' + (dlg.danger ? 'danger' : 'primary')}
-              autoFocus
-              onClick={() => {
-                const f = dlg.onConfirm;
-                setDlg(null);
-                f();
-              }}
-            >
-              {dlg.confirm || 'Confirm'}
-            </button>
+            {(dlg.actions || [{ label: dlg.confirm || 'Confirm', primary: !dlg.danger, danger: !!dlg.danger, onClick: dlg.onConfirm }]).map((a, i) => (
+              <button
+                key={i}
+                className={'btn' + (a.primary ? ' primary' : '') + (a.danger ? ' danger' : '')}
+                autoFocus={i === 0}
+                onClick={() => {
+                  setDlg(null);
+                  a.onClick();
+                }}
+              >
+                {a.label}
+              </button>
+            ))}
           </div>
         </Modal>
       )}
