@@ -82,7 +82,7 @@ function previewMove(S, ids, toId) {
 // A new sprint that covers the dates lo..hi without overlapping another sprint
 function addSprintFor(p, lo, hi) {
   const win = gapWindow(p, lo, hi, p.meta.sprintWeeks || 2);
-  const sp = { id: uid(), name: 'Sprint ' + (p.sprints.length + 1), status: 'Not started', start: win.start, end: win.end, tasks: [] };
+  const sp = { id: uid(), name: 'Sprint ' + (p.sprints.length + 1), status: 'Not started', start: win.start, end: win.end, plannedHours: null, tasks: [] }; // planned hours are flagged until the user enters them
   p.sprints.splice(insertAt(p, win.start), 0, sp);
   return sp;
 }

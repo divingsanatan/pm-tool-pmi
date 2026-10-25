@@ -1,7 +1,7 @@
 import { DAY, pd, today, fsh } from './dates';
 import { nz, cl, cleanEffort, money as money0 } from './format';
 import { DEFAULT_STATUSES, DEFAULT_TYPES, allContainers, firstOpenStatus, isDoneStatus, makeTask, statusPct, typeOf, uid } from './tasks';
-import { flatTree, leafTasks, rollupContainer } from './hier';
+import { flatTree, leafTasks, rollupContainer, rootTasks } from './hier';
 import { ACTIVITY_MAX } from './activity';
 
 /* ---------- timeline helpers ---------- */
@@ -394,8 +394,25 @@ export function rlabel(S, a, b) {
 }
 
 /* ---------- "Needs attention" checks (returns [{cls, text}]) ---------- */
+// Hours of a sprint: what the user planned (typed) against what its work items add up to (live), and how much of that is done
+export function sprintHours(S, sp) {
+  const items = rootTasks(sp.tasks).reduce((a, t) => a + nz(t.effort), 0); // top-level items already hold their children's hours
+  const leaves = leafTasks(sp.tasks).filter((t) => !typeOf(S, t.type).milestone);
+  const done = leaves.filter((t) => t.status && isDoneStatus(S, t.status)).reduce((a, t) => a + nz(t.effort), 0);
+  const planned = sp.plannedHours == null || isNaN(sp.plannedHours) ? null : nz(sp.plannedHours);
+  return { planned, items, done, n: leaves.length };
+}
+
 export function alerts(S) {
   const a = [];
+  S.sprints.forEach((sp) => {
+    const h = sprintHours(S, sp);
+    const r = (x) => Math.round(x * 100) / 100;
+    if (h.planned == null || h.planned <= 0)
+      a.push({ cls: 'warn', text: sp.name + ' has no planned hours. Enter them in the Planned hours box on the sprint page.' });
+    else if (h.items > h.planned)
+      a.push({ cls: 'warn', text: sp.name + ': work items add up to ' + r(h.items) + ' h, which is ' + r(h.items - h.planned) + ' h over the ' + r(h.planned) + ' h planned.' });
+  });
   const od = S.raid.filter(overdue);
   if (od.length)
     a.push({

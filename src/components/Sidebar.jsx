@@ -3,7 +3,7 @@ import { useStore } from '../store/StoreContext';
 import { useUI } from './UI';
 import Menu from './Menu';
 import { BacklogIcon, FolderIcon, SprintIcon } from './Bits';
-import { blankProject, isOpen, newSprint, uid } from '../lib/tasks';
+import { blankProject, isOpen } from '../lib/tasks';
 import { leafTasks } from '../lib/hier';
 
 function InlineEdit({ value, onDone }) {
@@ -45,16 +45,8 @@ export default function Sidebar({ onNavigate }) {
     setClosed((c) => ({ ...c, [p.id]: false }));
     setEditing('p:' + p.id);
   };
-  const addSprint = (pid) => {
-    const sid = uid();
-    updateW((w) => {
-      const p = w.projects.find((x) => x.id === pid);
-      p.sprints.push(newSprint(p, sid));
-      w.nav = { ...w.nav, projectId: pid, view: 'sprint', sprintId: sid };
-    });
-    setClosed((c) => ({ ...c, [pid]: false }));
-    setEditing('s:' + sid);
-  };
+  // a sprint is only created from the form, which asks for its name, dates and planned hours
+  const addSprint = (pid) => ui.openSprint(pid, () => setClosed((c) => ({ ...c, [pid]: false })));
   const rename = (kind, pid, sid, name) => {
     setEditing(null);
     if (!name) return;

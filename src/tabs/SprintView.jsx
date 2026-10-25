@@ -8,9 +8,9 @@ import { SprintIcon, StatusIcon } from '../components/Bits';
 import { AssigneeMenu, PriorityMenu, StatusMenu, TypeMenu } from '../components/Pickers';
 import { AddRow, TriBox } from '../components/ListBits';
 import { PRIORITIES, SPRINT_STATUSES, containerById, isDoneStatus, isOpen, priorityOf, statusOf, statusesOf, typeOf } from '../lib/tasks';
-import { fdate, today } from '../lib/dates';
-import { outsideSprint } from '../lib/calc';
-import { hrsf, nz } from '../lib/format';
+import { DAY, fdate, pd, today } from '../lib/dates';
+import { outsideSprint, sprintHours } from '../lib/calc';
+import { hrsf, nz, pc } from '../lib/format';
 import { kidsMap, leafTasks, rootTasks, withAncestors } from '../lib/hier';
 import BulkBar from '../components/BulkBar';
 import WbsTree from '../components/WbsTree';
@@ -139,7 +139,11 @@ export default function SprintView() {
   const work = leaves.filter((t) => !typeOf(S, t.type).milestone); // milestones carry no effort
   const unfinished = leaves.filter((t) => isOpen(S, t));
   const outside = outsideSprint(S).filter((x) => x.sp.id === c.id).length;
-  const totalH = rootTasks(c.tasks).reduce((a, t) => a + (t.effort || 0), 0); // top-level items already hold their children's hours
+  const H = sprintHours(S, c); // planned (typed) vs. work-item hours (live)
+  const hasPlan = H.planned != null && H.planned > 0;
+  const left = hasPlan ? H.planned - H.items : null;
+  const over = hasPlan && left < 0;
+  const days = c.start && c.end ? Math.round((pd(c.end) - pd(c.start)) / DAY) + 1 : null;
   const missing = work.filter((t) => !t.effort).length;
   const assigned = leaves.filter((t) => (t.assignees || []).length).length;
   const pctA = leaves.length ? Math.round((assigned / leaves.length) * 100) : null;
@@ -196,16 +200,39 @@ export default function SprintView() {
                 title="Sprint status"
                 items={SPRINT_STATUSES.map((s) => ({ label: s, active: s === c.status, onClick: () => tk.patchContainer(c.id, { status: s }) }))}
               />
-              <span className="chip-d">
-                <Cell value={c.start} type="date" cls="w-date" label="Sprint start" onCommit={(v) => v && tk.patchContainer(c.id, { start: v })} />
-                <span aria-hidden="true">–</span>
-                <Cell value={c.end} type="date" cls="w-date" label="Sprint end" onCommit={(v) => v && tk.patchContainer(c.id, { end: v })} />
-              </span>
           </>
-          <span className="chip-d mono">{hrsf(totalH)} h</span>
           <span className={'chip-d' + (missing ? ' warnc' : '')}>{missing} not est</span>
         </div>
       </div>
+
+      <section className="s-plan" aria-label="Sprint plan">
+        <div className="sp-card">
+          <span className="sp-l">Start date</span>
+          <Cell value={c.start} type="date" cls="w-date" label="Sprint start" onCommit={(v) => v && tk.patchContainer(c.id, { start: v })} />
+          <span className="sp-s">Editable</span>
+        </div>
+        <div className="sp-card">
+          <span className="sp-l">End date</span>
+          <Cell value={c.end} type="date" cls="w-date" label="Sprint end" onCommit={(v) => v && tk.patchContainer(c.id, { end: v })} />
+          <span className="sp-s">{days ? days + ' day' + (days === 1 ? '' : 's') : 'Editable'}</span>
+        </div>
+        <div className={'sp-card' + (hasPlan ? '' : ' need')}>
+          <span className="sp-l">Planned hours{hasPlan ? '' : ' · required'}</span>
+          <Cell value={c.plannedHours} type="num" min={0} cls="sp-in n" placeholder="Enter hours" label="Planned hours" onCommit={(v) => tk.patchContainer(c.id, { plannedHours: v })} />
+          <span className="sp-s">{hasPlan ? 'Entered by you, editable' : 'Enter how many hours this sprint can take'}</span>
+        </div>
+        <div className="sp-card">
+          <span className="sp-l">Work item hours</span>
+          <b className="sp-big mono">{hrsf(H.items)} h</b>
+          <span className="sp-s">{H.n} item{H.n === 1 ? '' : 's'} · {hrsf(H.done)} h done · updates live</span>
+          {hasPlan && <div className={'bar ' + (over ? 'bad' : 'good')} role="img" aria-label={pc(H.items / H.planned, 0) + ' of planned hours'}><i style={{ width: Math.min(100, (H.items / H.planned) * 100) + '%' }} /></div>}
+        </div>
+        <div className={'sp-card' + (over ? ' over' : '')}>
+          <span className="sp-l">{!hasPlan ? 'Planned vs work items' : over ? 'Over plan by' : 'Still to plan'}</span>
+          <b className="sp-big mono">{hasPlan ? hrsf(Math.abs(left)) + ' h' : '–'}</b>
+          <span className="sp-s">{hasPlan ? pc(H.items / H.planned, 0) + ' of planned hours used' : 'Set planned hours to compare'}</span>
+        </div>
+      </section>
 
       <div className="vtabs" role="tablist">
         {[['list', 'List'], ['board', 'Board'], ['wbs', 'WBS']].map(([id, l]) => (

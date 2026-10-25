@@ -624,3 +624,15 @@ label.fld{max-width:100%;min-width:0}
 .c.bad{border-color:var(--bad)!important;background:var(--bad-bg)}
 @media (prefers-reduced-motion:no-preference){.live>i{animation:livepulse 1.6s ease-in-out infinite}@keyframes livepulse{50%{opacity:.25}}.act.new{transition:background .6s}}
 @media (max-width:720px){.act{grid-template-columns:62px 24px minmax(0,1fr)}.act>.x{grid-column:3}}
+
+.s-plan{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:4px 0 16px}
+.sp-card{display:flex;flex-direction:column;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
+.sp-card .c{width:100%;min-width:0;font-size:15px;font-weight:600}
+.sp-card .sp-in{font-family:var(--f-mono);font-size:20px;font-weight:700;padding:2px 4px}
+.sp-l{font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--muted);text-transform:uppercase}
+.sp-big{font-size:22px;line-height:1.2;color:var(--ink)}
+.sp-s{font-size:12.5px;color:var(--muted)}
+.sp-card.need{border-color:var(--warn);background:var(--warn-bg)}
+.sp-card.need .sp-l{color:var(--warn)}
+.sp-card.over .sp-big{color:var(--bad)}
+@media (max-width:720px){.s-plan{grid-template-columns:repeat(2,minmax(0,1fr))}}
