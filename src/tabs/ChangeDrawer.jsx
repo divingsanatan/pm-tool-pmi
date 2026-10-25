@@ -205,6 +205,11 @@ export default function ChangeDrawer({ id, onClose }) {
           <div className="fld" style={{ gridColumn: '1 / -1' }}>Work items affected
             <Picker ids={cr.tasks} options={tasks} disabled={lockImp} label="Add work item" onChange={(v) => set({ tasks: v })} />
           </div>
+          {S.sprints.some((sp) => sp.crId === cr.id) && (
+            <div className="fld" style={{ gridColumn: '1 / -1' }}>Sprints added by this request
+              <span className="msg">{S.sprints.filter((sp) => sp.crId === cr.id).map((sp) => sp.name + ' (' + (sp.plannedHours != null ? sp.plannedHours + ' h planned' : 'no planned hours') + ')').join(', ')}. Their work items are listed above automatically.</span>
+            </div>
+          )}
           <div className="fld" style={{ gridColumn: '1 / -1' }}>Related RAID items
             <Picker ids={cr.raid} options={raid} disabled={lockImp} label="Add RAID item" empty={S.raid.length ? 'All RAID items are already linked.' : 'There are no RAID items yet. Add one below, or in the RAID log.'} onChange={(v) => set({ raid: v })} />
             {!lockImp && <QuickRaid cr={cr} />}

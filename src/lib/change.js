@@ -29,8 +29,12 @@ export function snapshot(S) {
     items: tasks.length,
     effort: Math.round(tasks.filter((t) => !t.parent).reduce((a, t) => a + nz(t.effort), 0) * 100) / 100, // top-level items already hold their children's hours
     codes: tasks.map((t) => t.code),
+    // the sprint plan at that moment: PV and the share of each sprint come from the planned hours
+    sprints: S.sprints.map((sp) => ({ id: sp.id, name: sp.name, start: sp.start || '', end: sp.end || '', plannedHours: sp.plannedHours == null ? null : sp.plannedHours, crId: sp.crId || '' })),
   };
 }
+// Change requests a new sprint can still be added to: not decided against, not yet in a baseline
+export const sprintCrs = (S) => (S.cr || []).filter((c) => ['Draft', 'Submitted', 'Under review', 'Approved'].includes(c.status));
 export const currentBaseline = (S) => (S.baselines && S.baselines.length ? S.baselines[S.baselines.length - 1] : null);
 
 // How far the live plan has moved away from the current baseline
@@ -42,14 +46,16 @@ export function drift(S) {
   const now = new Set(live.codes);
   const added = live.codes.filter((c) => !was.has(c));
   const removed = (b.codes || []).filter((c) => !now.has(c));
+  const had = new Set((b.sprints || []).map((x) => x.id));
+  const addedSprints = b.sprints ? S.sprints.filter((sp) => !had.has(sp.id)).map((sp) => sp.name) : [];
   const o = {
-    b, live, added, removed,
+    b, live, added, removed, addedSprints,
     dCost: live.bac - b.bac,
     dDays: Math.round((pd(live.end) - pd(b.end)) / DAY),
     dItems: live.items - b.items,
     dEffort: live.effort - b.effort,
   };
-  o.moved = Math.abs(o.dCost) > 0.5 || o.dDays !== 0 || added.length > 0 || removed.length > 0 || Math.abs(o.dEffort) > 0.01;
+  o.moved = Math.abs(o.dCost) > 0.5 || o.dDays !== 0 || added.length > 0 || removed.length > 0 || addedSprints.length > 0 || Math.abs(o.dEffort) > 0.01;
   return o;
 }
 
@@ -193,6 +199,7 @@ export function changeAlerts(S) {
     const bits = [];
     if (Math.abs(d.dCost) > 0.5) bits.push('budget ' + (d.dCost > 0 ? '+' : '−') + Math.round(Math.abs(d.dCost)).toLocaleString('en-US'));
     if (d.dDays) bits.push('finish ' + signedDays(d.dDays));
+    if (d.addedSprints.length) bits.push(d.addedSprints.length + ' sprint' + (d.addedSprints.length > 1 ? 's' : '') + ' added: ' + d.addedSprints.join(', '));
     if (d.added.length || d.removed.length) bits.push(d.added.length + ' work items added, ' + d.removed.length + ' removed');
     a.push({ cls: 'bad', text: 'The plan has moved away from baseline ' + b.version + (bits.length ? ' (' + bits.join(', ') + ')' : '') + ' with no approved change request. Raise a change request or revert the plan.' });
   }

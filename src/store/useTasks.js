@@ -6,7 +6,7 @@ import { childTypeFor, containerById, findTask, firstOpenStatus, isDoneStatus, m
 import { leafTasks, subtreeIds } from '../lib/hier';
 import { cleanEffort } from '../lib/format';
 import { fdate } from '../lib/dates';
-import { clampDates, datePatchViolations, gapWindow, insertAt, inWin, rollover, sane, sprintCovers, tasksOutside, windowOf } from '../lib/sprintGuard';
+import { clampDates, datePatchViolations, gapWindow, inWin, rollover, sane, sprintCovers, tasksOutside, windowOf } from '../lib/sprintGuard';
 
 const plural = (n, a, b) => (n === 1 ? a : b);
 const span = (c) => (c.start ? fdate(c.start) : '…') + ' – ' + (c.end ? fdate(c.end) : '…');
@@ -79,14 +79,6 @@ function previewMove(S, ids, toId) {
   return seen.size;
 }
 
-// A new sprint that covers the dates lo..hi without overlapping another sprint
-function addSprintFor(p, lo, hi) {
-  const win = gapWindow(p, lo, hi, p.meta.sprintWeeks || 2);
-  const sp = { id: uid(), name: 'Sprint ' + (p.sprints.length + 1), status: 'Not started', start: win.start, end: win.end, plannedHours: null, tasks: [] }; // planned hours are flagged until the user enters them
-  p.sprints.splice(insertAt(p, win.start), 0, sp);
-  return sp;
-}
-
 // of these ids, the lowest-level items (a parent's dates are rolled up from its children, so only they can be "outside")
 function leafIds(S, ids) {
   return ids.filter((id) => {
@@ -147,6 +139,9 @@ export function useTasks() {
     const say = (o) => uRef.current && uRef.current.toast && uRef.current.toast(o);
     const clear = () => uRef.current && uRef.current.dismiss && uRef.current.dismiss('guard');
     const withDecision = (o) => say({ id: 'guard', tone: 'warn', ...o });
+    // Every new sprint goes through the New sprint form (planned hours, and a change request once the project has a baseline).
+    // The work items only move after the sprint exists, so cancelling the form changes nothing.
+    const newSprintFor = (pre, done) => uRef.current && uRef.current.openSprint && uRef.current.openSprint(sRef.current.id, { ...pre, onCreated: done });
 
     // applies a start / due patch to the listed items, each pulled inside its own sprint
     const applyClamped = (p, ids, patch) =>
@@ -202,11 +197,12 @@ export function useTasks() {
           actions.push({
             label: 'Move to a new sprint (' + fdate(win.start) + ' – ' + fdate(win.end) + ')',
             onClick: () =>
-              update((p) => {
-                const sp = addSprintFor(p, lo, hi);
-                vids.forEach((id) => moveSubtree(p, id, sp, false));
-                applyClamped(p, allIds, patch);
-              }),
+              newSprintFor({ start: win.start, end: win.end }, (sid) =>
+                update((p) => {
+                  vids.forEach((id) => moveSubtree(p, id, containerById(p, sid), false));
+                  applyClamped(p, allIds, patch);
+                })
+              ),
           });
         }
       }
@@ -263,11 +259,12 @@ export function useTasks() {
         actions.push({
           label: 'Move to a new sprint (' + fdate(win.start) + ' – ' + fdate(win.end) + ')',
           onClick: () =>
-            update((p) => {
-              setSprint(p);
-              const sp = addSprintFor(p, dates[0], dates[dates.length - 1]);
-              ids.forEach((id) => moveSubtree(p, id, sp, false));
-            }),
+            newSprintFor({ start: win.start, end: win.end }, (sid) =>
+              update((p) => {
+                setSprint(p);
+                ids.forEach((id) => moveSubtree(p, id, containerById(p, sid), false));
+              })
+            ),
         });
       }
       actions.push({
@@ -346,6 +343,25 @@ export function useTasks() {
       // Fixes work items that are already dated outside their sprint (older data), in one go.
       // mode: 'inside' sets the dates inside the sprint, 'sprint' moves them to a new sprint, 'backlog' moves them to the Backlog.
       resolveOutside(mode, sprintId) {
+        if (mode === 'sprint') {
+          // one new sprint that covers every out-of-range date; the items move once the sprint has been created
+          const S0 = sRef.current;
+          const out = [];
+          const dates = [];
+          S0.sprints.forEach((sp) => {
+            if ((sprintId && sp.id !== sprintId) || !sp.start || !sp.end) return;
+            const w = windowOf(sp);
+            tasksOutside(sp, w).forEach((t) => {
+              out.push(t.id);
+              [t.start, t.due].forEach((d) => d && !inWin(w, d) && dates.push(d));
+            });
+          });
+          if (!out.length) return;
+          dates.sort();
+          const win = gapWindow(S0, dates[0], dates[dates.length - 1], S0.meta.sprintWeeks || 2);
+          newSprintFor({ start: win.start, end: win.end }, (sid) => update((p) => out.forEach((id) => moveSubtree(p, id, containerById(p, sid), false))));
+          return;
+        }
         update((p) => {
           p.sprints.slice().forEach((sp) => {
             if ((sprintId && sp.id !== sprintId) || !sp.start || !sp.end) return;
@@ -356,10 +372,6 @@ export function useTasks() {
               out.forEach((t) => Object.assign(t, clampDates(w, t)));
             } else if (mode === 'backlog') {
               out.forEach((t) => moveSubtree(p, t.id, p.backlog, true));
-            } else if (mode === 'sprint') {
-              const dates = out.flatMap((t) => [t.start, t.due]).filter((d) => d && !inWin(w, d)).sort();
-              const ns = addSprintFor(p, dates[0], dates[dates.length - 1]);
-              out.forEach((t) => moveSubtree(p, t.id, ns, false));
             }
           });
         });

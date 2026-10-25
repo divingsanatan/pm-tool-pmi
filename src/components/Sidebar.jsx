@@ -46,7 +46,7 @@ export default function Sidebar({ onNavigate }) {
     setEditing('p:' + p.id);
   };
   // a sprint is only created from the form, which asks for its name, dates and planned hours
-  const addSprint = (pid) => ui.openSprint(pid, () => setClosed((c) => ({ ...c, [pid]: false })));
+  const addSprint = (pid) => ui.openSprint(pid, { onCreated: () => setClosed((c) => ({ ...c, [pid]: false })) });
   const rename = (kind, pid, sid, name) => {
     setEditing(null);
     if (!name) return;

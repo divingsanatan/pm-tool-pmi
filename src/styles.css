@@ -636,3 +636,4 @@ label.fld{max-width:100%;min-width:0}
 .sp-card.need .sp-l{color:var(--warn)}
 .sp-card.over .sp-big{color:var(--bad)}
 @media (max-width:720px){.s-plan{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.cr-box{margin-top:14px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}

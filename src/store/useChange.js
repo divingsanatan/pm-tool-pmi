@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useStore } from './StoreContext';
 import { uid } from '../lib/tasks';
-import { today } from '../lib/dates';
+import { DAY, addDays, pd, today } from '../lib/dates';
 import { nz } from '../lib/format';
 import { blankCr, currentBaseline, missing, snapshot } from '../lib/change';
 
@@ -89,11 +89,21 @@ export function useChange() {
         update((p) => {
           const c = p.cr.find((x) => x.id === id);
           if (!c || c.status !== 'Approved' || missing(c, 'Implemented', p).length || !currentBaseline(p)) return;
+          const prev = currentBaseline(p);
+          const apCost = nz(c.apCost), apDays = nz(c.apDays);
+          // The approved cost and schedule change are added to the previous baseline. (Before, the new baseline was only a copy of the
+          // live plan, so a cost or schedule change that was approved but not typed in elsewhere never reached it.)
+          const bac = Math.round((prev.bac + apCost) * 100) / 100;
+          const end = addDays(prev.end, apDays);
+          // the plan's budget takes the approved cost too, as one line on the Budget tab, unless it already holds it
+          if (apCost && Math.abs(snapshot(p).bac - bac) > 1)
+            p.lines.push({ id: uid(), name: c.code + ' ' + (c.title || 'Change request'), amount: apCost, per: 'project' });
           const version = 'v1.' + p.baselines.length;
           const bid = uid();
           p.baselines.push({
             id: bid, version, kind: 'Change', date: today(), crId: c.id, crCode: c.code,
-            note: c.title, approvedCost: nz(c.apCost), approvedDays: nz(c.apDays), ...snapshot(p),
+            note: c.title, approvedCost: apCost, approvedDays: apDays, ...snapshot(p),
+            bac, end, weeks: Math.max(1, Math.ceil(((pd(end) - pd(prev.start || p.meta.start)) / DAY + 1) / 7)),
           });
           c.baselineId = bid;
           c.implementedOn = today();

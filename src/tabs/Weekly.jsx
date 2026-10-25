@@ -96,9 +96,11 @@ function ProjectWeekly() {
           <div>
             <h2>Weekly tracker</h2>
             <p className="hint">
-              Everything here is worked out from your work items and costs. Each work item carries a share of the project budget ({money(projectBAC(S))}),{' '}
-              {P.weighted ? 'weighted by its effort hours' : 'shared equally (add effort hours to weight them)'}. <b>Planned</b> follows due dates, <b>Earned</b> follows when items were marked done,
-              and <b>Actual cost</b> is the cost entries on the Budget tab. Planned % and Earned % are shares of the project budget ({money(projectBAC(S))}), so each column adds up to 100% over the whole project. You can type a Planned % (share of the project budget) to override a week; clear it to go back to the due dates.
+              Everything here is worked out from your work items and costs. {P.mode === 'sprint-hours'
+                ? <>Each sprint carries a share of the project budget ({money(projectBAC(S))}) equal to its planned hours divided by the planned hours of all sprints ({Math.round(P.total * 100) / 100} h in total), so the shares always add up to 100%. <b>Planned</b> follows each sprint's own dates, <b>Earned</b> is the sprint's done work item hours against its planned hours, counted in the week each item was marked done,</>
+                : <>Each work item carries a share of the project budget ({money(projectBAC(S))}),{' '}
+              {P.weighted ? 'weighted by its effort hours' : 'shared equally (add effort hours to weight them)'}. <b>Planned</b> follows due dates, <b>Earned</b> follows when items were marked done,</>}
+              and <b>Actual cost</b> is the cost entries on the Budget tab. Planned % and Earned % are shares of the project budget ({money(projectBAC(S))}), so each column adds up to 100% over the whole project. You can type a Planned % (share of the project budget) to override a week; clear it to go back to the sprint plan.
             </p>
           </div>
           <Controls />

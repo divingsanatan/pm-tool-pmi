@@ -279,7 +279,7 @@ export function worst(a, b) {
    Planned: the item's share lands in the week of its due date (falling back to the sprint end, then its start).
    Earned: the item's share lands in the week it was marked done. Items finished before completion dates were
    recorded count on their due date. */
-export function workPlan(S) {
+export function workPlanByTasks(S) {
   const N = nW(S);
   const items = [];
   // only items without children count (a parent is the sum of its children), and milestones carry no work
@@ -305,6 +305,55 @@ export function workPlan(S) {
         o.done[idx(today())] += w;
       }
     }
+  });
+  return o;
+}
+
+// Planned hours per sprint and each sprint's share of the project plan.
+// A sprint's planned hours are typed by the user. A sprint without them falls back to what its work items add up to,
+// so older projects keep working (the Dashboard flags those sprints). Shares always add up to 100% by themselves.
+export function sprintShares(S) {
+  const rows = S.sprints.map((sp) => {
+    const h = sprintHours(S, sp);
+    const planned = h.planned != null && h.planned > 0 ? h.planned : h.items;
+    return { sp, planned, typed: h.planned != null && h.planned > 0, items: h.items, done: h.done, share: 0 };
+  });
+  const total = rows.reduce((a, r) => a + r.planned, 0);
+  rows.forEach((r) => (r.share = total > 0 ? r.planned / total : 0));
+  return { rows, total };
+}
+
+/* Planned and earned value from the sprint plan (when sprints have hours; otherwise from the work items, see workPlanByTasks).
+   Planned: a sprint's share of the project budget = its planned hours / all planned hours. It is placed on the sprint's own
+   dates, spread over the weeks in proportion to the days of the sprint that fall in each week.
+   Earned: done work item hours / the sprint's planned hours, capped at the sprint's own share, placed in the week each item
+   was marked done. Values are kept as "planned hours" so that value = hours / total hours * budget. */
+export function workPlan(S) {
+  const base = workPlanByTasks(S);
+  const { rows, total } = sprintShares(S);
+  if (!(total > 0)) return base;
+  const N = nW(S);
+  const idx = (date) => Math.max(1, Math.min(N, weekOfDate(S, date))) - 1;
+  const o = { ...base, total, plan: Array(N).fill(0), done: Array(N).fill(0), bySprint: rows, mode: 'sprint-hours' };
+  const wStart = (i) => pd(S.meta.start) + i * 7 * DAY;
+  rows.forEach((r) => {
+    if (!(r.planned > 0)) return;
+    const { sp } = r;
+    // planned: on the sprint's dates
+    if (sp.start && sp.end && pd(sp.end) >= pd(sp.start)) {
+      const a = pd(sp.start), b = pd(sp.end), days = (b - a) / DAY + 1;
+      for (let i = 0; i < N; i++) {
+        const lo = Math.max(a, wStart(i)), hi = Math.min(b, wStart(i) + 6 * DAY);
+        if (hi >= lo) o.plan[i] += (r.planned * ((hi - lo) / DAY + 1)) / days;
+      }
+    } else o.plan[idx(sp.end || sp.start || S.meta.start)] += r.planned;
+    // earned: done hours in the week they were finished, never more than the sprint's planned hours
+    const f = r.done > r.planned ? r.planned / r.done : 1;
+    leafTasks(sp.tasks).forEach((t) => {
+      if (typeOf(S, t.type).milestone || !t.status || !isDoneStatus(S, t.status) || !nz(t.effort)) return;
+      const on = t.doneOn || t.due || sp.end || t.start || sp.start || today();
+      o.done[idx(on)] += nz(t.effort) * f;
+    });
   });
   return o;
 }
@@ -413,6 +462,11 @@ export function alerts(S) {
     else if (h.items > h.planned)
       a.push({ cls: 'warn', text: sp.name + ': work items add up to ' + r(h.items) + ' h, which is ' + r(h.items - h.planned) + ' h over the ' + r(h.planned) + ' h planned.' });
   });
+  S.sprints.forEach((sp) => {
+    const c = sp.crId && S.cr.find((x) => x.id === sp.crId);
+    if (c && !['Approved', 'Implemented', 'Closed'].includes(c.status))
+      a.push({ cls: 'warn', text: sp.name + ' was added through ' + c.code + ', which is ' + c.status.toLowerCase() + '. The sprint is not part of the approved plan until the change request is approved and implemented.' });
+  });
   const od = S.raid.filter(overdue);
   if (od.length)
     a.push({
@@ -519,6 +573,17 @@ export function normalize(S) {
     if (!c.id) c.id = uid();
     ['affects', 'tasks', 'raid', 'informed', 'log'].forEach((k) => !Array.isArray(c[k]) && (c[k] = []));
     if (!c.chk || typeof c.chk !== 'object') c.chk = { comms: false, docs: false, raid: false, wbs: false };
+  });
+  // A sprint added after the baseline belongs to a change request (sprint.crId). Its work items are listed on that request
+  // automatically. If the request no longer exists the link is dropped.
+  S.sprints.forEach((sp) => {
+    if (!sp.crId) return;
+    const c = S.cr.find((x) => x.id === sp.crId);
+    if (!c) {
+      delete sp.crId;
+      return;
+    }
+    sp.tasks.forEach((t) => !c.tasks.includes(t.id) && c.tasks.push(t.id));
   });
   // RAID items get a stable key, because their visible ID can be edited, blank or repeated. Change requests link by key
   // (links made by ID in earlier versions are converted).

@@ -9,8 +9,9 @@ import { AssigneeMenu, PriorityMenu, StatusMenu, TypeMenu } from '../components/
 import { AddRow, TriBox } from '../components/ListBits';
 import { PRIORITIES, SPRINT_STATUSES, containerById, isDoneStatus, isOpen, priorityOf, statusOf, statusesOf, typeOf } from '../lib/tasks';
 import { DAY, fdate, pd, today } from '../lib/dates';
-import { outsideSprint, sprintHours } from '../lib/calc';
+import { outsideSprint, sprintHours, sprintShares } from '../lib/calc';
 import { hrsf, nz, pc } from '../lib/format';
+import { crCls } from '../lib/change';
 import { kidsMap, leafTasks, rootTasks, withAncestors } from '../lib/hier';
 import BulkBar from '../components/BulkBar';
 import WbsTree from '../components/WbsTree';
@@ -140,6 +141,8 @@ export default function SprintView() {
   const unfinished = leaves.filter((t) => isOpen(S, t));
   const outside = outsideSprint(S).filter((x) => x.sp.id === c.id).length;
   const H = sprintHours(S, c); // planned (typed) vs. work-item hours (live)
+  const mine = sprintShares(S).rows.find((r) => r.sp.id === c.id); // this sprint's share of the project plan (planned hours / all planned hours)
+  const cr = c.crId ? S.cr.find((x) => x.id === c.crId) : null;
   const hasPlan = H.planned != null && H.planned > 0;
   const left = hasPlan ? H.planned - H.items : null;
   const over = hasPlan && left < 0;
@@ -202,6 +205,7 @@ export default function SprintView() {
               />
           </>
           <span className={'chip-d' + (missing ? ' warnc' : '')}>{missing} not est</span>
+          {cr && <button className={'pill ' + crCls(cr.status)} onClick={() => setNav({ view: 'project', tab: 'change' })} title="Open change control">{cr.code} · {cr.status}</button>}
         </div>
       </div>
 
@@ -219,7 +223,7 @@ export default function SprintView() {
         <div className={'sp-card' + (hasPlan ? '' : ' need')}>
           <span className="sp-l">Planned hours{hasPlan ? '' : ' · required'}</span>
           <Cell value={c.plannedHours} type="num" min={0} cls="sp-in n" placeholder="Enter hours" label="Planned hours" onCommit={(v) => tk.patchContainer(c.id, { plannedHours: v })} />
-          <span className="sp-s">{hasPlan ? 'Entered by you, editable' : 'Enter how many hours this sprint can take'}</span>
+          <span className="sp-s">{hasPlan ? pc(mine ? mine.share : null, 1) + ' of the project plan · editable' : 'Enter how many hours this sprint can take'}</span>
         </div>
         <div className="sp-card">
           <span className="sp-l">Work item hours</span>
