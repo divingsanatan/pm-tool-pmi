@@ -210,6 +210,11 @@ export default function ChangeDrawer({ id, onClose }) {
               <span className="msg">{S.sprints.filter((sp) => sp.crId === cr.id).map((sp) => sp.name + ' (' + (sp.plannedHours != null ? sp.plannedHours + ' h planned' : 'no planned hours') + ')').join(', ')}. Their work items are listed above automatically.</span>
             </div>
           )}
+          {S.team.some((t) => t.crId === cr.id) && (
+            <div className="fld" style={{ gridColumn: '1 / -1' }}>Resources claimed by this request
+              <span className="msg">{S.team.filter((t) => t.crId === cr.id).map((t) => ((S.people.find((x) => x.id === t.person) || {}).name || 'Someone') + (t.crClaim ? ' (+' + money(t.crClaim) + ')' : '')).join(', ')}. Their cost is already in the labour budget; implementing the request makes it part of the baseline.</span>
+            </div>
+          )}
           <div className="fld" style={{ gridColumn: '1 / -1' }}>Related RAID items
             <Picker ids={cr.raid} options={raid} disabled={lockImp} label="Add RAID item" empty={S.raid.length ? 'All RAID items are already linked.' : 'There are no RAID items yet. Add one below, or in the RAID log.'} onChange={(v) => set({ raid: v })} />
             {!lockImp && <QuickRaid cr={cr} />}

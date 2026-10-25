@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { useStore } from '../store/StoreContext';
 import { useCosts } from '../store/useCosts';
 import { Cell, SelectCell } from '../components/Field';
-import { Modal } from '../components/UI';
+import { Modal, useUI } from '../components/UI';
 import WeeksControl from '../components/WeeksControl';
 import { ITER_UNIT, costBy, labourOf, labourTotal, ledgerTotal, lineOnce, lineRecurring, lineTotal, personOf, projectBAC, suggestIter } from '../lib/calc';
 import { fdate, today } from '../lib/dates';
 import { hrsf, money, nz, pc } from '../lib/format';
 import { parseCosts } from '../lib/parse';
+import { claimLabour, crCls, labourControl, labourCrs, recordBaselineTeam } from '../lib/change';
 
 const BASES = [['week', 'Per week'], ['month', 'Per month'], ['sprint', 'Per sprint'], ['project', 'One-time']];
 const VIEWS = [['entries', 'Entries'], ['week', 'By week'], ['month', 'By month'], ['sprint', 'By sprint'], ['element', 'By element']];
@@ -120,6 +121,54 @@ function Ledger() {
   );
 }
 
+const NEW_CR = '__new';
+
+// Extra labour budget must be claimed through a change request: link it to an open one, or raise a new one for the difference.
+function LabourCrDialog({ who, amount, total, baseTotal, version, onConfirm, onCancel }) {
+  const { S } = useStore();
+  const opts = labourCrs(S);
+  const [sel, setSel] = useState(opts.length ? '' : NEW_CR);
+  const [title, setTitle] = useState('Add ' + who + ' to the labour budget');
+  const [cost, setCost] = useState(String(Math.round(amount * 100) / 100));
+  const [days, setDays] = useState('0');
+  const cr = opts.find((c) => c.id === sel);
+  const costN = parseFloat(cost);
+  const ok = sel === NEW_CR ? title.trim() !== '' && !isNaN(costN) && costN + 0.005 >= amount && days !== '' && !isNaN(parseInt(days, 10)) : !!cr;
+  const go = () => ok && onConfirm(sel === NEW_CR ? { new: { title: title.trim(), cost: costN, days: parseInt(days, 10) } } : { crId: sel });
+  return (
+    <Modal title="Change request needed" onClose={onCancel}>
+      <p className="hint" style={{ marginBottom: 12 }}>
+        The labour budget would be <b>{money(total)}</b> against <b>{money(baseTotal)}</b> in baseline {version}. The <b>{money(amount)}</b> difference ({who}) is additional budget, so it has to be claimed through a change request.
+        Budget freed up by removing someone is used first and needs no request.
+      </p>
+      <div className="form" onKeyDown={(e) => e.key === 'Enter' && e.target.tagName !== 'SELECT' && go()}>
+        <label className="fld">Change request *
+          <select className="c" value={sel} onChange={(e) => setSel(e.target.value)} aria-label="Change request">
+            {!sel && <option value="">Choose a change request…</option>}
+            {opts.map((c) => (<option key={c.id} value={c.id}>{c.code} · {c.title || '(untitled)'} · {c.status}</option>))}
+            <option value={NEW_CR}>+ Raise a new change request for {money(amount)}</option>
+          </select>
+        </label>
+        {cr && <p className="msg" style={{ margin: 0 }}>{cr.code}’s cost change goes from {money(nz(cr.cost))} to <b>{money(nz(cr.cost) + amount)}</b> (+{money(amount)} for {who}). Only requests still awaiting a decision are listed.</p>}
+        {sel === NEW_CR && (
+          <>
+            <label className="fld">Title *<input className="c" value={title} onChange={(e) => setTitle(e.target.value)} /></label>
+            <div className="row" style={{ gap: 12, alignItems: 'flex-start' }}>
+              <label className="fld" style={{ flex: 1, minWidth: 140 }}>Cost change *<input className="c n" type="number" step="any" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} aria-invalid={isNaN(costN) || costN + 0.005 < amount || undefined} /></label>
+              <label className="fld" style={{ flex: 1, minWidth: 140 }}>Schedule change (days) *<input className="c n" type="number" step="1" inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value)} /></label>
+            </div>
+            {!isNaN(costN) && costN + 0.005 < amount && <p className="msg lateTxt" style={{ margin: 0 }}>The cost change must cover the {money(amount)} difference.</p>}
+          </>
+        )}
+      </div>
+      <div className="row" style={{ justifyContent: 'flex-end', marginTop: 16 }}>
+        <button className="btn" onClick={onCancel}>Cancel</button>
+        <button className="btn primary" disabled={!ok} onClick={go}>Link and continue</button>
+      </div>
+    </Modal>
+  );
+}
+
 // Add someone from the stakeholder list to the labour budget (names are managed on the Stakeholders tab)
 function AddLabour({ onClose }) {
   const { S, update, setNav } = useStore();
@@ -130,6 +179,7 @@ function AddLabour({ onClose }) {
   const [cap, setCap] = useState(free[0] ? fmtCap(free[0]) : '100');
   const [hrs, setHrs] = useState('');
   const [off, setOff] = useState('');
+  const [need, setNeed] = useState(null); // set when the budget would go above the baseline: a change request is needed first
   const pick = (id) => {
     setPid(id);
     const e = S.people.find((p) => p.id === id);
@@ -138,17 +188,35 @@ function AddLabour({ onClose }) {
       setCap(fmtCap(e));
     }
   };
+  const build = (p) => {
+    const per = p.people.find((x) => x.id === pid);
+    if (!per) return;
+    if (rate !== '') per.rate = parseFloat(rate) || 0;
+    if (cap !== '') per.cap = (parseFloat(cap) || 0) / 100;
+    if (!p.team.some((t) => t.person === pid)) p.team.push({ person: pid, hours: Math.max(0, parseFloat(hrs) || 0), off: Math.max(0, parseFloat(off) || 0) });
+  };
   const save = () => {
     if (!pid) return;
+    // after a baseline, extra budget needs a change request. Try the change on a copy first.
+    const trial = structuredClone(S);
+    build(trial);
+    const ctl = labourControl(trial);
+    if (ctl.active && ctl.needsCr) {
+      const who = (S.people.find((x) => x.id === pid) || {}).name || 'The new stakeholder';
+      setNeed({ ctl, who, amount: ctl.short });
+      return;
+    }
+    update(build);
+    onClose();
+  };
+  const confirmClaim = (choice) => {
     update((p) => {
-      const per = p.people.find((x) => x.id === pid);
-      if (!per) return;
-      if (rate !== '') per.rate = parseFloat(rate) || 0;
-      if (cap !== '') per.cap = (parseFloat(cap) || 0) / 100;
-      if (!p.team.some((t) => t.person === pid)) p.team.push({ person: pid, hours: Math.max(0, parseFloat(hrs) || 0), off: Math.max(0, parseFloat(off) || 0) });
+      build(p);
+      claimLabour(p, choice, need.amount, need.who, [{ i: p.team.length - 1, claim: need.amount }]);
     });
     onClose();
   };
+  if (need) return <LabourCrDialog who={need.who} amount={need.amount} total={need.ctl.nowTotal} baseTotal={need.ctl.baseTotal} version={need.ctl.b.version} onConfirm={confirmClaim} onCancel={() => setNeed(null)} />;
   if (!free.length)
     return (
       <Modal title="Add to the labour budget" onClose={onClose}>
@@ -182,8 +250,14 @@ function AddLabour({ onClose }) {
 }
 
 function LabourRegister() {
-  const { S, update } = useStore();
+  const { S, update, setNav } = useStore();
+  const ui = useUI();
   const [adding, setAdding] = useState(false);
+  const [claiming, setClaiming] = useState(false);
+  const ctl = labourControl(S);
+  const rowCtl = Object.fromEntries((ctl.rows || []).map((r) => [r.i, r]));
+  const crOf = (id) => S.cr.find((c) => c.id === id);
+  const replaces = ctl.active && ctl.removed.length ? ctl.removed.map((x) => x.name).join(', ') : '';
   const used = new Set(S.team.map((t) => t.person));
   const setPerson = (id, patch) => update((s) => void Object.assign(s.people.find((x) => x.id === id), patch));
   const setTeam = (i, patch) => update((s) => void Object.assign(s.team[i], patch));
@@ -199,9 +273,24 @@ function LabourRegister() {
         </div>
         <button className="btn primary" onClick={() => setAdding(true)}>+ Add stakeholder</button>
       </div>
+      {ctl.reason === 'untracked' && (
+        <div className="banner warn" style={{ margin: '10px 0' }}>
+          <span>Baseline {ctl.b.version} did not record who was in the labour budget, so new stakeholders cannot be told apart yet.</span>
+          <span className="row"><button className="btn" onClick={() => ui.ask({ title: 'Record the current team as the baseline team?', body: 'The people and costs listed below become the labour budget of baseline ' + ctl.b.version + '. Anyone added after this needs a change request unless budget has been freed up. Do this only if the team below is the team the baseline was approved with.', confirm: 'Record team', onConfirm: () => update((p) => recordBaselineTeam(p)) })}>Record current team in {ctl.b.version}</button></span>
+        </div>
+      )}
+      {ctl.active && ctl.needsCr && (
+        <div className="banner bad" style={{ margin: '10px 0' }}>
+          <span>The labour budget is <b>{money(ctl.extra)}</b> above baseline {ctl.b.version} ({money(ctl.baseTotal)} → {money(ctl.nowTotal)}). {ctl.covered > 0 ? money(ctl.covered) + ' is covered by ' + ctl.crs.map((c) => c.code).join(', ') + '; ' : ''}<b>{money(ctl.short)}</b> still needs a change request.</span>
+          <span className="row"><button className="btn primary" onClick={() => setClaiming(true)}>Link or raise a change request</button></span>
+        </div>
+      )}
+      {ctl.active && !ctl.needsCr && ctl.rows.some((r) => r.isNew) && ctl.extra <= 0.5 && (
+        <p className="msg" style={{ margin: '8px 0 0' }}>New stakeholders fit inside the baseline labour budget ({money(ctl.baseTotal)}){replaces ? ', which was freed up by removing ' + replaces : ''}, so no change request is needed.</p>
+      )}
       <div className="scroll">
         <table className="tbl rwd">
-          <thead><tr><th>Stakeholder</th><th className="r">Hourly rate</th><th className="r">Capacity for project</th><th className="r">Total hrs</th><th className="r">Off hours</th><th className="r">Available hrs</th><th className="r">Total cost</th><th></th></tr></thead>
+          <thead><tr><th>Stakeholder</th><th className="r">Hourly rate</th><th className="r">Capacity for project</th><th className="r">Total hrs</th><th className="r">Off hours</th><th className="r">Available hrs</th><th className="r">Total cost</th>{ctl.active && <th>Against baseline</th>}<th></th></tr></thead>
           <tbody>
             {rows.map(({ t, i, per, L }) => (
               <tr key={per.id + ':' + i}>
@@ -212,23 +301,55 @@ function LabourRegister() {
                 <td data-l="Off hours"><Cell value={t.off} type="num" cls="w-md n" label="Off hours deducted from the total" onCommit={(v) => setTeam(i, { off: v == null ? 0 : Math.max(0, v) })} /></td>
                 <td data-l="Available hrs" className="r mono"><span className="cell" title={L.overOff ? 'Off hours are more than the total hours, so no hours are available' : undefined} style={L.overOff ? { color: 'var(--bad)' } : undefined}>{hrsf(L.avail)}</span></td>
                 <td data-l="Total cost" className="r mono"><span className="cell">{money(L.cost)}</span></td>
+                {ctl.active && (
+                  <td data-l="Against baseline">
+                    {(() => {
+                      const r = rowCtl[i];
+                      if (!r) return null;
+                      const c = r.crId && crOf(r.crId);
+                      const chip = c ? <button className={'pill ' + crCls(c.status)} onClick={() => setNav({ tab: 'change' })} title={c.title}>{c.code} · {c.status}{r.claim ? ' · +' + money(r.claim) : ''}</button> : null;
+                      if (r.isNew) return <span className="cell" style={{ flexWrap: 'wrap', gap: 6 }}><span className="pill neutral">New resource</span>{chip || (ctl.extra > 0.5 ? <span className="pill warn">CR needed</span> : <span className="msg">{replaces ? 'Replaces ' + replaces + ' · ' : ''}within baseline</span>)}</span>;
+                      if (r.delta > 0.5) return <span className="cell" style={{ flexWrap: 'wrap', gap: 6 }}><span className="pill warn">+{money(r.delta)} over baseline</span>{chip || <span className="pill warn">CR needed</span>}</span>;
+                      return <span className="cell msg">{c ? chip : 'In baseline'}</span>;
+                    })()}
+                  </td>
+                )}
                 <td data-l=""><button className="x" onClick={() => update((s) => { s.team.splice(i, 1); })} aria-label="Remove from the labour budget" title="Remove from the labour budget (they stay in RACI)">✕</button></td>
               </tr>
             ))}
-            {!rows.length && (<tr className="empty-row"><td colSpan="8"><span className="cell msg">Nobody in the labour budget yet. Use “+ Add stakeholder”.</span></td></tr>)}
+            {!rows.length && (<tr className="empty-row"><td colSpan={ctl.active ? 9 : 8}><span className="cell msg">Nobody in the labour budget yet. Use “+ Add stakeholder”.</span></td></tr>)}
           </tbody>
-          {rows.length > 0 && (<tfoot><tr><td>Total</td><td></td><td></td><td className="r mono">{hrsf(sum((l) => l.total))}</td><td className="r mono">{hrsf(sum((l) => l.off))}</td><td className="r mono">{hrsf(sum((l) => l.avail))}</td><td className="r mono">{money(sum((l) => l.cost))}</td><td></td></tr></tfoot>)}
+          {rows.length > 0 && (<tfoot><tr><td>Total</td><td></td><td></td><td className="r mono">{hrsf(sum((l) => l.total))}</td><td className="r mono">{hrsf(sum((l) => l.off))}</td><td className="r mono">{hrsf(sum((l) => l.avail))}</td><td className="r mono">{money(sum((l) => l.cost))}</td>{ctl.active && <td className="msg"><span className="cell">Baseline {money(ctl.baseTotal)}</span></td>}<td></td></tr></tfoot>)}
         </table>
       </div>
+      {ctl.active && ctl.removed.length > 0 && <p className="msg" style={{ marginTop: 8 }}>Removed since baseline {ctl.b.version}: {ctl.removed.map((x) => x.name + ' (' + money(x.cost) + ' released)').join(', ')}.</p>}
       {rows.some((r) => r.L.overOff) && <p className="msg lateTxt" style={{ marginTop: 8 }}>Off hours are higher than total hours for at least one stakeholder, so their available hours are counted as 0.</p>}
       {adding && <AddLabour onClose={() => setAdding(false)} />}
+      {claiming && ctl.active && (
+        <LabourCrDialog
+          who={ctl.claimRows.map((r) => r.name).join(', ') || 'the extra labour'}
+          amount={ctl.short} total={ctl.nowTotal} baseTotal={ctl.baseTotal} version={ctl.b.version}
+          onCancel={() => setClaiming(false)}
+          onConfirm={(choice) => {
+            const pos = ctl.claimRows.reduce((a, r) => a + Math.max(0, r.delta), 0) || 1;
+            update((p) => void claimLabour(p, choice, ctl.short, ctl.claimRows.map((r) => r.name).join(', ') || 'extra labour', ctl.claimRows.map((r) => ({ i: r.i, claim: (ctl.short * Math.max(0, r.delta)) / pos }))));
+            setClaiming(false);
+          }}
+        />
+      )}
     </div>
   );
 }
 
 export default function Budget() {
-  const { S, update } = useStore();
+  const { S, update, setNav } = useStore();
   const lab = labourTotal(S), pB = projectBAC(S);
+  // after a baseline, people who joined the labour budget are listed on their own, with the change request that claims their budget
+  const ctl = labourControl(S);
+  const newRes = ctl.active ? ctl.rows.filter((r) => r.isNew) : [];
+  const newSum = newRes.reduce((a, r) => a + r.cost, 0);
+  const crOf = (id) => S.cr.find((c) => c.id === id);
+  const freed = ctl.active && ctl.removed.length ? ctl.removed.map((x) => x.name).join(', ') : '';
   const recur = lineRecurring(S);
   const ac = ledgerTotal(S);
 
@@ -252,6 +373,7 @@ export default function Budget() {
           <p className="hint">Planned cost baseline, and what has actually been spent.</p>
           <div className="totals">
             <span>Team labour</span><span className="mono">{money(lab)}</span>
+            {newRes.length > 0 && (<><span className="msg">· of which new resources</span><span className="mono msg">{money(newSum)}</span></>)}
             <span>Recurring line items</span><span className="mono">{money(recur)}</span>
             <span>One-time line items</span><span className="mono">{money(lineOnce(S))}</span>
             <span className="big">Project BAC</span><span className="mono big">{money(pB)}</span>
@@ -276,13 +398,32 @@ export default function Budget() {
             <thead><tr><th>Line item</th><th className="r">Amount</th><th>Basis</th><th>Iterations</th><th className="r">Project total</th><th></th></tr></thead>
             <tbody>
               <tr>
-                <td data-l="Line item"><span className="cell">Team labour (from the labour budget)</span></td>
-                <td data-l="Amount" className="r mono"><span className="cell">{money(lab)}</span></td>
+                <td data-l="Line item"><span className="cell">{newRes.length ? 'Team labour (baseline team)' : 'Team labour (from the labour budget)'}</span></td>
+                <td data-l="Amount" className="r mono"><span className="cell">{money(lab - newSum)}</span></td>
                 <td data-l="Basis"><span className="cell msg">Project total</span></td>
                 <td data-l="Iterations"></td>
-                <td data-l="Project total" className="r mono"><span className="cell">{money(lab)}</span></td>
+                <td data-l="Project total" className="r mono"><span className="cell">{money(lab - newSum)}</span></td>
                 <td data-l=""></td>
               </tr>
+              {newRes.map((r) => {
+                const c = r.crId && crOf(r.crId);
+                return (
+                  <tr key={'nr' + r.t.person}>
+                    <td data-l="Line item"><span className="cell">New resource: {r.name}</span></td>
+                    <td data-l="Amount" className="r mono"><span className="cell">{money(r.cost)}</span></td>
+                    <td data-l="Basis">
+                      <span className="cell" style={{ flexWrap: 'wrap', gap: 6 }}>
+                        {c ? <button className={'pill ' + crCls(c.status)} onClick={() => setNav({ tab: 'change' })} title={c.title}>{c.code} · {c.status}</button>
+                          : ctl.extra > 0.5 ? <span className="pill warn">CR needed</span>
+                          : <span className="msg">Within baseline{freed ? ' (replaces ' + freed + ')' : ''}</span>}
+                      </span>
+                    </td>
+                    <td data-l="Iterations"></td>
+                    <td data-l="Project total" className="r mono"><span className="cell">{money(r.cost)}</span></td>
+                    <td data-l=""></td>
+                  </tr>
+                );
+              })}
               {S.lines.map((l, i) => {
                 const once = l.per === 'project';
                 return (

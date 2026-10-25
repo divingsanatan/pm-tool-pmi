@@ -574,6 +574,13 @@ export function normalize(S) {
     ['affects', 'tasks', 'raid', 'informed', 'log'].forEach((k) => !Array.isArray(c[k]) && (c[k] = []));
     if (!c.chk || typeof c.chk !== 'object') c.chk = { comms: false, docs: false, raid: false, wbs: false };
   });
+  // A stakeholder who claimed extra labour budget through a change request keeps that link (team.crId); it is dropped if the request is gone.
+  S.team.forEach((t) => {
+    if (t.crId && !S.cr.find((x) => x.id === t.crId)) {
+      delete t.crId;
+      delete t.crClaim;
+    }
+  });
   // A sprint added after the baseline belongs to a change request (sprint.crId). Its work items are listed on that request
   // automatically. If the request no longer exists the link is dropped.
   S.sprints.forEach((sp) => {

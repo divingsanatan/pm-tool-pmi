@@ -1,6 +1,7 @@
 import { DAY, addDays, pd, today } from './dates';
 import { nz } from './format';
-import { nW, projectBAC, projectEnd, weeklyBAC } from './calc';
+import { labourOf, nW, personOf, projectBAC, projectEnd, weeklyBAC } from './calc';
+import { uid } from './tasks';
 
 /* ---------- vocabulary ---------- */
 // Forward path of a change request, plus the two other ways a decision can go
@@ -31,6 +32,12 @@ export function snapshot(S) {
     codes: tasks.map((t) => t.code),
     // the sprint plan at that moment: PV and the share of each sprint come from the planned hours
     sprints: S.sprints.map((sp) => ({ id: sp.id, name: sp.name, start: sp.start || '', end: sp.end || '', plannedHours: sp.plannedHours == null ? null : sp.plannedHours, crId: sp.crId || '' })),
+    // who was in the labour budget at that moment (a new stakeholder after the baseline needs a change request unless budget was freed up)
+    labour: S.team.map((t) => {
+      const L = labourOf(S, t), per = personOf(S, t.person);
+      return L && per ? { person: t.person, name: per.name || '', role: per.role || '', hours: L.total, off: L.off, cap: L.cap, rate: L.rate, avail: Math.round(L.avail * 100) / 100, cost: Math.round(L.cost * 100) / 100 } : null;
+    }).filter(Boolean),
+    labourCost: Math.round(S.team.reduce((a, t) => a + ((labourOf(S, t) || { cost: 0 }).cost), 0) * 100) / 100,
   };
 }
 // Change requests a new sprint can still be added to: not decided against, not yet in a baseline
@@ -196,6 +203,84 @@ export function pendingOf(S) {
 }
 
 const age = (d) => (d ? Math.floor((pd(today()) - pd(d)) / DAY) : 0);
+
+/* ---------- labour budget after the baseline ---------- */
+// Open change requests the extra labour budget can still be claimed through (not decided yet, so their cost change can still grow)
+export const labourCrs = (S) => (S.cr || []).filter((c) => ['Draft', 'Submitted', 'Under review'].includes(c.status));
+const r2 = (n) => Math.round(n * 100) / 100;
+
+// Compares the labour budget now with the labour budget frozen in the current baseline.
+// The rule: the baseline's labour budget is the allowance. A new stakeholder who takes over the budget of someone removed (or fits
+// inside the budget the team has freed up) needs no change request. Only the amount above the baseline's labour budget (net) must
+// be claimed through a change request.
+//   active: false when there is no baseline, or the baseline did not record its team (reason: 'untracked')
+export function labourControl(S) {
+  const b = currentBaseline(S);
+  if (!b) return { active: false, reason: 'no-baseline' };
+  if (!Array.isArray(b.labour)) return { active: false, reason: 'untracked', b };
+  const had = new Map(b.labour.map((x) => [x.person, x]));
+  const rows = S.team.map((t, i) => {
+    const L = labourOf(S, t), per = personOf(S, t.person);
+    if (!L || !per) return null;
+    const base = had.get(t.person);
+    const baseCost = base ? nz(base.cost) : 0;
+    return { i, t, person: per, name: per.name || '(unnamed)', cost: r2(L.cost), baseCost, isNew: !base, delta: r2(L.cost - baseCost), crId: t.crId || '', claim: nz(t.crClaim) };
+  }).filter(Boolean);
+  const inTeam = new Set(S.team.map((t) => t.person));
+  const removed = b.labour.filter((x) => !inTeam.has(x.person));
+  const baseTotal = r2(b.labour.reduce((a, x) => a + nz(x.cost), 0));
+  const nowTotal = r2(rows.reduce((a, r) => a + r.cost, 0));
+  const net = r2(nowTotal - baseTotal);
+  const extra = Math.max(0, net);
+  // change requests already claiming this extra budget (their cost change is what covers it)
+  const ids = Array.from(new Set(rows.filter((r) => (r.isNew || r.delta > 0.5) && r.crId).map((r) => r.crId)));
+  const crs = ids.map((id) => (S.cr || []).find((c) => c.id === id)).filter((c) => c && !['Rejected', 'Deferred'].includes(c.status));
+  const covered = r2(crs.reduce((a, c) => a + (['Approved', 'Implemented', 'Closed'].includes(c.status) ? nz(c.apCost) : nz(c.cost)), 0));
+  const short = extra > 0.5 ? Math.max(0, r2(extra - covered)) : 0;
+  const claimRows = extra > 0.5 ? rows.filter((r) => (r.isNew || r.delta > 0.5) && !r.crId) : [];
+  return { active: true, b, rows, removed, baseTotal, nowTotal, net, extra, crs, covered, short, needsCr: short > 0.5, claimRows };
+}
+
+// Claim extra labour budget through a change request. choice: { crId } to add to an open request, or { new: { title, cost, days } } to raise one.
+// members: [{ i, claim }] team rows that take the claim. Returns the request id.
+export function claimLabour(p, choice, amount, who, members) {
+  let crId = choice.crId;
+  const b = currentBaseline(p);
+  if (choice.new) {
+    crId = uid();
+    p.cr.push(blankCr(p, crId, {
+      title: choice.new.title, cost: choice.new.cost, days: choice.new.days,
+      kind: 'Enhancement or new requirement', affects: ['Cost', 'Resources'],
+      desc: 'Adds ' + who + ' to the labour budget. The labour budget goes above baseline' + (b ? ' ' + b.version : '') + ' by ' + r2(amount) + '.',
+      iResources: who + ' joins the team.',
+    }));
+  } else {
+    const c = p.cr.find((x) => x.id === crId);
+    if (!c) return '';
+    c.cost = r2(nz(c.cost) + amount);
+    if (!c.affects.includes('Cost')) c.affects.push('Cost');
+    if (!c.affects.includes('Resources')) c.affects.push('Resources');
+    c.log.push({ on: today(), text: 'Cost change +' + r2(amount) + ' for ' + who + ' (labour budget)' });
+  }
+  members.forEach((m) => {
+    const t = p.team[m.i];
+    if (t) {
+      t.crId = crId;
+      t.crClaim = r2(m.claim);
+    }
+  });
+  return crId;
+}
+
+// A baseline made before it recorded the team: take the team as it is now as the team of that baseline
+export function recordBaselineTeam(p) {
+  const b = currentBaseline(p);
+  if (!b) return;
+  const s = snapshot(p);
+  b.labour = s.labour;
+  b.labourCost = s.labourCost;
+}
+
 export function changeAlerts(S) {
   const a = [];
   const b = currentBaseline(S);
@@ -203,6 +288,9 @@ export function changeAlerts(S) {
     a.push({ cls: 'warn', text: 'No baseline is set. Change control needs an approved baseline to measure changes against (Change control tab).' });
     return a;
   }
+  const lc = labourControl(S);
+  if (lc.active && lc.needsCr)
+    a.push({ cls: 'warn', text: 'The labour budget is ' + Math.round(lc.extra).toLocaleString('en-US') + ' above baseline ' + b.version + ', and ' + Math.round(lc.short).toLocaleString('en-US') + ' of it is not claimed by a change request. Raise or link one on the Budget tab.' });
   const d = drift(S);
   const P = pendingOf(S);
   if (d && d.moved && !P.appr.length) {
