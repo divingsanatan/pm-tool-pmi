@@ -1,34 +1,12 @@
 import { kf, money, pc } from '../lib/format';
-import { stCls, wk, nW } from '../lib/calc';
+import { stCls } from '../lib/calc';
+import { fsh } from '../lib/dates';
 
 export function nice(max) {
   let step = Math.pow(10, Math.floor(Math.log10(Math.max(max, 1) / 4)));
   const m = [1, 2, 2.5, 5, 10].filter((k) => step * k * 4 >= max)[0] || 10;
   step = step * m;
   return { step, top: step * 4 };
-}
-
-export function Spark({ vals }) {
-  const W = 120, H = 30, P = 4, n = vals.length;
-  const pts = [];
-  vals.forEach((v, i) => {
-    if (v != null && isFinite(v)) pts.push([n > 1 ? P + ((W - 2 * P) * i) / (n - 1) : W / 2, v]);
-  });
-  if (!pts.length) return <span className="msg">No weekly data</span>;
-  let mn = Math.min(...pts.map((p) => p[1]));
-  let mx = Math.max(...pts.map((p) => p[1]));
-  if (mx === mn) {
-    mx += 0.5;
-    mn -= 0.5;
-  }
-  const c = pts.map((p) => [p[0], H - P - ((p[1] - mn) / (mx - mn)) * (H - 2 * P)]);
-  const l = c[c.length - 1];
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="120" height="30" aria-hidden="true">
-      {c.length > 1 && <polyline className="sp" points={c.map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')} />}
-      <circle className="spd" cx={l[0].toFixed(1)} cy={l[1].toFixed(1)} r="3" />
-    </svg>
-  );
 }
 
 export function Gauge({ v }) {
@@ -49,12 +27,12 @@ export function Gauge({ v }) {
   );
 }
 
-export function Donut({ parts }) {
+export function Donut({ parts, unit = 'total', label = 'Budget makeup' }) {
   const tot = parts.reduce((a, p) => a + p.v, 0);
   const r = 15.9155;
   let acc = 0;
   return (
-    <svg viewBox="0 0 42 42" width="170" height="170" role="img" aria-label="Weekly budget makeup">
+    <svg viewBox="0 0 42 42" width="170" height="170" role="img" aria-label={label}>
       <circle className="sg" cx="21" cy="21" r={r} style={{ stroke: 'var(--line)' }} />
       {tot > 0 &&
         parts.map((p, i) => {
@@ -77,93 +55,36 @@ export function Donut({ parts }) {
           );
         })}
       <text x="21" y="20" textAnchor="middle" style={{ font: '500 4.2px var(--f-mono)', fill: 'var(--ink)' }}>{money(tot)}</text>
-      <text x="21" y="26" textAnchor="middle" style={{ font: '3px var(--f-body)' }}>per week</text>
+      <text x="21" y="26" textAnchor="middle" style={{ font: '3px var(--f-body)' }}>{unit}</text>
     </svg>
   );
 }
 
-const SERIES = [
-  ['pv', 'Planned'],
-  ['ev', 'Earned'],
-  ['ac', 'Actual'],
-];
-
-export function BarsChart({ S, a, b }) {
-  const n = b - a + 1, H = 240, L = 48, R = 10, T = 10, Bm = 30;
-  const gw = Math.max(40, Math.min(70, 880 / n));
-  const pw = gw * n, W = L + pw + R, ph = H - T - Bm;
-  const vals = [];
-  for (let w = a; w <= b; w++) {
-    const x = wk(S, w);
-    [x.pv, x.ev, x.ac].forEach((v) => v != null && vals.push(v));
-  }
-  const nc = nice(Math.max(...vals, 1));
-  const bw = Math.min(16, (gw - 10) / 3);
-  const weeks = [];
-  for (let w = a; w <= b; w++) weeks.push(w);
-  return (
-    <div className="scroll">
-      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} style={{ display: 'block', maxWidth: 'none' }} role="img" aria-label="Planned, earned and actual cost by week">
-        {[0, 1, 2, 3, 4].map((g) => {
-          const y = T + ph - (g / 4) * ph;
-          return (
-            <g key={g}>
-              <line className="grid" x1={L} x2={W - R} y1={y} y2={y} />
-              <text x={L - 6} y={y + 4} textAnchor="end">{kf(nc.step * g)}</text>
-            </g>
-          );
-        })}
-        {weeks.map((w) => {
-          const x = wk(S, w);
-          const cx = L + gw * (w - a) + gw / 2;
-          return (
-            <g key={w}>
-              {SERIES.map(([k, label], idx) => {
-                const val = x[k];
-                if (val == null) return null;
-                const h = Math.max(1, (val / nc.top) * ph);
-                return (
-                  <rect key={k} className={'b-' + k} x={(cx + (idx - 1) * (bw + 2) - bw / 2).toFixed(1)} y={(T + ph - h).toFixed(1)} width={bw} height={h.toFixed(1)} rx="2">
-                    <title>{`Week ${w} ${label} ${money(val)}`}</title>
-                  </rect>
-                );
-              })}
-              <text x={cx} y={H - 10} textAnchor="middle">{'W' + w}</text>
-            </g>
-          );
-        })}
-      </svg>
-    </div>
-  );
-}
-
-export function SCurve({ S, a, b }) {
-  const Nw = nW(S), W = 680, H = 250, L = 52, R = 12, T = 14, Bm = 30;
-  const pw = W - L - R, ph = H - T - Bm, cw = pw / Nw;
-  const cum = { pv: [], ev: [], ac: [] };
-  const tot = { pv: 0, ev: 0, ac: 0 };
-  let mx = 1;
-  for (let w = 1; w <= Nw; w++) {
-    const x = wk(S, w);
-    ['pv', 'ev', 'ac'].forEach((k) => {
-      if (x[k] != null) {
-        tot[k] += x[k];
-        cum[k].push({ w, v: tot[k] });
-        if (tot[k] > mx) mx = tot[k];
-      }
-    });
-  }
-  const nc = nice(mx);
-  const xp = (w) => L + cw * (w - 0.5);
+// Cumulative planned, earned and actual cost, day by day. Earned and actual stop at today; planned runs to the end of the plan.
+export function SCurve({ s }) {
+  const W = 760, H = 270, L = 56, R = 16, T = 18, Bm = 34;
+  const pw = W - L - R, ph = H - T - Bm, n = s.ms.length;
+  const top = (arr) => arr.reduce((m, v) => (v != null && v > m ? v : m), 0);
+  const nc = nice(Math.max(1, s.bac, top(s.pv), top(s.ev), top(s.ac)));
+  const xp = (i) => L + (n > 1 ? (pw * i) / (n - 1) : pw / 2);
   const yp = (v) => T + ph - (v / nc.top) * ph;
-  const st = Nw > 13 ? 2 : 1;
+  const line = (arr) => arr.map((v, i) => (v == null ? null : xp(i).toFixed(1) + ',' + yp(v).toFixed(1))).filter(Boolean).join(' ');
+  const every = n <= 14 ? 1 : Math.ceil(n / 8 / 7) * 7; // about eight date labels, on whole weeks for long plans
   const ticks = [];
-  for (let w = 1; w <= Nw; w++) if (w % st === 1 || st === 1 || w === Nw) ticks.push(w);
-  const names = { pv: 'planned', ev: 'earned', ac: 'actual' };
+  for (let i = 0; i < n; i += every) ticks.push(i);
+  const ni = s.nowIdx;
+  const names = { pv: 'Planned', ev: 'Earned', ac: 'Actual' };
+  const mark = (k) => {
+    const v = ni >= 0 ? s[k][ni] : null;
+    return v == null ? null : (
+      <circle className={'pt-' + k} cx={xp(ni).toFixed(1)} cy={yp(v).toFixed(1)} r="4">
+        <title>{names[k] + ' to date ' + money(v)}</title>
+      </circle>
+    );
+  };
   return (
     <div className="scroll">
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ minWidth: 520, display: 'block' }} role="img" aria-label="Cumulative planned, earned and actual cost">
-        <rect className="band" x={(L + cw * (a - 1)).toFixed(1)} y={T} width={(cw * (b - a + 1)).toFixed(1)} height={ph} rx="3" />
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ minWidth: 520, display: 'block' }} role="img" aria-label="Cumulative planned, earned and actual cost up to today">
         {[0, 1, 2, 3, 4].map((g) => {
           const y = T + ph - (g / 4) * ph;
           return (
@@ -173,23 +94,21 @@ export function SCurve({ S, a, b }) {
             </g>
           );
         })}
-        {ticks.map((w) => (
-          <text key={w} x={xp(w).toFixed(1)} y={H - 10} textAnchor="middle">{w}</text>
-        ))}
-        {['pv', 'ac', 'ev'].map((k) => {
-          const pts = cum[k];
-          if (!pts.length) return null;
-          return (
-            <g key={k}>
-              {pts.length > 1 && <polyline className={'ln ln-' + k} points={pts.map((p) => xp(p.w).toFixed(1) + ',' + yp(p.v).toFixed(1)).join(' ')} />}
-              {pts.map((p) => (
-                <circle key={p.w} className={'pt-' + k} cx={xp(p.w).toFixed(1)} cy={yp(p.v).toFixed(1)} r="3.5">
-                  <title>{`Week ${p.w} cumulative ${names[k]} ${money(p.v)}`}</title>
-                </circle>
-              ))}
-            </g>
-          );
-        })}
+        {ticks.map((i) => (<text key={i} x={xp(i).toFixed(1)} y={H - 10} textAnchor="middle">{fsh(s.ms[i])}</text>))}
+        {s.bac > 0 && (
+          <g>
+            <line x1={L} x2={W - R} y1={yp(s.bac)} y2={yp(s.bac)} style={{ stroke: 'var(--muted)', strokeWidth: 1, strokeDasharray: '2 4' }} />
+            <text x={W - R} y={yp(s.bac) - 5} textAnchor="end">{'Budget ' + money(s.bac)}</text>
+          </g>
+        )}
+        {ni >= 0 && (
+          <g>
+            <line x1={xp(ni)} x2={xp(ni)} y1={T} y2={T + ph} style={{ stroke: 'var(--ink)', strokeWidth: 1.2, strokeDasharray: '3 3' }} />
+            <text x={xp(ni)} y={T - 5} textAnchor="middle">Today</text>
+          </g>
+        )}
+        {['pv', 'ac', 'ev'].map((k) => (s[k].some((v) => v != null) ? <polyline key={k} className={'ln ln-' + k} points={line(s[k])} /> : null))}
+        {mark('pv')}{mark('ac')}{mark('ev')}
       </svg>
     </div>
   );

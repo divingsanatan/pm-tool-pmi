@@ -8,7 +8,6 @@ import { ACTIVITY_MAX } from './activity';
 export const nW = (S) => S.meta.weeks;
 export const wkS = (S, w) => pd(S.meta.start) + (w - 1) * 7 * DAY;
 export const wkE = (S, w) => wkS(S, w) + 6 * DAY;
-export const wlabel = (S, w) => fsh(wkS(S, w)) + ' – ' + fsh(wkE(S, w));
 // Sprint numbers come from the sprints that actually exist (their dates), not from a fixed sprint length.
 // sprintOf(S, w): 1-based number of the sprint that covers most of week w, or 0 when no sprint covers it.
 export function sprintOf(S, w) {
@@ -25,7 +24,6 @@ export function sprintOf(S, w) {
   });
   return best;
 }
-export const nSp = (S) => Math.max(1, S.sprints.length);
 // first and last project week a sprint touches, or null when it has no dates
 export function sprintWeeks(S, sp) {
   if (!sp || !sp.start || !sp.end) return null;
@@ -114,7 +112,7 @@ export function labourOf(S, t) {
 export const labourRows = (S) => S.team.map((t) => labourOf(S, t)).filter(Boolean);
 export const labourTotal = (S) => labourRows(S).reduce((a, r) => a + r.cost, 0);
 // Labour is a project total now. The weekly figure below is only that total spread evenly over the project weeks,
-// kept for the Dashboard and Weekly tracker (period budgets, planned value); the Budget tab does not use it.
+// kept for the project budget (projectBAC) and the cost-by-period views; the Budget tab does not use it.
 export const sprintCap = (S) => labourTotal(S) / Math.max(1, nW(S));
 // Planned cost of one budget line. A recurring line (per week / month / sprint) is its amount times the number of
 // iterations typed in; a one-time line is just its amount.
@@ -129,8 +127,6 @@ export const suggestIter = (S, per) => {
   return 0;
 };
 export const lineRecurring = (S) => S.lines.reduce((a, l) => a + (l.per === 'project' ? 0 : lineTotal(S, l)), 0);
-// Per-week spread of a recurring line, kept only for the Dashboard and Weekly tracker (period budgets, planned value)
-export const lineWeekly = (S, l) => (l.per === 'project' ? 0 : lineTotal(S, l) / Math.max(1, nW(S)));
 export const lineWeeklySum = (S) => lineRecurring(S) / Math.max(1, nW(S));
 export const lineOnce = (S) => S.lines.reduce((a, l) => a + (l.per === 'project' ? nz(l.amount) : 0), 0);
 export const weeklyBAC = (S) => sprintCap(S) + lineWeeklySum(S);
@@ -139,17 +135,6 @@ export const projectEnd = (S) => pd(S.meta.start) + (nW(S) * 7 - 1) * DAY;
 
 /* ---------- actual cost ledger ---------- */
 export const ledgerTotal = (S) => S.ledger.reduce((a, e) => a + nz(e.amount), 0);
-export const weekOfDate = (S, date) => (date ? Math.floor((pd(date) - pd(S.meta.start)) / (7 * DAY)) + 1 : null);
-export function weekAc(S, w) {
-  let sum = 0, n = 0;
-  S.ledger.forEach((e) => {
-    if (weekOfDate(S, e.date) === w) {
-      sum += nz(e.amount);
-      n++;
-    }
-  });
-  return n ? sum : null;
-}
 
 // Number of weeks needed to cover every dated sprint, task and cost entry
 export function autoWeeks(S) {
@@ -274,40 +259,6 @@ export function worst(a, b) {
 }
 
 /* ---------- earned value ---------- */
-/* Planned and earned value come from the work items of the sprints (the Backlog is not scheduled work).
-   Every work item carries a share of the project budget: by effort hours when any item has effort, otherwise equally.
-   Planned: the item's share lands in the week of its due date (falling back to the sprint end, then its start).
-   Earned: the item's share lands in the week it was marked done. Items finished before completion dates were
-   recorded count on their due date. */
-export function workPlanByTasks(S) {
-  const N = nW(S);
-  const items = [];
-  // only items without children count (a parent is the sum of its children), and milestones carry no work
-  S.sprints.forEach((sp) => leafTasks(sp.tasks).forEach((t) => !typeOf(S, t.type).milestone && items.push({ t, sp })));
-  const weighted = items.some((x) => nz(x.t.effort) > 0);
-  const wt = (x) => (weighted ? nz(x.t.effort) : 1);
-  const idx = (date) => Math.max(1, Math.min(N, weekOfDate(S, date))) - 1;
-  const o = { total: 0, plan: Array(N).fill(0), done: Array(N).fill(0), count: items.length, undated: 0, undatedDone: 0, noStamp: 0, weighted };
-  items.forEach((x) => {
-    const w = wt(x);
-    if (!w) return;
-    o.total += w;
-    const finish = x.t.due || x.sp.end || x.t.start || x.sp.start;
-    const finished = !!x.t.status && isDoneStatus(S, x.t.status);
-    if (finish) o.plan[idx(finish)] += w;
-    else o.undated++;
-    if (finished) {
-      if (!x.t.doneOn) o.noStamp++;
-      const on = x.t.doneOn || finish;
-      if (on) o.done[idx(on)] += w;
-      else {
-        o.undatedDone++;
-        o.done[idx(today())] += w;
-      }
-    }
-  });
-  return o;
-}
 
 // Planned hours per sprint and each sprint's share of the project plan.
 // A sprint's planned hours are typed by the user. A sprint without them falls back to what its work items add up to,
@@ -323,40 +274,6 @@ export function sprintShares(S) {
   return { rows, total };
 }
 
-/* Planned and earned value from the sprint plan (when sprints have hours; otherwise from the work items, see workPlanByTasks).
-   Planned: a sprint's share of the project budget = its planned hours / all planned hours. It is placed on the sprint's own
-   dates, spread over the weeks in proportion to the days of the sprint that fall in each week.
-   Earned: done work item hours / the sprint's planned hours, capped at the sprint's own share, placed in the week each item
-   was marked done. Values are kept as "planned hours" so that value = hours / total hours * budget. */
-export function workPlan(S) {
-  const base = workPlanByTasks(S);
-  const { rows, total } = sprintShares(S);
-  if (!(total > 0)) return base;
-  const N = nW(S);
-  const idx = (date) => Math.max(1, Math.min(N, weekOfDate(S, date))) - 1;
-  const o = { ...base, total, plan: Array(N).fill(0), done: Array(N).fill(0), bySprint: rows, mode: 'sprint-hours' };
-  const wStart = (i) => pd(S.meta.start) + i * 7 * DAY;
-  rows.forEach((r) => {
-    if (!(r.planned > 0)) return;
-    const { sp } = r;
-    // planned: on the sprint's dates
-    if (sp.start && sp.end && pd(sp.end) >= pd(sp.start)) {
-      const a = pd(sp.start), b = pd(sp.end), days = (b - a) / DAY + 1;
-      for (let i = 0; i < N; i++) {
-        const lo = Math.max(a, wStart(i)), hi = Math.min(b, wStart(i) + 6 * DAY);
-        if (hi >= lo) o.plan[i] += (r.planned * ((hi - lo) / DAY + 1)) / days;
-      }
-    } else o.plan[idx(sp.end || sp.start || S.meta.start)] += r.planned;
-    // earned: done hours in the week they were finished, never more than the sprint's planned hours
-    const f = r.done > r.planned ? r.planned / r.done : 1;
-    leafTasks(sp.tasks).forEach((t) => {
-      if (typeOf(S, t.type).milestone || !t.status || !isDoneStatus(S, t.status) || !nz(t.effort)) return;
-      const on = t.doneOn || t.due || sp.end || t.start || sp.start || today();
-      o.done[idx(on)] += nz(t.effort) * f;
-    });
-  });
-  return o;
-}
 
 // Actual cost of each sprint: cost entries (Budget tab) dated inside the sprint's own dates. An entry that falls in no sprint is not counted in any.
 export function sprintLedger(S) {
@@ -428,82 +345,103 @@ export function sprintEvm(S, sp, asOf = today()) {
   };
 }
 
-export function wk(S, w) {
-  const BAC = projectBAC(S);
-  const P = workPlan(S);
-  // Planned % and Earned % are shares of the whole project budget (BAC), the same base the sprint plan uses.
-  // planned: follows the sprint plan (each sprint's share of BAC, spread over its dates)
-  const pv = P.total > 0 ? (P.plan[w - 1] / P.total) * BAC : null;
-  // earned: counted for weeks up to today (future weeks have nothing to report yet)
-  let ev = null;
-  if (P.total > 0 && started(S) && w <= curWeek(S)) ev = (P.done[w - 1] / P.total) * BAC;
+
+
+
+
+/* ---------- real-time earned value for the whole project (the Dashboard) ---------- */
+/* Every figure is "as of" one date (today by default) and worked out from the live plan: nothing is typed in per week.
+     BAC = the live work budget (Budget tab)
+     PV  = sum over the sprints of  sprint budget x share of the sprint's days gone (today counts)     [sprintEvm]
+     EV  = sum over the sprints of  sprint budget x done hours / planned hours, at most 100% per sprint [sprintEvm]
+     AC  = cost entries dated today or earlier, plus entries without a date (entries dated later are shown apart)
+     SPI = EV / PV      CPI = EV / AC      SV = EV - PV      CV = EV - AC
+     EAC = BAC / CPI    ETC = EAC - AC     VAC = BAC - EAC   TCPI = (BAC - EV) / (BAC - AC)
+   A sprint's budget is BAC x its share of all planned hours, so the sprint budgets always add up to BAC. A sprint without
+   dates has no time-phased plan yet: its share is reported as `unscheduled` and PV leaves it out until it is dated. */
+export function projectEvm(S, asOf = today()) {
+  const bac = projectBAC(S);
+  const { rows, total } = sprintShares(S);
+  const hasPlan = total > 0 && bac > 0;
+  let pv = 0, ev = 0, unscheduled = 0;
+  const sprints = rows.map((r) => {
+    const e = sprintEvm(S, r.sp, asOf);
+    if (!e.hasDates) unscheduled += r.share;
+    pv += e.pv;
+    ev += e.ev;
+    return e;
+  });
+  let ac = 0, later = 0, laterN = 0;
+  (S.ledger || []).forEach((e) => {
+    const a = nz(e.amount);
+    if (e.date && e.date > asOf) {
+      later += a;
+      laterN++;
+    } else ac += a;
+  });
+  const spi = hasPlan && pv > 0 ? ev / pv : null;
+  const cpi = hasPlan && ac > 0 ? ev / ac : null;
+  const eac = cpi != null && cpi > 0 ? bac / cpi : null;
   return {
-    w,
-    plan: pv == null ? null : BAC ? pv / BAC : null,
-    earn: ev == null ? null : BAC ? ev / BAC : null,
-    ac: weekAc(S, w),
-    pv,
-    ev,
+    asOf, bac, hasPlan, pv, ev, ac, later, laterN, unscheduled, sprints,
+    sv: hasPlan ? ev - pv : null, cv: hasPlan ? ev - ac : null, spi, cpi,
+    eac, etc: eac == null ? null : Math.max(0, eac - ac), vac: eac == null ? null : bac - eac,
+    tcpi: hasPlan && bac > ac ? (bac - ev) / (bac - ac) : null,
+    pctComplete: hasPlan && bac ? ev / bac : null, pctSpent: bac ? ac / bac : null,
   };
 }
-export function hasData(S, w) {
-  const x = wk(S, w);
-  return x.ev != null || x.ac != null;
-}
 
-export function agg(S, a, b) {
-  const o = { pv: 0, ev: 0, ac: 0, pvR: 0, evR: 0, evC: 0, acC: 0, weeks: b - a + 1, reported: 0, spiS: [], cpiS: [] };
-  for (let w = a; w <= b; w++) {
-    const x = wk(S, w);
-    if (x.pv != null && x.ev != null) {
-      o.pvR += x.pv;
-      o.evR += x.ev;
-      o.reported++;
+/* The same PV / EV / AC, day by day, cumulative, for the S-curve. The last EV and AC points are the figures above:
+   PV(day) uses the share of each sprint's days gone by that day; EV(day) the done hours finished by that day (an item
+   done with no completion date counts on its due date, never later than today); AC(day) the cost entries dated by that day.
+   EV and AC stop at the as-of date, because nothing after it has happened yet. */
+export function evmSeries(S, asOf = today()) {
+  const bac = projectBAC(S);
+  const { rows, total } = sprintShares(S);
+  const now = pd(asOf);
+  let lo = pd(S.meta.start), hi = Math.max(projectEnd(S), now);
+  rows.forEach((r) => {
+    if (r.sp.start && r.sp.end) {
+      lo = Math.min(lo, pd(r.sp.start));
+      hi = Math.max(hi, pd(r.sp.end));
     }
-    if (x.pv != null) o.pv += x.pv;
-    if (x.ev != null) o.ev += x.ev;
-    if (x.ac != null) o.ac += x.ac;
-    if (x.ev != null && x.ac != null) {
-      o.evC += x.ev;
-      o.acC += x.ac;
-    }
-    o.spiS.push(x.pv && x.ev != null ? x.ev / x.pv : null);
-    o.cpiS.push(x.ac && x.ev != null ? x.ev / x.ac : null);
+  });
+  const n = Math.min(MAX_SERIES_DAYS, Math.round((hi - lo) / DAY) + 1);
+  const ms = Array.from({ length: n }, (_, i) => lo + i * DAY);
+  const at = (t) => Math.max(0, Math.min(n - 1, Math.round((t - lo) / DAY)));
+  const pv = Array(n).fill(0), evAt = Array(n).fill(0);
+  if (total > 0 && bac > 0) {
+    rows.forEach((r) => {
+      if (!(r.planned > 0)) return;
+      const sp = r.sp, budget = bac * r.share;
+      if (sp.start && sp.end && pd(sp.end) >= pd(sp.start)) {
+        const a = pd(sp.start), days = Math.round((pd(sp.end) - a) / DAY) + 1;
+        for (let i = 0; i < n; i++) pv[i] += budget * Math.max(0, Math.min(days, Math.round((ms[i] - a) / DAY) + 1)) / days;
+      }
+      const done = Array(n).fill(0);
+      leafTasks(sp.tasks).forEach((t) => {
+        if (typeOf(S, t.type).milestone || !t.status || !isDoneStatus(S, t.status) || !nz(t.effort)) return;
+        const on = Math.min(now, pd(t.doneOn || t.due || sp.end || t.start || sp.start || asOf));
+        done[at(on)] += nz(t.effort);
+      });
+      let cum = 0;
+      for (let i = 0; i < n; i++) {
+        cum += done[i];
+        evAt[i] += budget * Math.min(1, cum / r.planned);
+      }
+    });
   }
-  o.spi = o.pvR ? o.evR / o.pvR : null;
-  o.cpi = o.acC ? o.evC / o.acC : null;
-  o.budget = weeklyBAC(S) * (b - a + 1);
-  return o;
+  const acAt = Array(n).fill(0);
+  (S.ledger || []).forEach((e) => {
+    if (e.date && e.date > asOf) return;
+    acAt[e.date ? at(pd(e.date)) : 0] += nz(e.amount);
+  });
+  let c = 0;
+  const ac = acAt.map((v) => (c += v));
+  const nowIdx = now < lo ? -1 : at(now);
+  return { ms, bac, nowIdx, pv, ev: evAt.map((v, i) => (i <= nowIdx ? v : null)), ac: ac.map((v, i) => (i <= nowIdx ? v : null)) };
 }
-
-/* ---------- selected range on the dashboard ---------- */
-export function rng(S) {
-  const u = S.ui;
-  const W = nW(S);
-  let a, b;
-  if (u.mode === 'week') {
-    a = b = u.week;
-  } else if (u.mode === 'sprint') {
-    const r = sprintWeeks(S, S.sprints[u.sprint - 1]);
-    a = r ? r[0] : 1;
-    b = r ? r[1] : W;
-  } else if (u.mode === 'custom') {
-    a = Math.min(u.from, u.to);
-    b = Math.max(u.from, u.to);
-  } else {
-    a = 1;
-    b = W;
-  }
-  return [a, b];
-}
-
-export function rlabel(S, a, b) {
-  const m = S.ui.mode;
-  if (m === 'week') return 'Week ' + a + ' · ' + wlabel(S, a);
-  if (m === 'sprint')
-    return 'Sprint ' + S.ui.sprint + ' · Weeks ' + a + (b > a ? '–' + b : '') + ' · ' + fsh(wkS(S, a)) + ' – ' + fsh(wkE(S, b));
-  return (m === 'project' ? 'Whole project · ' : '') + 'Weeks ' + a + '–' + b + ' · ' + fsh(wkS(S, a)) + ' – ' + fsh(wkE(S, b));
-}
+const MAX_SERIES_DAYS = 104 * 7 + 400;
 
 /* ---------- "Needs attention" checks (returns [{cls, text}]) ---------- */
 // Hours of a sprint: what the user planned (typed) against what its work items add up to (live), and how much of that is done
@@ -552,11 +490,27 @@ export function alerts(S) {
       a.push({ cls: 'warn', text: sp.name + ' was added through ' + c.code + ', which is ' + c.status.toLowerCase() + '. The sprint is not part of the approved plan until the change request is approved and implemented.' });
   });
   {
-    const R = reserves(S), spent = ledgerTotal(S), f = (n) => Math.round(n).toLocaleString('en-US');
+    const R = reserves(S), E = projectEvm(S), spent = E.ac, f = (n) => Math.round(n).toLocaleString('en-US');
     if (spent > R.costBaseline + 0.5)
       a.push({ cls: 'bad', text: 'Actual cost (' + f(spent) + ') is above the cost baseline (' + f(R.costBaseline) + '), so it is using the management reserve. Releasing it needs a change request.' });
     else if (spent > R.base + 0.5)
       a.push({ cls: 'warn', text: 'Actual cost (' + f(spent) + ') is above the work budget (' + f(R.base) + '): ' + f(spent - R.base) + ' of the ' + f(R.contingency) + ' contingency reserve is in use.' });
+    // the forecast looks ahead: cost performance so far, carried to the end of the project
+    if (E.eac != null && E.eac > R.total + 0.5)
+      a.push({ cls: 'bad', text: 'At the current cost performance (CPI ' + (Math.round(E.cpi * 100) / 100) + ') the project will finish at ' + f(E.eac) + ', which is ' + f(E.eac - R.total) + ' above the total project budget of ' + f(R.total) + ' even with both reserves. Act on cost now.' });
+    else if (E.eac != null && E.eac > R.costBaseline + 0.5)
+      a.push({ cls: 'bad', text: 'At the current cost performance (CPI ' + (Math.round(E.cpi * 100) / 100) + ') the project will finish at ' + f(E.eac) + ', above the cost baseline of ' + f(R.costBaseline) + '. The contingency reserve will not cover it and the management reserve would be needed.' });
+    else if (E.eac != null && E.eac > R.base + 0.5)
+      a.push({ cls: 'warn', text: 'At the current cost performance (CPI ' + (Math.round(E.cpi * 100) / 100) + ') the project will finish at ' + f(E.eac) + ', ' + f(E.eac - R.base) + ' above the work budget of ' + f(R.base) + '. Contingency would cover it.' });
+    if (E.hasPlan && E.unscheduled > 0.0005)
+      a.push({ cls: 'warn', text: Math.round(E.unscheduled * 100) + '% of the budget belongs to sprints without start and end dates, so it is left out of planned value and SPI is overstated until they are dated.' });
+    if (E.laterN)
+      a.push({ cls: 'warn', text: E.laterN + ' cost entr' + (E.laterN > 1 ? 'ies are' : 'y is') + ' dated after today (' + f(E.later) + ') and ' + (E.laterN > 1 ? 'are' : 'is') + ' not counted in actual cost yet.' });
+  }
+  {
+    const before = S.sprints.filter((sp) => sp.start && sp.start < S.meta.start);
+    if (before.length)
+      a.push({ cls: 'warn', text: before.map((sp) => sp.name).join(', ') + (before.length > 1 ? ' start' : ' starts') + ' before the project start date (' + fsh(pd(S.meta.start)) + '). Move the project start date or the sprint start so the plan and the budget cover the same days.' });
   }
   const od = S.raid.filter(overdue);
   if (od.length)
@@ -571,13 +525,6 @@ export function alerts(S) {
       text:
         late.length + ' work package' + (late.length > 1 ? 's are' : ' is') + ' past the finish date and not complete: ' + late.map((x) => x.id).join(', ') + '.',
     });
-  const wb = weeklyBAC(S);
-  const over = [];
-  for (let k = 1; k <= nW(S); k++) {
-    const x = wk(S, k);
-    if (x.ac != null && x.ac > wb) over.push(k);
-  }
-  if (over.length) a.push({ cls: 'bad', text: 'Actual cost is above the weekly budget in week' + (over.length > 1 ? 's ' : ' ') + over.join(', ') + '.' });
   const outs = outsideSprint(S);
   if (outs.length) {
     const now = ifAligned(S);
@@ -910,39 +857,4 @@ export function normalize(S) {
   u.from = cl(u.from, 1, W);
   u.to = cl(u.to, 1, W);
   return S;
-}
-
-/* ---------- all projects together ---------- */
-// Weeks are aligned by calendar (Monday based), so projects that start on different dates still line up.
-export function portfolio(projects) {
-  const WEEK = 7 * DAY;
-  const mon = (ms) => ms - ((new Date(ms).getUTCDay() + 6) % 7) * DAY;
-  const base = Math.min(...projects.map((p) => mon(pd(p.meta.start))));
-  const last = Math.max(...projects.map((p) => mon(wkS(p, nW(p)))));
-  const n = Math.round((last - base) / WEEK) + 1;
-  const rows = Array.from({ length: n }, (_, k) => ({ k: k + 1, s: base + k * WEEK, e: base + k * WEEK + 6 * DAY, parts: [] }));
-  projects.forEach((p) => {
-    for (let w = 1; w <= nW(p); w++) {
-      const k = Math.round((mon(wkS(p, w)) - base) / WEEK);
-      if (rows[k]) rows[k].parts.push({ p, w, x: wk(p, w) });
-    }
-  });
-  const sum = (parts, f) => {
-    const v = parts.map(f).filter((a) => a != null);
-    return v.length ? v.reduce((a, b) => a + b, 0) : null;
-  };
-  rows.forEach((r) => {
-    r.pv = sum(r.parts, (q) => q.x.pv);
-    r.ev = sum(r.parts, (q) => q.x.ev);
-    r.ac = sum(r.parts, (q) => q.x.ac);
-    const both = r.parts.filter((q) => q.x.pv != null && q.x.ev != null);
-    const cost = r.parts.filter((q) => q.x.ev != null && q.x.ac != null);
-    const pvR = both.reduce((a, q) => a + q.x.pv, 0), evR = both.reduce((a, q) => a + q.x.ev, 0);
-    const evC = cost.reduce((a, q) => a + q.x.ev, 0), acC = cost.reduce((a, q) => a + q.x.ac, 0);
-    r.spi = pvR ? evR / pvR : null;
-    r.cpi = acC ? evC / acC : null;
-  });
-  const t = pd(today());
-  const cur = rows.findIndex((r) => t >= r.s && t <= r.e);
-  return { rows, cur: cur < 0 ? null : cur + 1 };
 }
