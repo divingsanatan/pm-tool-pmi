@@ -329,15 +329,13 @@ export default function SprintView() {
         </div>
       </div>
 
-      <SprintPanel S={S} c={c} E={E} cr={cr} tk={tk} setNav={setNav} />
-
       <div className="vtabs" role="tablist">
-        {[['list', 'List'], ['board', 'Board'], ['wbs', 'WBS']].map(([id, l]) => (
+        {[['dash', 'Dashboard'], ['list', 'List'], ['board', 'Board'], ['wbs', 'WBS']].map(([id, l]) => (
           <button key={id} className="vtab" role="tab" aria-selected={view === id} onClick={() => setNav({ sprintView: id })}>{l}</button>
         ))}
       </div>
 
-      {view !== 'wbs' && (
+      {view !== 'wbs' && view !== 'dash' && (
       <div className="tools">
         <input className="c" style={{ maxWidth: 240 }} type="search" placeholder="Search tasks" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search tasks" />
         {view === 'list' && (
@@ -386,7 +384,9 @@ export default function SprintView() {
         <div className="s-card"><span className={'s-ic ' + (missing ? 'warn' : 'good')}>{missing ? '!' : '✓'}</span><div><b>Effort</b><div className="msg">{missing ? missing + ' task' + (missing > 1 ? 's' : '') + ' missing effort' : 'All tasks estimated'}</div></div></div>
       </div>
 
-      {view === 'list' ? (
+      {view === 'dash' ? (
+        <SprintPanel S={S} c={c} E={E} cr={cr} tk={tk} setNav={setNav} />
+      ) : view === 'list' ? (
         <div className="scroll">
           <div className="tg">
             <div className="tg-row tg-h"><div className="tg-name"><TriBox all={tasks.length > 0 && chosen.length === tasks.length} some={chosen.length > 0} onChange={(e) => setMany(tasks.map((t) => t.id), e.target.checked)} label="Select all tasks" />Name</div><div>Assignee</div><div>Due date</div><div>Priority</div><div>Effort (h)</div><div /></div>
