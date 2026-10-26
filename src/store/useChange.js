@@ -3,7 +3,7 @@ import { useStore } from './StoreContext';
 import { uid } from '../lib/tasks';
 import { DAY, addDays, pd, today } from '../lib/dates';
 import { nz } from '../lib/format';
-import { blankCr, currentBaseline, missing, snapshot } from '../lib/change';
+import { blankCr, currentBaseline, missing, reserveAfter, snapshot } from '../lib/change';
 
 const note = (c, text) => c.log.push({ on: today(), text });
 
@@ -105,6 +105,8 @@ export function useChange() {
             id: bid, version, kind: 'Change', date: today(), crId: c.id, crCode: c.code,
             note: c.title, approvedCost: apCost, approvedDays: apDays, ...snapshot(p),
             bac, end, weeks: Math.max(1, Math.ceil(((pd(end) - pd(prev.start || p.meta.start)) / DAY + 1) / 7)),
+            // reserves: carried over unchanged, except the percentages this request set
+            reserve: (() => { const r = reserveAfter(c, p, 'ap'); return { contPct: r.contPct, mgmtPct: r.mgmtPct, contingency: r.contingency, management: r.management }; })(),
           });
           c.baselineId = bid;
           c.implementedOn = today();

@@ -551,6 +551,13 @@ export function alerts(S) {
     if (c && !['Approved', 'Implemented', 'Closed'].includes(c.status))
       a.push({ cls: 'warn', text: sp.name + ' was added through ' + c.code + ', which is ' + c.status.toLowerCase() + '. The sprint is not part of the approved plan until the change request is approved and implemented.' });
   });
+  {
+    const R = reserves(S), spent = ledgerTotal(S), f = (n) => Math.round(n).toLocaleString('en-US');
+    if (spent > R.costBaseline + 0.5)
+      a.push({ cls: 'bad', text: 'Actual cost (' + f(spent) + ') is above the cost baseline (' + f(R.costBaseline) + '), so it is using the management reserve. Releasing it needs a change request.' });
+    else if (spent > R.base + 0.5)
+      a.push({ cls: 'warn', text: 'Actual cost (' + f(spent) + ') is above the work budget (' + f(R.base) + '): ' + f(spent - R.base) + ' of the ' + f(R.contingency) + ' contingency reserve is in use.' });
+  }
   const od = S.raid.filter(overdue);
   if (od.length)
     a.push({

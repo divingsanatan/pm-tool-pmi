@@ -2,7 +2,7 @@ import { useStore } from '../store/StoreContext';
 import { SelectCell, Fld } from '../components/Field';
 import Kpi from '../components/Kpi';
 import { Spark, Gauge, Donut, BarsChart, SCurve, Legend3 } from '../components/Charts';
-import { agg, alerts, curWeek, emv, lineWeekly, nSp, nW, projectBAC, rating, rlabel, rng, roll, score, sprintCap, sprintOf, sprintWeeks, stCls, wbsOf, weeklyBAC, worst, wps, wstat, wkS } from '../lib/calc';
+import { agg, alerts, curWeek, emv, lineWeekly, nSp, nW, projectBAC, rating, reserves, rlabel, rng, roll, score, sprintCap, sprintOf, sprintWeeks, stCls, wbsOf, weeklyBAC, worst, wps, wstat, wkS } from '../lib/calc';
 import { fdate, fsh } from '../lib/dates';
 import { cl, money, nz, pc } from '../lib/format';
 import { changeAlerts } from '../lib/change';
@@ -61,6 +61,11 @@ export default function Dashboard() {
   const T = agg(S, 1, Nw);
   const pb = projectBAC(S);
   const eac = T.cpi ? pb / T.cpi : null;
+  // the budget as a structure: work budget, contingency, management reserve, and how much of the reserves the actual cost has used
+  const RS = reserves(S);
+  const contUsed = Math.min(RS.contingency, Math.max(0, T.ac - RS.base));
+  const mgmtUsed = Math.min(RS.management, Math.max(0, T.ac - RS.costBaseline));
+  const seg = (v) => (RS.total ? (v / RS.total) * 100 : 0) + '%';
 
   const parts = [{ n: 'Team labour', v: sprintCap(S) }].concat(S.lines.filter((l) => l.per !== 'project').map((l) => ({ n: l.name || 'Line item', v: lineWeekly(S, l) })));
   const ptot = parts.reduce((x, p) => x + p.v, 0);
@@ -173,6 +178,34 @@ export default function Dashboard() {
           <div className="msg" style={{ marginTop: 4 }}>{pc(pb ? T.ac / pb : null)} of project budget spent · {T.reported} of {Nw} weeks reported</div>
         </div>
       </div>
+
+      <section className="card">
+        <h2>Budget and reserves</h2>
+        <p className="hint">Earned value, SPI and CPI are measured against the work budget (BAC). The reserves are held on top of it{RS.locked ? ' and are locked by baseline ' + RS.version : ' until a baseline is set'}.</p>
+        <div className="grid2e" style={{ alignItems: 'start' }}>
+          <div className="totals">
+            <span>Work budget (BAC)</span><span className="mono">{money(RS.base)}</span>
+            <span>Contingency reserve ({pc(RS.contPct, 1)})</span><span className="mono">{money(RS.contingency)}</span>
+            <span>Cost baseline (BAC + contingency)</span><span className="mono">{money(RS.costBaseline)}</span>
+            <span>Management reserve ({pc(RS.mgmtPct, 1)})</span><span className="mono">{money(RS.management)}</span>
+            <span className="big">Total project budget</span><span className="mono big">{money(RS.total)}</span>
+          </div>
+          <div className="totals">
+            <span>Actual cost to date</span><span className="mono">{money(T.ac)}</span>
+            <span>Contingency used (cost above BAC)</span><span className="mono" style={contUsed > 0 ? { color: 'var(--warn)' } : undefined}>{money(contUsed)}</span>
+            <span>Contingency left</span><span className="mono">{money(RS.contingency - contUsed)}</span>
+            <span>Management reserve used (cost above cost baseline)</span><span className="mono" style={mgmtUsed > 0 ? { color: 'var(--bad)' } : undefined}>{money(mgmtUsed)}</span>
+            <span>Management reserve left</span><span className="mono">{money(RS.management - mgmtUsed)}</span>
+          </div>
+        </div>
+        <div role="img" aria-label="Work budget, contingency and management reserve, with actual cost marked" style={{ position: 'relative', display: 'flex', height: 14, borderRadius: 7, overflow: 'hidden', marginTop: 14, background: 'var(--line)' }}>
+          <i style={{ width: seg(RS.base), background: 'var(--accent, #3e9fd9)' }} title={'Work budget ' + money(RS.base)} />
+          <i style={{ width: seg(RS.contingency), background: 'var(--warn)' }} title={'Contingency ' + money(RS.contingency)} />
+          <i style={{ width: seg(RS.management), background: 'var(--muted)' }} title={'Management reserve ' + money(RS.management)} />
+          <b style={{ position: 'absolute', left: 'min(100%, ' + seg(T.ac) + ')', top: 0, bottom: 0, width: 2, background: 'var(--ink)' }} title={'Actual cost ' + money(T.ac)} />
+        </div>
+        <div className="msg" style={{ marginTop: 6 }}>Blue is the work budget, amber the contingency reserve, grey the management reserve. The line marks the actual cost so far.</div>
+      </section>
 
       <BaselinePanel />
 

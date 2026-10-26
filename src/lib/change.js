@@ -155,13 +155,32 @@ export function checksFor(cr, to, S) {
 }
 // What implementing an approved request will do: the new baseline is the current one plus the approved cost and days.
 // needsBudget is true when the plan's budget (Budget tab) does not already include the approved cost.
+// The reserves after a change request: a percentage the request sets is applied to the work budget of the new baseline;
+// a reserve it leaves blank is carried over unchanged. basis 'cost' = the requested cost change (planning), 'ap' = the approved one.
+export function reserveAfter(cr, S, basis = 'ap') {
+  const prev = currentBaseline(S);
+  if (!prev) return null;
+  const R = reserves(S); // the baseline's own (locked) reserves
+  const bac = Math.round((prev.bac + nz(basis === 'ap' ? cr.apCost : cr.cost)) * 100) / 100;
+  const has = (v) => v != null && !isNaN(v);
+  const contPct = has(cr.reCont) ? cr.reCont : R.contPct;
+  const mgmtPct = has(cr.reMgmt) ? cr.reMgmt : R.mgmtPct;
+  const contingency = has(cr.reCont) ? Math.round(bac * cr.reCont * 100) / 100 : R.contingency;
+  const management = has(cr.reMgmt) ? Math.round(bac * cr.reMgmt * 100) / 100 : R.management;
+  return {
+    changed: has(cr.reCont) || has(cr.reMgmt), bac, contPct, mgmtPct, contingency, management,
+    dCont: Math.round((contingency - R.contingency) * 100) / 100, dMgmt: Math.round((management - R.management) * 100) / 100,
+    before: R, totalBefore: Math.round((prev.bac + R.contingency + R.management) * 100) / 100, totalAfter: Math.round((bac + contingency + management) * 100) / 100,
+  };
+}
+
 export function implementPlan(cr, S) {
   const prev = currentBaseline(S);
   if (!prev) return null;
   const apCost = nz(cr.apCost), apDays = nz(cr.apDays);
   const bac = Math.round((prev.bac + apCost) * 100) / 100;
   const liveBac = Math.round(projectBAC(S) * 100) / 100;
-  return { prev, apCost, apDays, bac, end: addDays(prev.end, apDays), liveBac, needsBudget: apCost !== 0 && Math.abs(liveBac - bac) > 1 };
+  return { prev, apCost, apDays, bac, end: addDays(prev.end, apDays), liveBac, needsBudget: apCost !== 0 && Math.abs(liveBac - bac) > 1, res: reserveAfter(cr, S, 'ap') };
 }
 export const missing = (cr, to, S) => checksFor(cr, to, S).filter((c) => c.req && !c.ok);
 
@@ -187,7 +206,7 @@ export function blankCr(S, id, fields = {}) {
   return {
     id, code: nextCode(S), title: '', desc: '', kind: '', priority: 'Normal', by: '', on: today(), affects: [], why: '', ref: '',
     tasks: [], raid: [], informed: [],
-    cost: null, days: null, iScope: '', iQuality: '', iResources: '', iRisk: '', alt: '', noop: '',
+    cost: null, days: null, reCont: null, reMgmt: null, iScope: '', iQuality: '', iResources: '', iRisk: '', alt: '', noop: '',
     decidedBy: '', decidedOn: '', rationale: '', apCost: null, apDays: null, owner: '', target: '', conditions: '',
     chk: { comms: false, docs: false, raid: false, wbs: false }, reconcile: '', verified: '',
     status: 'Draft', submittedOn: '', implementedOn: '', closedOn: '', baselineId: '',

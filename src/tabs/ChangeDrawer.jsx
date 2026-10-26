@@ -4,10 +4,10 @@ import { useChange } from '../store/useChange';
 import { useUI } from '../components/UI';
 import { Area, Cell, SelectCell } from '../components/Field';
 import { addDays, fdate, today } from '../lib/dates';
-import { newRaidId } from '../lib/calc';
-import { money, nz } from '../lib/format';
+import { newRaidId, reserves } from '../lib/calc';
+import { money, nz, pc } from '../lib/format';
 import { allContainers, uid } from '../lib/tasks';
-import { AREAS, CR_PRIORITIES, KINDS, NEXT, WORKFLOW, checksFor, crCls, currentBaseline, implementPlan, missing, reconcile, signedDays, signedMoney, stageOf } from '../lib/change';
+import { AREAS, CR_PRIORITIES, KINDS, NEXT, WORKFLOW, checksFor, crCls, currentBaseline, implementPlan, missing, reconcile, reserveAfter, signedDays, signedMoney, stageOf } from '../lib/change';
 
 // A list of chosen items shown as chips, with a dropdown to add more
 function Picker({ ids, options, onChange, disabled, label, empty }) {
@@ -134,6 +134,8 @@ export default function ChangeDrawer({ id, onClose }) {
     );
   };
 
+  const resNow = reserves(S); // the baseline's locked reserves
+  const resPlan = base ? reserveAfter(cr, S, 'cost') : null; // what this request would make of them
   const newBac = base ? base.bac + nz(cr.cost) : null;
   const newEnd = base ? addDays(base.end, nz(cr.days)) : null;
 
@@ -233,9 +235,20 @@ export default function ChangeDrawer({ id, onClose }) {
             <Cell type="num" cls="n" value={cr.days} placeholder="0" disabled={lockImp} onCommit={(v) => set({ days: v })} />
           </label>
           {base && (
-            <p className="msg" style={{ gridColumn: '1 / -1', margin: 0 }}>
-              If approved as assessed: budget {money(base.bac)} → <b>{money(newBac)}</b> ({signedMoney(nz(cr.cost), money)}), finish {fdate(base.end)} → <b>{fdate(newEnd)}</b> ({signedDays(nz(cr.days))}).
-            </p>
+            <>
+              <label className="fld">Contingency reserve % · leave blank to keep {pc(resNow.contPct, 1)}
+                <Cell type="num" cls="n" value={cr.reCont == null ? null : Math.round(cr.reCont * 1000) / 10} placeholder={String(Math.round(resNow.contPct * 1000) / 10)} disabled={lockImp} label="New contingency reserve percent" onCommit={(v) => set({ reCont: v == null || v === '' || isNaN(parseFloat(v)) ? null : Math.min(1, Math.max(0, parseFloat(v) / 100)) })} />
+              </label>
+              <label className="fld">Management reserve % · leave blank to keep {pc(resNow.mgmtPct, 1)}
+                <Cell type="num" cls="n" value={cr.reMgmt == null ? null : Math.round(cr.reMgmt * 1000) / 10} placeholder={String(Math.round(resNow.mgmtPct * 1000) / 10)} disabled={lockImp} label="New management reserve percent" onCommit={(v) => set({ reMgmt: v == null || v === '' || isNaN(parseFloat(v)) ? null : Math.min(1, Math.max(0, parseFloat(v) / 100)) })} />
+              </label>
+              <p className="msg" style={{ gridColumn: '1 / -1', margin: 0 }}>
+                If approved as assessed: budget {money(base.bac)} → <b>{money(newBac)}</b> ({signedMoney(nz(cr.cost), money)}), finish {fdate(base.end)} → <b>{fdate(newEnd)}</b> ({signedDays(nz(cr.days))}).
+                {resPlan && resPlan.changed
+                  ? <> Reserves: contingency {money(resPlan.before.contingency)} → <b>{money(resPlan.contingency)}</b> ({signedMoney(resPlan.dCont, money)}), management reserve {money(resPlan.before.management)} → <b>{money(resPlan.management)}</b> ({signedMoney(resPlan.dMgmt, money)}). Total project budget {money(resPlan.totalBefore)} → <b>{money(resPlan.totalAfter)}</b>.</>
+                  : <> The reserves stay as they are (contingency {money(resNow.contingency)}, management reserve {money(resNow.management)}).</>}
+              </p>
+            </>
           )}
           {[['iScope', 'Scope impact'], ['iQuality', 'Quality impact'], ['iResources', 'Resource impact'], ['iRisk', 'Risk impact (new or changed risks)'], ['alt', 'Alternatives considered'], ['noop', 'If the change is not made']].map(([k, l]) => (
             <label key={k} className="fld" style={{ gridColumn: '1 / -1' }}>{l}
@@ -366,6 +379,9 @@ export default function ChangeDrawer({ id, onClose }) {
                     <ul style={{ margin: '0 0 10px', paddingLeft: 18 }}>
                       <li>Budget at completion: {money(pl.prev.bac)} → <b>{money(pl.bac)}</b> ({signedMoney(pl.apCost, money)})</li>
                       <li>Finish date: {fdate(pl.prev.end)} → <b>{fdate(pl.end)}</b> ({signedDays(pl.apDays)})</li>
+                      {pl.res && pl.res.changed
+                        ? <li>Reserves: contingency {money(pl.res.before.contingency)} → <b>{money(pl.res.contingency)}</b> ({signedMoney(pl.res.dCont, money)}), management reserve {money(pl.res.before.management)} → <b>{money(pl.res.management)}</b> ({signedMoney(pl.res.dMgmt, money)}). Total project budget {money(pl.res.totalBefore)} → <b>{money(pl.res.totalAfter)}</b></li>
+                        : <li>Reserves: unchanged (locked).</li>}
                     </ul>
                     {pl.needsBudget
                       ? <p style={{ margin: '0 0 8px' }}>Your Budget tab currently totals <b>{money(pl.liveBac)}</b>, which does not include the approved {signedMoney(pl.apCost, money)}. Should the app add it as a cost line named “{cr.code} {cr.title || 'Change request'}”?</p>

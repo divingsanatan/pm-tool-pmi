@@ -5,7 +5,8 @@ import { useUI } from '../components/UI';
 import Kpi from '../components/Kpi';
 import { Cell } from '../components/Field';
 import { fdate } from '../lib/dates';
-import { hrsf, money, nz } from '../lib/format';
+import { hrsf, money, nz, pc } from '../lib/format';
+import { reserves } from '../lib/calc';
 import { CR_STATUSES, crCls, currentBaseline, drift, pendingOf, signedDays, signedMoney, snapshot, stageOf } from '../lib/change';
 import ChangeDrawer from './ChangeDrawer';
 
@@ -24,11 +25,14 @@ export default function Change() {
   const count = (s) => S.cr.filter((c) => s === 'All' || c.status === s).length;
   const rows = S.cr.filter((c) => f === 'All' || c.status === f).slice().reverse();
   const live = snapshot(S);
+  const RS = reserves(S);
+  const br = base && base.reserve; // the reserves frozen in the current baseline
+  const bTotal = base ? base.bac + (br ? nz(br.contingency) + nz(br.management) : 0) : 0;
 
   const setBase = () =>
     ui.ask({
       title: 'Set baseline v1.0?',
-      body: 'The plan as it stands now (budget ' + money(live.bac) + ', finish ' + fdate(live.end) + ', ' + live.items + ' work items) becomes the approved baseline. After this, every change to it goes through a change request.',
+      body: 'The plan as it stands now (budget ' + money(live.bac) + ', plus contingency ' + money(RS.contingency) + ' and management reserve ' + money(RS.management) + ' = total project budget ' + money(RS.total) + ', finish ' + fdate(live.end) + ', ' + live.items + ' work items) becomes the approved baseline. After this, every change to it goes through a change request.',
       confirm: 'Set baseline',
       onConfirm: () => ch.setInitialBaseline(note),
     });
@@ -41,7 +45,10 @@ export default function Change() {
           <h2>Set the baseline first</h2>
           <p className="hint">A change request measures its impact against an approved baseline: the scope, schedule and cost you committed to. Capture the plan as it stands now. This should be the version the sponsor approved.</p>
           <div className="totals" style={{ maxWidth: 420 }}>
-            <span>Budget at completion</span><span className="mono">{money(live.bac)}</span>
+            <span>Budget at completion (work budget)</span><span className="mono">{money(live.bac)}</span>
+            <span>Contingency reserve ({pc(RS.contPct, 1)})</span><span className="mono">{money(RS.contingency)}</span>
+            <span>Management reserve ({pc(RS.mgmtPct, 1)})</span><span className="mono">{money(RS.management)}</span>
+            <span>Total project budget</span><span className="mono">{money(RS.total)}</span>
             <span>Finish date</span><span className="mono">{fdate(live.end)}</span>
             <span>Work items in sprints</span><span className="mono">{live.items}</span>
             <span>Planned effort (hours)</span><span className="mono">{hrsf(live.effort)}</span>
@@ -57,6 +64,7 @@ export default function Change() {
         <section className="kpis">
           <Kpi l="Current baseline" v={base.version} s={'Set ' + fdate(base.date) + (base.crCode ? ' by ' + base.crCode : '')} />
           <Kpi l="Baseline budget" v={money(base.bac)} s={d && Math.abs(d.dCost) > 0.5 ? 'Plan now ' + money(d.live.bac) + ' (' + signedMoney(d.dCost, money) + ')' : 'Plan matches'} />
+          <Kpi l="Total project budget" v={money(bTotal)} s={br ? 'BAC + contingency ' + money(br.contingency) + ' + management ' + money(br.management) : 'BAC only'} />
           <Kpi l="Awaiting decision" v={P.open.length} s={P.open.length ? signedMoney(P.openCost, money) + ' · ' + signedDays(P.openDays) + ' if all approved' : 'Nothing pending'} />
           <Kpi l="Approved, not in baseline" v={P.appr.length} s={P.appr.length ? signedMoney(P.apprCost, money) + ' · ' + signedDays(P.apprDays) : 'None'} />
         </section>
@@ -118,7 +126,7 @@ export default function Change() {
         <div className="scroll">
           <table className="tbl rwd">
             <thead>
-              <tr><th>Version</th><th>Date</th><th>Source</th><th className="r">Budget</th><th className="r">Change</th><th>Finish</th><th className="r">Shift</th><th className="r">Work items</th><th className="r">Effort (h)</th><th>Note</th><th></th></tr>
+              <tr><th>Version</th><th>Date</th><th>Source</th><th className="r">Budget</th><th className="r">Change</th><th className="r">Reserves</th><th>Finish</th><th className="r">Shift</th><th className="r">Work items</th><th className="r">Effort (h)</th><th>Note</th><th></th></tr>
             </thead>
             <tbody>
               {S.baselines.slice().reverse().map((b, i, arr) => {
@@ -130,6 +138,7 @@ export default function Change() {
                     <td data-l="Source"><span className="cell">{b.crCode || 'Original plan'}</span></td>
                     <td data-l="Budget"><Cell type="num" value={b.bac} cls="w-md n" label="Baseline budget" onCommit={(v) => ch.patchBaseline(b.id, { bac: v == null ? 0 : v })} /></td>
                     <td data-l="Change" className="r mono"><span className="cell">{prev ? signedMoney(b.bac - prev.bac, money) : '–'}</span></td>
+                    <td data-l="Reserves" className="r mono"><span className="cell" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', whiteSpace: 'nowrap' }} title={b.reserve ? 'Contingency ' + money(b.reserve.contingency) + ' · management reserve ' + money(b.reserve.management) : ''}>{b.reserve ? money(nz(b.reserve.contingency) + nz(b.reserve.management)) : '–'}{b.reserve && <span className="msg" style={{ fontSize: 11 }}>{pc(b.reserve.contPct, 1)} + {pc(b.reserve.mgmtPct, 1)}</span>}</span></td>
                     <td data-l="Finish"><Cell type="date" value={b.end} cls="w-date" label="Baseline finish date" onCommit={(v) => ch.patchBaseline(b.id, { end: v || b.end })} /></td>
                     <td data-l="Shift" className="r mono"><span className="cell">{prev ? signedDays(Math.round((Date.parse(b.end) - Date.parse(prev.end)) / 86400000)) : '–'}</span></td>
                     <td data-l="Work items" className="r mono"><span className="cell">{b.items}</span></td>
