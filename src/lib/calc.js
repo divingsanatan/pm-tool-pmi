@@ -507,6 +507,27 @@ export function rlabel(S, a, b) {
 
 /* ---------- "Needs attention" checks (returns [{cls, text}]) ---------- */
 // Hours of a sprint: what the user planned (typed) against what its work items add up to (live), and how much of that is done
+export const DEFAULT_RESERVE = { contingency: 0.1, management: 0.05 };
+
+/* The budget as a structure:
+     work budget (BAC)        team labour + line items. Earned value, SPI and CPI are measured against this.
+     + contingency reserve    % of the work budget, held for identified risks   -> cost baseline
+     + management reserve     % of the work budget, held for unknown risks      -> total project budget
+   Until a baseline exists the amounts follow the percentages. From the first baseline on, percentages and amounts are the
+   baseline's own (locked), so they do not move when the work budget moves; a change goes through a change request. */
+export function reserves(S) {
+  const base = projectBAC(S);
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const rs = S.reserve || DEFAULT_RESERVE;
+  const b = S.baselines && S.baselines.length ? S.baselines[S.baselines.length - 1] : null;
+  const br = b && b.reserve;
+  const contPct = br ? br.contPct : rs.contingency;
+  const mgmtPct = br ? br.mgmtPct : rs.management;
+  const contingency = br ? br.contingency : r2(base * contPct);
+  const management = br ? br.management : r2(base * mgmtPct);
+  return { base, contPct, mgmtPct, contingency, management, costBaseline: r2(base + contingency), total: r2(base + contingency + management), locked: !!b, version: b ? b.version : '' };
+}
+
 export function sprintHours(S, sp) {
   const items = rootTasks(sp.tasks).reduce((a, t) => a + nz(t.effort), 0); // top-level items already hold their children's hours
   const leaves = leafTasks(sp.tasks).filter((t) => !typeOf(S, t.type).milestone);
@@ -631,6 +652,21 @@ export function normalize(S) {
   if (!Array.isArray(S.raci)) S.raci = [];
   // change control: change requests and baseline versions
   if (!Array.isArray(S.baselines)) S.baselines = [];
+  // Contingency and management reserve: two built-in budget lines that cannot be deleted. Their percentages (of the work budget)
+  // can change until a baseline exists; from then on they are locked to the baseline's values and amounts.
+  if (!S.reserve || typeof S.reserve !== 'object') S.reserve = {};
+  const pct01 = (v, d) => (typeof v === 'number' && isFinite(v) ? Math.min(1, Math.max(0, v)) : d);
+  S.reserve.contingency = pct01(S.reserve.contingency, DEFAULT_RESERVE.contingency);
+  S.reserve.management = pct01(S.reserve.management, DEFAULT_RESERVE.management);
+  const lastB = S.baselines[S.baselines.length - 1];
+  if (lastB) {
+    if (!lastB.reserve) {
+      // a baseline made before reserves existed: record the reserves it would have had, from its own budget at completion
+      lastB.reserve = { contPct: S.reserve.contingency, mgmtPct: S.reserve.management, contingency: Math.round(nz(lastB.bac) * S.reserve.contingency * 100) / 100, management: Math.round(nz(lastB.bac) * S.reserve.management * 100) / 100 };
+    }
+    S.reserve.contingency = lastB.reserve.contPct;
+    S.reserve.management = lastB.reserve.mgmtPct;
+  }
   if (!Array.isArray(S.cr)) S.cr = [];
   S.cr.forEach((c) => {
     if (!c.id) c.id = uid();

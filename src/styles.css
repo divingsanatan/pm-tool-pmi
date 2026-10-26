@@ -648,3 +648,6 @@ label.fld{max-width:100%;min-width:0}
 .sp-calc summary{cursor:pointer;font-weight:600}
 .sp-tbl td,.sp-tbl th{vertical-align:top}
 @media (max-width:720px){.sp-grid,.sp-grid5{grid-template-columns:repeat(2,minmax(0,1fr))}.sp-t .v{font-size:20px}.sp-t .v .c[type="date"]{font-size:16px;padding:0;margin:0}.sp-t .v .c::-webkit-calendar-picker-indicator{margin-left:0;padding:0}.sp-tbl td.r{text-align:right}}
+
+.tbl tr.sub-row td{border-top:2px solid var(--line);font-weight:600}
+.tbl tr.res-row td{background:var(--row)}

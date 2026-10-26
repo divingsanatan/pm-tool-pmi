@@ -4,7 +4,7 @@ import { useCosts } from '../store/useCosts';
 import { Cell, SelectCell } from '../components/Field';
 import { Modal, useUI } from '../components/UI';
 import WeeksControl from '../components/WeeksControl';
-import { ITER_UNIT, costBy, labourOf, labourTotal, ledgerTotal, lineOnce, lineRecurring, lineTotal, personOf, projectBAC, suggestIter } from '../lib/calc';
+import { ITER_UNIT, costBy, labourOf, labourTotal, ledgerTotal, lineOnce, lineRecurring, lineTotal, personOf, projectBAC, reserves, suggestIter } from '../lib/calc';
 import { fdate, today } from '../lib/dates';
 import { hrsf, money, nz, pc } from '../lib/format';
 import { parseCosts } from '../lib/parse';
@@ -352,6 +352,27 @@ export default function Budget() {
   const freed = ctl.active && ctl.removed.length ? ctl.removed.map((x) => x.name).join(', ') : '';
   const recur = lineRecurring(S);
   const ac = ledgerTotal(S);
+  // contingency and management reserve: built-in lines. Their percentages can be changed until a baseline exists, then they are locked.
+  const R = reserves(S);
+  const setReserve = (key, v) => update((p) => {
+    if (p.baselines && p.baselines.length) return; // locked by the baseline
+    const n = parseFloat(v);
+    if (!isNaN(n)) p.reserve[key] = Math.min(1, Math.max(0, n / 100));
+  });
+  const reserveRow = (key, label, pct, amount, what) => (
+    <tr key={key} className="res-row">
+      <td data-l="Line item"><span className="cell" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}><b>{label}</b><span className="pill neutral" title="Built in: this line cannot be deleted">Required</span></span></td>
+      <td data-l="Amount" className="r">
+        {R.locked
+          ? <span className="cell mono" style={{ display: 'flex', justifyContent: 'flex-end' }} title={'Locked by baseline ' + R.version + '. A change needs a change request.'}>{pc(pct, 1)}</span>
+          : <span className="cell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4, whiteSpace: 'nowrap' }}><Cell value={Math.round(pct * 1000) / 10} type="num" min={0} cls="w-sm n" label={label + ' percent'} onCommit={(v) => setReserve(key, v)} /><span className="msg">%</span></span>}
+      </td>
+      <td data-l="Basis"><span className="cell msg">{what}</span></td>
+      <td data-l="Iterations"><span className="cell msg">–</span></td>
+      <td data-l="Project total" className="r mono"><span className="cell">{money(amount)}</span></td>
+      <td data-l="">{R.locked ? <span className="pill warn" title={'Percentages and amounts are fixed by baseline ' + R.version + '. A change needs a change request.'}>Locked · {R.version}</span> : <span className="msg" title="Cannot be deleted. Only the percentage can change, until a baseline is set.">Fixed line</span>}</td>
+    </tr>
+  );
 
   return (
     <>
@@ -376,12 +397,21 @@ export default function Budget() {
             {newRes.length > 0 && (<><span className="msg">· of which new resources</span><span className="mono msg">{money(newSum)}</span></>)}
             <span>Recurring line items</span><span className="mono">{money(recur)}</span>
             <span>One-time line items</span><span className="mono">{money(lineOnce(S))}</span>
-            <span className="big">Project BAC</span><span className="mono big">{money(pB)}</span>
+            <span className="big">Work budget (BAC)</span><span className="mono big">{money(pB)}</span>
+            <span>Contingency reserve ({pc(R.contPct, 1)})</span><span className="mono">{money(R.contingency)}</span>
+            <span>Cost baseline (BAC + contingency)</span><span className="mono">{money(R.costBaseline)}</span>
+            <span>Management reserve ({pc(R.mgmtPct, 1)})</span><span className="mono">{money(R.management)}</span>
+            <span className="big">Total project budget</span><span className="mono big">{money(R.total)}</span>
             <div className="sep" />
             <span className="big">Actual cost to date</span><span className="mono big">{money(ac)}</span>
             <span>Remaining</span><span className="mono" style={pB - ac < 0 ? { color: 'var(--bad)' } : undefined}>{money(pB - ac)}</span>
             <span>Spent</span><span className="mono">{pc(pB ? ac / pB : null)}</span>
           </div>
+          <p className="msg" style={{ margin: '12px 0 0', lineHeight: 1.6 }}>
+            Contingency = {pc(R.contPct, 1)} × work budget {money(R.locked ? R.contingency / (R.contPct || 1) : pB)} = {money(R.contingency)}. Management reserve = {pc(R.mgmtPct, 1)} × work budget = {money(R.management)}.
+            {R.locked ? ' Locked by baseline ' + R.version + ': the percentages and amounts stay as approved, even if the work budget moves.' : ' Until a baseline is set the amounts follow the work budget; the percentages can be changed in the planned budget line items.'}
+            {' '}Earned value, SPI and CPI are measured against the work budget (BAC); the reserves are held on top of it.
+          </p>
         </div>
       </div>
 
@@ -389,7 +419,7 @@ export default function Budget() {
         <div className="row sp">
           <div>
             <h2>Planned budget line items</h2>
-            <p className="hint">Beyond team labour: licenses, cloud, tools, travel, contingency. Choose how each amount repeats (every week, month or sprint) and enter how many times it recurs, or choose one-time.</p>
+            <p className="hint">Beyond team labour: licenses, cloud, tools, travel. Contingency and management reserve are built in at the bottom. Choose how each amount repeats (every week, month or sprint) and enter how many times it recurs, or choose one-time.</p>
           </div>
           <button className="btn primary" onClick={() => update((s) => s.lines.push({ name: '', amount: 0, per: 'week', iterations: suggestIter(s, 'week') }))}>Add line item</button>
         </div>
@@ -437,8 +467,11 @@ export default function Budget() {
                   </tr>
                 );
               })}
+              <tr className="sub-row"><td data-l="Line item"><span className="cell">Work budget (BAC)</span></td><td data-l=""></td><td data-l=""></td><td data-l=""></td><td data-l="Project total" className="r mono"><span className="cell">{money(pB)}</span></td><td data-l=""></td></tr>
+              {reserveRow('contingency', 'Contingency reserve', R.contPct, R.contingency, 'of the work budget, for identified risks')}
+              {reserveRow('management', 'Management reserve', R.mgmtPct, R.management, 'of the work budget, for unknown risks')}
             </tbody>
-            <tfoot><tr><td>Total</td><td></td><td></td><td></td><td className="r mono">{money(pB)}</td><td></td></tr></tfoot>
+            <tfoot><tr><td>Total project budget</td><td></td><td></td><td></td><td className="r mono">{money(R.total)}</td><td></td></tr></tfoot>
           </table>
         </div>
       </div>

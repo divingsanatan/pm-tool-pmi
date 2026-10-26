@@ -1,6 +1,6 @@
 import { DAY, addDays, pd, today } from './dates';
 import { nz } from './format';
-import { labourOf, nW, personOf, projectBAC, projectEnd, weeklyBAC } from './calc';
+import { labourOf, nW, personOf, projectBAC, projectEnd, reserves, weeklyBAC } from './calc';
 import { uid } from './tasks';
 
 /* ---------- vocabulary ---------- */
@@ -32,6 +32,8 @@ export function snapshot(S) {
     codes: tasks.map((t) => t.code),
     // the sprint plan at that moment: PV and the share of each sprint come from the planned hours
     sprints: S.sprints.map((sp) => ({ id: sp.id, name: sp.name, start: sp.start || '', end: sp.end || '', plannedHours: sp.plannedHours == null ? null : sp.plannedHours, crId: sp.crId || '' })),
+    // contingency and management reserve (percentages and amounts); carried over unchanged from baseline to baseline
+    reserve: (() => { const R = reserves(S); return { contPct: R.contPct, mgmtPct: R.mgmtPct, contingency: R.contingency, management: R.management }; })(),
     // who was in the labour budget at that moment (a new stakeholder after the baseline needs a change request unless budget was freed up)
     labour: S.team.map((t) => {
       const L = labourOf(S, t), per = personOf(S, t.person);
