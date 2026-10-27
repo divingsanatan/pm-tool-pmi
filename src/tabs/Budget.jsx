@@ -4,7 +4,9 @@ import { useCosts } from '../store/useCosts';
 import { Cell, SelectCell } from '../components/Field';
 import { Modal, useUI } from '../components/UI';
 import WeeksControl from '../components/WeeksControl';
-import { ITER_UNIT, costBy, labourOf, labourTotal, ledgerTotal, lineOnce, lineRecurring, lineTotal, personOf, projectBAC, reserves, suggestIter } from '../lib/calc';
+import { ITER_UNIT, baseLine, baseOf, costBy, labourOf, labourTotal, ledgerTotal, lineOnce, lineRecurring, lineState, lineTotal, maxIter, personOf, planBAC, projectBAC, reserves, suggestIter } from '../lib/calc';
+import LineCrDialog from './LineCrDialog';
+import { addLineViaCr, changeLineViaCr, dropPendingLine, lineEditable, revertLine, syncClaim } from '../lib/lineChange';
 import { fdate, today } from '../lib/dates';
 import { hrsf, money, nz, pc } from '../lib/format';
 import { parseCosts } from '../lib/parse';
@@ -343,7 +345,9 @@ function LabourRegister() {
 
 export default function Budget() {
   const { S, update, setNav } = useStore();
-  const lab = labourTotal(S), pB = projectBAC(S);
+  const ui = useUI();
+  const [lineDlg, setLineDlg] = useState(null); // { id } of a baselined line being changed, or {} for a new line
+  const lab = labourTotal(S), live = projectBAC(S), pB = planBAC(S), baselined = !!baseOf(S), pending = Math.round((live - pB) * 100) / 100;
   // after a baseline, people who joined the labour budget are listed on their own, with the change request that claims their budget
   const ctl = labourControl(S);
   const newRes = ctl.active ? ctl.rows.filter((r) => r.isNew) : [];
@@ -380,7 +384,8 @@ export default function Budget() {
         <h2>Project length</h2>
         <p className="hint">The weekly budget is multiplied by the number of weeks, and the number of weeks follows your dated work items, sprints and costs.</p>
         <div className="fields">
-          <label className="fld">Start date (Monday of week 1)<Cell sec="meta" f="start" value={S.meta.start} type="date" cls="w-date" /></label>
+          <label className="fld">Start date (Monday of week 1)<Cell sec="meta" f="start" value={S.meta.start} type="date" cls="w-date" disabled={baselined} /></label>
+          {baselined && <p className="msg" style={{ margin: 0 }}>The start date is part of baseline {baseOf(S).version}. A change goes through a change request.</p>}
           <WeeksControl />
           <label className="fld">Sprint length (weeks)<Cell sec="meta" f="sprintWeeks" value={S.meta.sprintWeeks} type="int" cls="w-sm n" /></label>
         </div>
@@ -398,6 +403,7 @@ export default function Budget() {
             <span>Recurring line items</span><span className="mono">{money(recur)}</span>
             <span>One-time line items</span><span className="mono">{money(lineOnce(S))}</span>
             <span className="big">Work budget (BAC)</span><span className="mono big">{money(pB)}</span>
+            {baselined && Math.abs(pending) > 0.5 && (<><span className="msg">· pending change requests (not in BAC yet)</span><span className="mono msg" title="Live plan minus the approved baseline. It joins BAC when the change request is implemented.">{pending > 0 ? '+' : '−'}{money(Math.abs(pending))}</span></>)}
             <span>Contingency reserve ({pc(R.contPct, 1)})</span><span className="mono">{money(R.contingency)}</span>
             <span>Cost baseline (BAC + contingency)</span><span className="mono">{money(R.costBaseline)}</span>
             <span>Management reserve ({pc(R.mgmtPct, 1)})</span><span className="mono">{money(R.management)}</span>
@@ -419,9 +425,9 @@ export default function Budget() {
         <div className="row sp">
           <div>
             <h2>Planned budget line items</h2>
-            <p className="hint">Beyond team labour: licenses, cloud, tools, travel. Contingency and management reserve are built in at the bottom. Choose how each amount repeats (every week, month or sprint) and enter how many times it recurs, or choose one-time.</p>
+            <p className="hint">Beyond team labour: licenses, cloud, tools, travel. Contingency and management reserve are built in at the bottom. Choose how each amount repeats (every week, month or sprint) and enter how many times it recurs, or choose one-time. A cost cannot repeat more often than the project is long.{baselined ? ' Baseline ' + baseOf(S).version + ' has locked these items: any change is made through a change request, and the new baseline it creates becomes the base for every calculation.' : ''}</p>
           </div>
-          <button className="btn primary" onClick={() => update((s) => s.lines.push({ name: '', amount: 0, per: 'week', iterations: suggestIter(s, 'week') }))}>Add line item</button>
+          <button className="btn primary" onClick={() => (baselined ? setLineDlg({}) : update((s) => s.lines.push({ name: '', amount: 0, per: 'week', iterations: Math.min(suggestIter(s, 'week'), maxIter(s, 'week')) })))}>{baselined ? 'Add line item via change request' : 'Add line item'}</button>
         </div>
         <div className="scroll">
           <table className="tbl rwd">
@@ -456,14 +462,45 @@ export default function Budget() {
               })}
               {S.lines.map((l, i) => {
                 const once = l.per === 'project';
+                const st = lineState(S, l);
+                const edit = lineEditable(S, l);
+                const cr = l.crId && crOf(l.crId);
+                const was = baseLine(S, l);
+                const cap = maxIter(S, l.per);
+                const over = !once && nz(l.iterations) > cap;
+                // every edit goes through here: iterations are capped, and a line that belongs to a change request keeps its claim in step
+                const edited = (patch) => {
+                  if ('iterations' in patch && patch.iterations != null && patch.iterations > cap) {
+                    ui.toast({ id: 'iter', tone: 'warn', ttl: 7000, text: 'The project has only ' + cap + ' ' + ITER_UNIT[l.per] + ', so “' + (l.name || 'this line') + '” cannot repeat ' + patch.iterations + ' times.' });
+                    return;
+                  }
+                  update((p) => {
+                    const x = p.lines.find((y) => y.id === l.id);
+                    if (!x) return;
+                    Object.assign(x, patch);
+                    if (x.per === 'project') x.iterations = 0;
+                    syncClaim(p, x);
+                  });
+                };
                 return (
-                  <tr key={i}>
-                    <td data-l="Line item"><Cell sec="lines" i={i} f="name" value={l.name} cls="w-name" placeholder="Line item name" /></td>
-                    <td data-l="Amount"><Cell sec="lines" i={i} f="amount" value={l.amount} type="num" cls="w-md n" /></td>
-                    <td data-l="Basis"><SelectCell value={l.per} options={BASES} cls="w-md" onCommit={(v) => update((p) => { const x = p.lines[i]; x.per = v; x.iterations = suggestIter(p, v); })} /></td>
-                    <td data-l="Iterations">{once ? <span className="cell msg">–</span> : (<span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}><Cell sec="lines" i={i} f="iterations" value={l.iterations} type="num" cls="w-sm n" label={'How many ' + ITER_UNIT[l.per] + ' this cost recurs'} /><span className="msg">× {ITER_UNIT[l.per]}</span></span>)}</td>
+                  <tr key={l.id || i}>
+                    <td data-l="Line item"><Cell value={l.name} cls="w-name" placeholder="Line item name" label="Line item name" disabled={!edit} onCommit={(v) => edited({ name: v })} /></td>
+                    <td data-l="Amount"><Cell value={l.amount} type="num" cls="w-md n" label="Amount" disabled={!edit} onCommit={(v) => edited({ amount: v })} /></td>
+                    <td data-l="Basis"><SelectCell value={l.per} options={BASES} cls="w-md" disabled={!edit} onCommit={(v) => edited({ per: v, iterations: Math.min(suggestIter(S, v), maxIter(S, v)) })} /></td>
+                    <td data-l="Iterations">{once ? <span className="cell msg">–</span> : (<span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}><Cell value={l.iterations} type="num" cls="w-sm n" min={0} label={'How many ' + ITER_UNIT[l.per] + ' this cost recurs (at most ' + cap + ')'} disabled={!edit} onCommit={(v) => edited({ iterations: v == null ? 0 : v })} /><span className="msg" style={over ? { color: 'var(--bad)' } : undefined}>× {ITER_UNIT[l.per]}{over ? ' · max ' + cap : ''}</span></span>)}</td>
                     <td data-l="Project total" className="r mono"><span className="cell">{money(lineTotal(S, l))}</span></td>
-                    <td data-l=""><button className="x" onClick={() => update((s) => s.lines.splice(i, 1))} aria-label="Delete line item">✕</button></td>
+                    <td data-l="">
+                      <span className="cell" style={{ flexWrap: 'wrap', gap: 6 }}>
+                        {st === 'locked' && (<><span className="pill neutral" title={'Locked by baseline ' + baseOf(S).version}>🔒 {baseOf(S).version}</span><button className="btn" onClick={() => setLineDlg({ id: l.id })}>Change via CR</button></>)}
+                        {(st === 'new' || st === 'changed') && (<>
+                          {cr ? <button className={'pill ' + crCls(cr.status)} onClick={() => setNav({ tab: 'change' })} title={cr.title}>{cr.code} · {cr.status}{st === 'changed' && was ? ' · was ' + money(lineTotal(S, was)) : ''}</button> : <span className="pill bad">Needs a change request</span>}
+                          {edit && (st === 'new'
+                            ? <button className="x" onClick={() => update((p) => dropPendingLine(p, l.id))} aria-label="Remove this pending line" title="Remove (takes it off the change request)">✕</button>
+                            : <button className="btn" onClick={() => update((p) => revertLine(p, l.id))} title="Put back to the baseline values">Revert</button>)}
+                        </>)}
+                        {st === 'free' && <button className="x" onClick={() => update((s) => { s.lines.splice(i, 1); })} aria-label="Delete line item">✕</button>}
+                      </span>
+                    </td>
                   </tr>
                 );
               })}
@@ -475,6 +512,17 @@ export default function Budget() {
           </table>
         </div>
       </div>
+
+      {lineDlg && (
+        <LineCrDialog
+          existing={lineDlg.id ? S.lines.find((x) => x.id === lineDlg.id) : null}
+          onCancel={() => setLineDlg(null)}
+          onConfirm={(choice, v) => {
+            update((p) => (lineDlg.id ? changeLineViaCr(p, lineDlg.id, choice, v) : addLineViaCr(p, choice, v)));
+            setLineDlg(null);
+          }}
+        />
+      )}
 
       <Ledger />
     </>

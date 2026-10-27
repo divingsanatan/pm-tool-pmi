@@ -139,6 +139,60 @@ export function StoreProvider({ children, cloud }) {
     return () => clearTimeout(timer.current);
   }, [W, status, isCloud, flush]);
 
+  // Live sync: every device sees changes made on another one. Supabase Realtime announces a change to a project row (and a
+  // 20 s check backs it up in case a connection drops). When another device has saved a newer revision and this device has
+  // nothing unsaved, the newer data is loaded. This device's own screen position (nav) is kept. If this device has unsaved edits
+  // the normal revision guard in pushCloud decides, and the "changed in another tab or device" bar appears.
+  useEffect(() => {
+    if (!isCloud || status !== 'ready') return undefined;
+    let off = false, wait = null;
+    const clean = () => {
+      const st = sync.current.projects;
+      const ps = latest.current.projects;
+      return !busy.current && ps.length === Object.keys(st).length && ps.every((p, i) => st[p.id] && st[p.id].pos === i && st[p.id].json === JSON.stringify(p));
+    };
+    const pull = async () => {
+      if (off || halted.current) return;
+      try {
+        const { rows, navRow } = await fetchCloud(supabase);
+        if (off || !rows.length) return;
+        const st = sync.current.projects;
+        const same = rows.length === Object.keys(st).length && rows.every((r) => st[r.id] && st[r.id].rev === r.rev);
+        if (same) return;
+        if (!clean()) {
+          wait = setTimeout(pull, 1500); // this device is saving or has unsaved edits: look again in a moment
+          return;
+        }
+        const w = workspaceFromRows(rows, navRow);
+        if (!w) return;
+        w.nav = latest.current.nav;
+        const next = fixNav(w);
+        markSynced(sync.current, next, rows);
+        setW(next);
+        setSaved('Updated from another device');
+      } catch (e) {
+        /* offline: the next check tries again */
+      }
+    };
+    const soon = () => {
+      clearTimeout(wait);
+      wait = setTimeout(pull, 400);
+    };
+    const ch = supabase.channel('pm-sync-' + userId).on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, soon).subscribe();
+    const poll = setInterval(() => document.visibilityState === 'visible' && pull(), 20000);
+    const vis = () => document.visibilityState === 'visible' && pull();
+    document.addEventListener('visibilitychange', vis);
+    window.addEventListener('online', vis);
+    return () => {
+      off = true;
+      clearTimeout(wait);
+      clearInterval(poll);
+      document.removeEventListener('visibilitychange', vis);
+      window.removeEventListener('online', vis);
+      supabase.removeChannel(ch);
+    };
+  }, [isCloud, status, userId]);
+
   // Save right away when the tab is hidden or the app is switched away from
   useEffect(() => {
     if (!isCloud) return undefined;
@@ -219,7 +273,7 @@ export function StoreProvider({ children, cloud }) {
         const o = sec === 'meta' || sec === 'ui' ? p[sec] : p[sec] ? p[sec][i] : undefined;
         if (!o) return;
         if (sec === 'meta' && f === 'sprintWeeks' && !(v >= 1)) v = 2;
-        if (sec === 'meta' && f === 'start' && !v) return;
+        if (sec === 'meta' && f === 'start' && (!v || (p.baselines && p.baselines.length))) return; // the start date is part of the baseline
         o[f] = v;
       });
     },

@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { useStore } from '../store/StoreContext';
 import Kpi from '../components/Kpi';
 import { Gauge, Donut, SCurve, Legend3 } from '../components/Charts';
-import { alerts, emv, evmSeries, labourTotal, lineTotal, projectEvm, rating, reserves, score, stCls, worst, wps, wstat } from '../lib/calc';
+import { alerts, emv, evmSeries, inPlan, labourTotal, projectEvm, sprintHours, rating, reserves, score, stCls, worst, wps, wstat } from '../lib/calc';
 import { fdate, today } from '../lib/dates';
 import { money, nz, pc } from '../lib/format';
 import { changeAlerts, signedMoney } from '../lib/change';
 import BaselinePanel from '../components/BaselinePanel';
+import { planLineTotal } from '../lib/lineChange';
 
 const r2 = (n) => (n == null ? null : Math.round(n * 100) / 100);
 
@@ -47,13 +48,18 @@ export default function Dashboard() {
 
   // what the budget is made of, over the whole project; the pieces add up to the budget at completion
   const parts = [{ n: 'Team labour', v: labourTotal(S) }]
-    .concat(S.lines.map((l) => ({ n: l.name || 'Line item', v: lineTotal(S, l) })))
+    .concat(S.lines.map((l) => ({ n: l.name || 'Line item', v: planLineTotal(S, l) })))
     .filter((p) => p.v > 0);
   const ptot = parts.reduce((x, p) => x + p.v, 0);
 
   const cnt = { Done: 0, 'In progress': 0, Late: 0, 'Not started': 0 };
   wps(S).forEach((x) => cnt[wstat(x)]++);
   const tw = wps(S).length;
+  // planned hours against the hours work items cover: delivery status only sees work items, so show what has none yet
+  const cover = S.sprints.filter((sp) => inPlan(S, sp)).map((sp) => sprintHours(S, sp));
+  const plannedH = cover.reduce((a, h) => a + (h.planned > 0 ? h.planned : h.items), 0);
+  const coveredH = cover.reduce((a, h) => a + (h.planned > 0 ? Math.min(h.items, h.planned) : h.items), 0);
+  const uncoveredH = Math.max(0, plannedH - coveredH);
   const cc = { Done: 'var(--good)', 'In progress': 'var(--accent)', Late: 'var(--bad)', 'Not started': 'var(--line)' };
   const STATUSES = ['Done', 'In progress', 'Late', 'Not started'];
 
@@ -89,7 +95,7 @@ export default function Dashboard() {
       <section className="kpis">
         <Kpi l="Planned value (PV)" v={money(E.pv)} s={E.hasPlan ? pc(E.bac ? E.pv / E.bac : null, 0) + ' of the budget was due by today' : 'No plan yet: add planned hours and dates to the sprints'} />
         <Kpi l="Earned value (EV)" v={money(E.ev)} s={E.hasPlan ? 'Schedule variance ' + signedMoney(r2(E.sv), money) : ''} />
-        <Kpi l="Actual cost (AC)" v={money(E.ac)} s={E.hasPlan ? 'Cost variance ' + signedMoney(r2(E.cv), money) : ''} />
+        <Kpi l="Actual cost (AC)" v={money(E.ac)} s={'Sum of all cost entries on the Budget tab' + (E.hasPlan ? ' · cost variance ' + signedMoney(r2(E.cv), money) : '')} />
         <Kpi l="Budget at completion (BAC)" v={money(E.bac)} s={pc(E.pctSpent, 0) + ' spent · ' + (E.pctComplete == null ? '–' : pc(E.pctComplete, 0)) + ' complete'}>
           <div className={'bar ' + (E.ac > E.bac ? 'bad' : '')} style={{ marginTop: 8 }}>
             <i style={{ width: Math.min(100, E.bac ? (E.ac / E.bac) * 100 : 0) + '%' }} />
@@ -137,7 +143,6 @@ export default function Dashboard() {
           <div className="bar" style={{ marginTop: 12 }}><i style={{ width: Math.min(100, E.bac ? (E.ac / E.bac) * 100 : 0) + '%' }} /></div>
           <div className="msg" style={{ marginTop: 4 }}>
             {pc(E.pctSpent)} of the budget spent · {E.pctComplete == null ? '–' : pc(E.pctComplete)} complete
-            {E.laterN > 0 ? ' · ' + money(E.later) + ' more is recorded for later dates' : ''}
           </div>
         </div>
       </div>
@@ -235,7 +240,7 @@ export default function Dashboard() {
       <div className="grid2e">
         <div className="card">
           <h2>Delivery status</h2>
-          <p className="hint">{tw} work package{tw === 1 ? '' : 's'} in the plan.</p>
+          <p className="hint">{tw} work package{tw === 1 ? '' : 's'} in the plan.{uncoveredH > 0.005 ? ' Delivery status counts work items only; ' + Math.round(uncoveredH * 100) / 100 + ' of ' + Math.round(plannedH * 100) / 100 + ' planned hours (' + pc(plannedH ? uncoveredH / plannedH : 0, 0) + ') have no work item yet, so the counts below do not cover the whole plan.' : ''}</p>
           <div className="stack" role="img" aria-label="Work package status">
             {STATUSES.map((k) => (cnt[k] ? <i key={k} style={{ flex: cnt[k], background: cc[k] }} title={k + ': ' + cnt[k]} /> : null))}
           </div>
@@ -245,7 +250,7 @@ export default function Dashboard() {
             ))}
           </div>
           <div className="row sp" style={{ marginTop: 14 }}>
-            <span>Work complete (earned value ÷ budget)</span>
+            <span title="Earned value ÷ the whole budget, including planned hours that have no work item yet">Work complete (earned value ÷ budget)</span>
             <span className="mono">{E.pctComplete == null ? '–' : pc(E.pctComplete, 0)}</span>
           </div>
           <div className="bar" style={{ marginTop: 6 }}><i style={{ width: Math.min(100, nz(E.pctComplete) * 100) + '%' }} /></div>

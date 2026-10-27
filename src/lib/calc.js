@@ -131,6 +131,39 @@ export const lineWeeklySum = (S) => lineRecurring(S) / Math.max(1, nW(S));
 export const lineOnce = (S) => S.lines.reduce((a, l) => a + (l.per === 'project' ? nz(l.amount) : 0), 0);
 export const weeklyBAC = (S) => sprintCap(S) + lineWeeklySum(S);
 export const projectBAC = (S) => weeklyBAC(S) * nW(S) + lineOnce(S);
+// The approved baseline is the base for every calculation: once one exists, BAC is the baseline's BAC, not the live plan.
+// Changes typed in afterwards (pending a change request) do not move PV, EV, SPI, CPI or the reserves until the request is implemented.
+export const baseOf = (S) => (S.baselines && S.baselines.length ? S.baselines[S.baselines.length - 1] : null);
+export const planBAC = (S) => {
+  const b = baseOf(S);
+  return b && b.bac != null ? nz(b.bac) : projectBAC(S);
+};
+// a sprint counts in the plan once it is in the current baseline (a sprint still waiting for its change request does not)
+export const inPlan = (S, sp) => {
+  const b = baseOf(S);
+  return !b || !Array.isArray(b.sprints) || b.sprints.some((x) => x.id === sp.id);
+};
+/* Budget line items after a baseline: 'locked' = exactly as baselined, 'changed' = a baselined line with different values,
+   'new' = not in the baseline. Changed and new lines must belong to a change request (line.crId). */
+export const lineState = (S, l) => {
+  const b = baseOf(S);
+  if (!b || !Array.isArray(b.lines)) return 'free';
+  const o = b.lines.find((x) => x.id === l.id);
+  if (!o) return 'new';
+  return o.name === l.name && nz(o.amount) === nz(l.amount) && o.per === l.per && nz(o.iterations) === nz(l.iterations) ? 'locked' : 'changed';
+};
+export const baseLine = (S, l) => {
+  const b = baseOf(S);
+  return b && Array.isArray(b.lines) ? b.lines.find((x) => x.id === l.id) || null : null;
+};
+// the most times a recurring line can repeat inside the project: weeks, months or sprints that really exist in it
+export const maxIter = (S, per) => {
+  const w = Math.max(1, nW(S));
+  if (per === 'week') return w;
+  if (per === 'month') return Math.max(1, Math.ceil((w * 12) / 52));
+  if (per === 'sprint') return Math.max(1, Math.ceil(w / Math.max(1, S.meta.sprintWeeks || 2)));
+  return Infinity;
+};
 export const projectEnd = (S) => pd(S.meta.start) + (nW(S) * 7 - 1) * DAY;
 
 /* ---------- actual cost ledger ---------- */
@@ -264,7 +297,7 @@ export function worst(a, b) {
 // A sprint's planned hours are typed by the user. A sprint without them falls back to what its work items add up to,
 // so older projects keep working (the Dashboard flags those sprints). Shares always add up to 100% by themselves.
 export function sprintShares(S) {
-  const rows = S.sprints.map((sp) => {
+  const rows = S.sprints.filter((sp) => inPlan(S, sp)).map((sp) => {
     const h = sprintHours(S, sp);
     const planned = h.planned != null && h.planned > 0 ? h.planned : h.items;
     return { sp, planned, typed: h.planned != null && h.planned > 0, items: h.items, done: h.done, share: 0 };
@@ -297,7 +330,8 @@ export function sprintLedger(S) {
 export function sprintEvm(S, sp, asOf = today()) {
   const { rows, total } = sprintShares(S);
   const row = rows.find((r) => r.sp.id === sp.id);
-  const bac = projectBAC(S);
+  const bac = planBAC(S);
+  const pending = !inPlan(S, sp);
   const planned = row ? row.planned : 0;
   const share = row ? row.share : 0;
   const budget = bac * share;
@@ -319,7 +353,9 @@ export function sprintEvm(S, sp, asOf = today()) {
   // real-time status from the numbers above
   let status, cls, why;
   const left = hasDates ? Math.round((pd(sp.end) - pd(asOf)) / DAY) : 0;
-  if (!(planned > 0) || !hasDates) {
+  if (pending) {
+    status = 'Awaiting change request'; cls = 'warn'; why = 'This sprint is not in the approved baseline yet, so it is left out of planned value, earned value and the budget until its change request is implemented.';
+  } else if (!(planned > 0) || !hasDates) {
     status = 'Set up needed'; cls = 'warn'; why = 'Enter planned hours and the start and end dates.';
   } else if (!started) {
     status = 'Not started'; cls = 'neutral'; why = 'Starts in ' + Math.round((pd(sp.start) - pd(asOf)) / DAY) + ' day' + (Math.round((pd(sp.start) - pd(asOf)) / DAY) === 1 ? '' : 's') + '.';
@@ -354,13 +390,13 @@ export function sprintEvm(S, sp, asOf = today()) {
      BAC = the live work budget (Budget tab)
      PV  = sum over the sprints of  sprint budget x share of the sprint's days gone (today counts)     [sprintEvm]
      EV  = sum over the sprints of  sprint budget x done hours / planned hours, at most 100% per sprint [sprintEvm]
-     AC  = cost entries dated today or earlier, plus entries without a date (entries dated later are shown apart)
+     AC  = the sum of all cost entries recorded on the Budget tab
      SPI = EV / PV      CPI = EV / AC      SV = EV - PV      CV = EV - AC
      EAC = BAC / CPI    ETC = EAC - AC     VAC = BAC - EAC   TCPI = (BAC - EV) / (BAC - AC)
    A sprint's budget is BAC x its share of all planned hours, so the sprint budgets always add up to BAC. A sprint without
    dates has no time-phased plan yet: its share is reported as `unscheduled` and PV leaves it out until it is dated. */
 export function projectEvm(S, asOf = today()) {
-  const bac = projectBAC(S);
+  const bac = planBAC(S);
   const { rows, total } = sprintShares(S);
   const hasPlan = total > 0 && bac > 0;
   let pv = 0, ev = 0, unscheduled = 0;
@@ -371,14 +407,8 @@ export function projectEvm(S, asOf = today()) {
     ev += e.ev;
     return e;
   });
-  let ac = 0, later = 0, laterN = 0;
-  (S.ledger || []).forEach((e) => {
-    const a = nz(e.amount);
-    if (e.date && e.date > asOf) {
-      later += a;
-      laterN++;
-    } else ac += a;
-  });
+  // AC is the sum of every cost entry on the Budget tab (the one source of actual cost), whatever its date
+  const ac = ledgerTotal(S), later = 0, laterN = 0;
   const spi = hasPlan && pv > 0 ? ev / pv : null;
   const cpi = hasPlan && ac > 0 ? ev / ac : null;
   const eac = cpi != null && cpi > 0 ? bac / cpi : null;
@@ -396,7 +426,7 @@ export function projectEvm(S, asOf = today()) {
    done with no completion date counts on its due date, never later than today); AC(day) the cost entries dated by that day.
    EV and AC stop at the as-of date, because nothing after it has happened yet. */
 export function evmSeries(S, asOf = today()) {
-  const bac = projectBAC(S);
+  const bac = planBAC(S);
   const { rows, total } = sprintShares(S);
   const now = pd(asOf);
   let lo = pd(S.meta.start), hi = Math.max(projectEnd(S), now);
@@ -433,8 +463,7 @@ export function evmSeries(S, asOf = today()) {
   }
   const acAt = Array(n).fill(0);
   (S.ledger || []).forEach((e) => {
-    if (e.date && e.date > asOf) return;
-    acAt[e.date ? at(pd(e.date)) : 0] += nz(e.amount);
+    acAt[e.date ? (e.date > asOf ? at(now) : at(pd(e.date))) : 0] += nz(e.amount); // every entry counts; one dated later is shown at today
   });
   let c = 0;
   const ac = acAt.map((v) => (c += v));
@@ -454,7 +483,7 @@ export const DEFAULT_RESERVE = { contingency: 0.1, management: 0.05 };
    Until a baseline exists the amounts follow the percentages. From the first baseline on, percentages and amounts are the
    baseline's own (locked), so they do not move when the work budget moves; a change goes through a change request. */
 export function reserves(S) {
-  const base = projectBAC(S);
+  const base = planBAC(S);
   const r2 = (n) => Math.round(n * 100) / 100;
   const rs = S.reserve || DEFAULT_RESERVE;
   const b = S.baselines && S.baselines.length ? S.baselines[S.baselines.length - 1] : null;
@@ -504,8 +533,19 @@ export function alerts(S) {
       a.push({ cls: 'warn', text: 'At the current cost performance (CPI ' + (Math.round(E.cpi * 100) / 100) + ') the project will finish at ' + f(E.eac) + ', ' + f(E.eac - R.base) + ' above the work budget of ' + f(R.base) + '. Contingency would cover it.' });
     if (E.hasPlan && E.unscheduled > 0.0005)
       a.push({ cls: 'warn', text: Math.round(E.unscheduled * 100) + '% of the budget belongs to sprints without start and end dates, so it is left out of planned value and SPI is overstated until they are dated.' });
-    if (E.laterN)
-      a.push({ cls: 'warn', text: E.laterN + ' cost entr' + (E.laterN > 1 ? 'ies are' : 'y is') + ' dated after today (' + f(E.later) + ') and ' + (E.laterN > 1 ? 'are' : 'is') + ' not counted in actual cost yet.' });
+    // planned hours that no work item covers yet: delivery status only counts work items, so say what is missing
+    const gap = S.sprints.filter((sp) => inPlan(S, sp)).map((sp) => ({ sp, h: sprintHours(S, sp) })).filter((x) => x.h.planned > 0 && x.h.items < x.h.planned - 0.005);
+    gap.forEach((x) => a.push({ cls: 'warn', text: x.sp.name + ' has ' + f(x.h.planned) + ' planned hours but its work items cover only ' + f(x.h.items) + ' h (' + f(x.h.planned - x.h.items) + ' h have no work item). Earned value cannot reach 100% for it and delivery status leaves that work out until work items are added.' }));
+    S.lines.forEach((l) => {
+      if (l.per === 'project') return;
+      const mx = maxIter(S, l.per), st = lineState(S, l);
+      if (nz(l.iterations) > mx)
+        a.push({ cls: 'bad', text: '“' + (l.name || 'Line item') + '” repeats ' + nz(l.iterations) + ' ' + ITER_UNIT[l.per] + ' but the project has only ' + mx + ' (' + nW(S) + ' weeks). ' + (st === 'free' ? 'Lower the iterations on the Budget tab.' : 'The baseline is locked, so correct it through a change request on the Budget tab.') });
+      if (st === 'new' || st === 'changed') {
+        const c = l.crId && S.cr.find((x) => x.id === l.crId);
+        if (!c) a.push({ cls: 'bad', text: '“' + (l.name || 'Line item') + '” differs from the baseline and is not linked to a change request. Link or raise one on the Budget tab.' });
+      }
+    });
   }
   {
     const before = S.sprints.filter((sp) => sp.start && sp.start < S.meta.start);
@@ -841,6 +881,15 @@ export function normalize(S) {
   (S.lines || []).forEach((l) => {
     if (!l.id) l.id = uid();
   });
+  // Before the first baseline a recurring line can never repeat more often than the project is long
+  // (2-week project: at most 2 weekly iterations). After a baseline the lines are locked, so nothing is changed silently.
+  if (!S.baselines.length)
+    (S.lines || []).forEach((l) => {
+      if (l.per !== 'project') l.iterations = Math.min(nz(l.iterations), maxIter(S, l.per));
+    });
+  // a baseline freezes the budget line items too (a baseline made before this was recorded takes the lines as they are now)
+  if (lastB && !Array.isArray(lastB.lines))
+    lastB.lines = (S.lines || []).map((l) => ({ id: l.id, name: l.name, amount: nz(l.amount), per: l.per, iterations: l.per === 'project' ? 0 : nz(l.iterations) }));
   // activity log: a list of stamped entries, capped
   if (!Array.isArray(S.activity)) {
     S.activity = [{ id: uid(), at: new Date().toISOString(), by: 'System', cat: 'project', act: 'info', text: 'Activity tracking started for this project' }];

@@ -31,11 +31,12 @@ function SprintForm({ pid, opts = {}, onClose }) {
   const choice = f.cr || (base && !crs.length ? NEW_CR : '');
   const hrs = parseFloat(f.hours);
   const orderOk = sane(f.start) && sane(f.end) && f.start <= f.end;
+  const afterStart = !sane(f.start) || !p.meta.start || f.start >= p.meta.start; // a sprint cannot begin before the project does
   const hoursOk = f.hours !== '' && !isNaN(hrs) && hrs > 0;
   const nameOk = f.name.trim() !== '';
   const num = (v) => v !== '' && !isNaN(parseFloat(v));
   const crOk = !base || (choice && choice !== NEW_CR) || (choice === NEW_CR && f.crTitle.trim() !== '' && num(f.crCost) && num(f.crDays));
-  const ok = nameOk && orderOk && hoursOk && crOk;
+  const ok = nameOk && orderOk && afterStart && hoursOk && crOk;
   const clash = orderOk ? p.sprints.filter((s) => s.start && s.end && s.start <= f.end && s.end >= f.start) : [];
   const days = orderOk ? Math.round((pd(f.end) - pd(f.start)) / DAY) + 1 : null;
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -118,9 +119,10 @@ function SprintForm({ pid, opts = {}, onClose }) {
 
       <div className="hint" style={{ margin: '10px 0 0', minHeight: 20 }} role="status">
         {!nameOk && 'Enter a sprint name.'}
-        {nameOk && !orderOk && (sane(f.start) && sane(f.end) ? 'The end date must be on or after the start date.' : 'Enter both a start and an end date.')}
-        {nameOk && orderOk && !hoursOk && 'Enter the planned hours (more than 0).'}
-        {nameOk && orderOk && hoursOk && !crOk && (choice === NEW_CR ? 'Enter the change request title, cost change and schedule change (0 is fine).' : 'Choose the change request this sprint belongs to.')}
+        {nameOk && !afterStart && 'The sprint cannot start before the project start date (' + p.meta.start + ').'}
+        {nameOk && afterStart && !orderOk && (sane(f.start) && sane(f.end) ? 'The end date must be on or after the start date.' : 'Enter both a start and an end date.')}
+        {nameOk && afterStart && orderOk && !hoursOk && 'Enter the planned hours (more than 0).'}
+        {nameOk && afterStart && orderOk && hoursOk && !crOk && (choice === NEW_CR ? 'Enter the change request title, cost change and schedule change (0 is fine).' : 'Choose the change request this sprint belongs to.')}
         {ok && days + ' day' + (days === 1 ? '' : 's') + ' · ' + hrsf(hrs) + ' planned hours'}
       </div>
       {clash.length > 0 && <div className="banner warn" style={{ marginTop: 8 }}>These dates overlap {clash.map((s) => s.name).join(', ')}. Overlapping sprints make weekly numbers harder to read.</div>}

@@ -97,7 +97,7 @@ export function useChange() {
           const bac = Math.round((prev.bac + apCost) * 100) / 100;
           const end = addDays(prev.end, apDays);
           // the approved cost goes into the plan's budget only when the user asked for it
-          if (apCost && addBudgetLine === true)
+          if (apCost && addBudgetLine === true && !p.lines.some((l) => l.crId === c.id))
             p.lines.push({ id: uid(), name: c.code + ' ' + (c.title || 'Change request'), amount: apCost, per: 'project' });
           const version = 'v1.' + p.baselines.length;
           const bid = uid();
