@@ -59,6 +59,28 @@ export function datePatchViolations(S, ids, patch) {
 // (only lowest-level items: a parent's dates are rolled up from its children)
 export const tasksOutside = (c, w) => leafTasks(c.tasks).filter((t) => !inWin(w, t.start) || !inWin(w, t.due));
 
+// Sprints of the same project must not share a day (start and end dates are both inclusive).
+// Returns the other dated sprints that overlap start..end; `selfId` is the sprint being edited (ignored).
+export const sprintClash = (S, selfId, start, end) =>
+  start && end ? S.sprints.filter((s) => s.id !== selfId && s.start && s.end && s.start <= end && s.end >= start) : [];
+// Every pair of sprints in the project that currently overlap (used to flag data saved before this rule existed)
+export function sprintOverlaps(S) {
+  const dated = S.sprints.filter((s) => s.start && s.end && s.start <= s.end);
+  const out = [];
+  dated.forEach((a, i) => dated.slice(i + 1).forEach((b) => a.start <= b.end && a.end >= b.start && out.push([a, b])));
+  return out;
+}
+// The first day after `start` that is free of other sprints, for the hint shown with the error
+export function nextFreeDay(S, selfId, start, end) {
+  let d = start;
+  for (let n = 0; n < 60; n++) {
+    const hit = sprintClash(S, selfId, d, end || d);
+    if (!hit.length) return d;
+    d = addDays(hit.map((s) => s.end).sort().pop(), 1);
+  }
+  return d;
+}
+
 // A free stretch of calendar, not overlapping any existing sprint, that covers dates lo..hi: where a new sprint can go
 export function gapWindow(S, lo, hi, weeks) {
   const len = Math.max(1, weeks) * 7;

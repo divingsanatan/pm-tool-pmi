@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { sprintOverlaps } from '../lib/sprintGuard';
 import { useStore } from '../store/StoreContext';
 import { useTasks } from '../store/useTasks';
 import { useUI } from '../components/UI';
@@ -360,6 +361,12 @@ export default function SprintView() {
       )}
 
       {view === 'list' && <BulkBar ids={chosen} container={c} onDone={() => { setSel(new Set()); last.current = null; }} />}
+
+      {sprintOverlaps(S).filter(([a, b]) => a.id === c.id || b.id === c.id).map(([a, b]) => (
+        <div className="banner" key={a.id + b.id}>
+          <span>{a.name} ({fdate(a.start)} – {fdate(a.end)}) overlaps {b.name} ({fdate(b.start)} – {fdate(b.end)}). Sprints in the same project cannot overlap: change the start or end date of one of them.</span>
+        </div>
+      ))}
 
       {outside > 0 && (
         <div className="banner warn">

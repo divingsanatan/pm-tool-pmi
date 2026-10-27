@@ -7,7 +7,7 @@ import { useCosts } from '../store/useCosts';
 import { DAY, pd, today } from '../lib/dates';
 import { hrsf } from '../lib/format';
 import { newSprint, uid } from '../lib/tasks';
-import { insertAt, sane } from '../lib/sprintGuard';
+import { insertAt, sane, sprintClash } from '../lib/sprintGuard';
 import { blankCr, currentBaseline, sprintCrs } from '../lib/change';
 import './toast.css';
 
@@ -36,8 +36,8 @@ function SprintForm({ pid, opts = {}, onClose }) {
   const nameOk = f.name.trim() !== '';
   const num = (v) => v !== '' && !isNaN(parseFloat(v));
   const crOk = !base || (choice && choice !== NEW_CR) || (choice === NEW_CR && f.crTitle.trim() !== '' && num(f.crCost) && num(f.crDays));
-  const ok = nameOk && orderOk && afterStart && hoursOk && crOk;
-  const clash = orderOk ? p.sprints.filter((s) => s.start && s.end && s.start <= f.end && s.end >= f.start) : [];
+  const clash = orderOk ? sprintClash(p, '', f.start, f.end) : []; // sprints of one project cannot overlap
+  const ok = nameOk && orderOk && afterStart && !clash.length && hoursOk && crOk;
   const days = orderOk ? Math.round((pd(f.end) - pd(f.start)) / DAY) + 1 : null;
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const save = () => {
@@ -121,11 +121,12 @@ function SprintForm({ pid, opts = {}, onClose }) {
         {!nameOk && 'Enter a sprint name.'}
         {nameOk && !afterStart && 'The sprint cannot start before the project start date (' + p.meta.start + ').'}
         {nameOk && afterStart && !orderOk && (sane(f.start) && sane(f.end) ? 'The end date must be on or after the start date.' : 'Enter both a start and an end date.')}
-        {nameOk && afterStart && orderOk && !hoursOk && 'Enter the planned hours (more than 0).'}
-        {nameOk && afterStart && orderOk && hoursOk && !crOk && (choice === NEW_CR ? 'Enter the change request title, cost change and schedule change (0 is fine).' : 'Choose the change request this sprint belongs to.')}
+        {nameOk && afterStart && orderOk && clash.length > 0 && 'Sprint dates cannot overlap another sprint. Change the start or end date.'}
+        {nameOk && afterStart && orderOk && !clash.length && !hoursOk && 'Enter the planned hours (more than 0).'}
+        {nameOk && afterStart && orderOk && !clash.length && hoursOk && !crOk && (choice === NEW_CR ? 'Enter the change request title, cost change and schedule change (0 is fine).' : 'Choose the change request this sprint belongs to.')}
         {ok && days + ' day' + (days === 1 ? '' : 's') + ' · ' + hrsf(hrs) + ' planned hours'}
       </div>
-      {clash.length > 0 && <div className="banner warn" style={{ marginTop: 8 }}>These dates overlap {clash.map((s) => s.name).join(', ')}. Overlapping sprints make weekly numbers harder to read.</div>}
+      {clash.length > 0 && <div className="banner" style={{ marginTop: 8 }}>These dates overlap {clash.map((s) => s.name + ' (' + s.start + ' to ' + s.end + ')').join(', ')}. Sprints in the same project cannot overlap, so this sprint cannot be created yet.</div>}
       <div className="row" style={{ justifyContent: 'flex-end', marginTop: 16 }}>
         <button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn primary" disabled={!ok} onClick={save}>Create sprint</button>

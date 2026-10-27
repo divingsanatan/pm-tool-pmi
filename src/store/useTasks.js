@@ -6,7 +6,7 @@ import { childTypeFor, containerById, findTask, firstOpenStatus, isDoneStatus, m
 import { leafTasks, subtreeIds } from '../lib/hier';
 import { cleanEffort } from '../lib/format';
 import { fdate } from '../lib/dates';
-import { clampDates, datePatchViolations, gapWindow, inWin, rollover, sane, sprintCovers, tasksOutside, windowOf } from '../lib/sprintGuard';
+import { clampDates, datePatchViolations, gapWindow, inWin, nextFreeDay, rollover, sane, sprintClash, sprintCovers, tasksOutside, windowOf } from '../lib/sprintGuard';
 
 const plural = (n, a, b) => (n === 1 ? a : b);
 const span = (c) => (c.start ? fdate(c.start) : '…') + ' – ' + (c.end ? fdate(c.end) : '…');
@@ -237,6 +237,15 @@ export function useTasks() {
       if (next.start && next.end && next.start > next.end) {
         say({ id: 'guard', tone: 'bad', text: 'A sprint cannot end before it starts.', ttl: 6000 });
         return true;
+      }
+      // sprints of one project cannot share a day (only checked when a date is being changed, so other edits to an old overlapping sprint still work)
+      if ('start' in patch || 'end' in patch) {
+        const hit = sprintClash(S0, cid, next.start, next.end);
+        if (hit.length) {
+          const free = nextFreeDay(S0, cid, next.start, next.end);
+          say({ id: 'guard', tone: 'bad', text: 'Sprint dates cannot overlap. ' + fdate(next.start) + ' – ' + fdate(next.end) + ' overlaps ' + hit.map((s) => s.name + ' (' + span(s) + ')').join(', ') + '.' + (free !== next.start ? ' The first free start date is ' + fdate(free) + '.' : ''), ttl: 9000 });
+          return true;
+        }
       }
       const w = { lo: next.start, hi: next.end };
       const out = next.start || next.end ? tasksOutside(c, w) : [];

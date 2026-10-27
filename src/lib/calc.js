@@ -556,6 +556,13 @@ export function alerts(S) {
     });
   }
   {
+    // sprints of one project must not share a day; this catches data saved before the rule existed
+    const over = [];
+    const dated = S.sprints.filter((sp) => sp.start && sp.end && sp.start <= sp.end);
+    dated.forEach((x, i) => dated.slice(i + 1).forEach((y) => x.start <= y.end && x.end >= y.start && over.push(x.name + ' and ' + y.name)));
+    if (over.length) a.push({ cls: 'bad', text: 'Sprint dates overlap: ' + over.join('; ') + '. Sprints in the same project cannot overlap. Open the sprint and change its start or end date.' });
+  }
+  {
     const before = S.sprints.filter((sp) => sp.start && sp.start < S.meta.start);
     if (before.length)
       a.push({ cls: 'warn', text: before.map((sp) => sp.name).join(', ') + (before.length > 1 ? ' start' : ' starts') + ' before the project start date (' + fsh(pd(S.meta.start)) + '). Move the project start date or the sprint start so the plan and the budget cover the same days.' });
