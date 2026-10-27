@@ -19,9 +19,9 @@ export const signedDays = (n) => (!n ? '0 days' : (n > 0 ? '+' : '−') + Math.a
 
 /* ---------- baselines ---------- */
 // Real finish of the schedule: the latest sprint end or task date (not rounded up to a whole week)
-export function scheduleEnd(S) {
+export function scheduleEnd(S, list = S.sprints) {
   let hi = '';
-  S.sprints.forEach((sp) => [sp.end].concat(sp.tasks.map((t) => t.due || t.start)).forEach((d) => { if (d && d > hi) hi = d; }));
+  list.forEach((sp) => [sp.end].concat(sp.tasks.map((t) => t.due || t.start)).forEach((d) => { if (d && d > hi) hi = d; }));
   return hi || isoOf(projectEnd(S));
 }
 // Planned effort: each sprint's Planned hours when entered, otherwise the sum of its work items' effort
@@ -34,21 +34,24 @@ export function plannedEffort(S) {
 }
 
 // A baseline is a frozen copy of the three things PMI asks you to baseline: scope, schedule and cost.
-export function snapshot(S) {
-  const tasks = S.sprints.flatMap((sp) => sp.tasks); // the Backlog is unscheduled, so it is not part of the scope baseline
+// `only` (optional) limits the snapshot to some sprints: a new baseline leaves out sprints still waiting for another change request
+export function snapshot(S, only = () => true) {
+  const inB = S.sprints.filter(only);
+  const tasks = inB.flatMap((sp) => sp.tasks); // the Backlog is unscheduled, so it is not part of the scope baseline
   return {
     bac: Math.round(projectBAC(S) * 100) / 100, // BAC = work budget + contingency reserve (management reserve excluded)
     work: Math.round(workBudget(S) * 100) / 100,
     incl: true, // marks a baseline whose bac already includes the contingency
     weekly: Math.round(weeklyBAC(S) * 100) / 100,
     start: S.meta.start,
-    end: scheduleEnd(S),
+    end: scheduleEnd(S, inB), // the latest sprint end of the plan, from the sprint dates themselves
+    endFromSprints: true,
     weeks: nW(S),
     items: tasks.length,
     effort: plannedEffort(S),
     codes: tasks.map((t) => t.code),
     // the sprint plan at that moment: PV and the share of each sprint come from the planned hours
-    sprints: S.sprints.map((sp) => ({ id: sp.id, name: sp.name, start: sp.start || '', end: sp.end || '', plannedHours: sp.plannedHours == null ? null : sp.plannedHours, crId: sp.crId || '' })),
+    sprints: inB.map((sp) => ({ id: sp.id, name: sp.name, start: sp.start || '', end: sp.end || '', plannedHours: sp.plannedHours == null ? null : sp.plannedHours, crId: sp.crId || '' })),
     // contingency and management reserve (percentages and amounts); carried over unchanged from baseline to baseline
     reserve: (() => { const R = reserves(S); return { contPct: R.contPct, mgmtPct: R.mgmtPct, contingency: R.contingency, management: R.management }; })(),
     // who was in the labour budget at that moment (a new stakeholder after the baseline needs a change request unless budget was freed up)
@@ -81,7 +84,9 @@ export function drift(S) {
     dItems: live.items - b.items,
     dEffort: live.effort - b.effort,
   };
-  o.moved = Math.abs(o.dCost) > 0.5 || o.dDays !== 0 || added.length > 0 || removed.length > 0 || addedSprints.length > 0 || Math.abs(o.dEffort) > 0.01;
+  // sprints whose dates now reach outside the dates they were baselined with (moving inside them is not a baseline change)
+  o.outside = (b.sprints || []).filter((x) => x.start && x.end).map((x) => ({ x, sp: S.sprints.find((s) => s.id === x.id) })).filter(({ x, sp }) => sp && sp.start && sp.end && (sp.start < x.start || sp.end > x.end)).map(({ sp }) => sp.name);
+  o.moved = Math.abs(o.dCost) > 0.5 || o.outside.length > 0 || (!b.sprints && o.dDays > 0) || added.length > 0 || removed.length > 0 || addedSprints.length > 0 || Math.abs(o.dEffort) > 0.01;
   return o;
 }
 
@@ -202,8 +207,16 @@ export function implementPlan(cr, S) {
   const bac = res.bac;
   const liveBac = Math.round(projectBAC(S) * 100) / 100;
   const liveWork = Math.round(workBudget(S) * 100) / 100; // what the Budget tab's line items add up to, before reserves
-  return { prev, apCost, apDays, bac, end: addDays(prev.end, apDays), liveBac, liveWork, needsBudget: apCost !== 0 && Math.abs(liveWork - res.work) > 1, res };
+  // the baseline records the real sprint dates of the plan; the approved days are only what the request expected (checked in reconcile)
+  const end = scheduleEnd(S, S.sprints.filter((sp) => inNextBaseline(S, sp, cr.id)));
+  return { prev, apCost, apDays, bac, end, expEnd: addDays(prev.end, apDays), liveBac, liveWork, needsBudget: apCost !== 0 && Math.abs(liveWork - res.work) > 1, res };
 }
+// A sprint belongs in the baseline made by request `crId` unless it is still waiting for some other request
+export const inNextBaseline = (S, sp, crId) => {
+  if (!sp.crId || sp.crId === crId) return true;
+  const c = S.cr.find((x) => x.id === sp.crId);
+  return !c || ['Implemented', 'Closed'].includes(c.status);
+};
 export const missing = (cr, to, S) => checksFor(cr, to, S).filter((c) => c.req && !c.ok);
 
 // The main forward step from the current status, with its checklist
@@ -339,7 +352,8 @@ export function changeAlerts(S) {
   if (d && d.moved && !P.appr.length) {
     const bits = [];
     if (Math.abs(d.dCost) > 0.5) bits.push('budget ' + (d.dCost > 0 ? '+' : '−') + Math.round(Math.abs(d.dCost)).toLocaleString('en-US'));
-    if (d.dDays) bits.push('finish ' + signedDays(d.dDays));
+    if (d.outside.length) bits.push('sprint dates outside the baseline: ' + d.outside.join(', '));
+    else if (d.dDays > 0) bits.push('finish ' + signedDays(d.dDays));
     if (d.addedSprints.length) bits.push(d.addedSprints.length + ' sprint' + (d.addedSprints.length > 1 ? 's' : '') + ' added: ' + d.addedSprints.join(', '));
     if (d.added.length || d.removed.length) bits.push(d.added.length + ' work items added, ' + d.removed.length + ' removed');
     a.push({ cls: 'bad', text: 'The plan has moved away from baseline ' + b.version + (bits.length ? ' (' + bits.join(', ') + ')' : '') + ' with no approved change request. Raise a change request or revert the plan.' });

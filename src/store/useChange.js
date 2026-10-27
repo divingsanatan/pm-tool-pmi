@@ -3,7 +3,7 @@ import { useStore } from './StoreContext';
 import { uid } from '../lib/tasks';
 import { DAY, addDays, pd, today } from '../lib/dates';
 import { nz } from '../lib/format';
-import { blankCr, currentBaseline, missing, reserveAfter, snapshot } from '../lib/change';
+import { blankCr, currentBaseline, inNextBaseline, missing, reserveAfter, snapshot } from '../lib/change';
 
 const note = (c, text) => c.log.push({ on: today(), text });
 
@@ -97,7 +97,8 @@ export function useChange() {
           // BAC of the new baseline = (previous work budget + approved cost) + contingency; the management reserve stays outside it
           const res = reserveAfter(c, p, 'ap');
           const bac = res.bac;
-          const end = addDays(prev.end, apDays);
+          const snap = snapshot(p, (sp) => inNextBaseline(p, sp, c.id));
+          const end = snap.end; // the actual sprint dates, not the previous finish plus the approved days
           // the approved cost goes into the plan's budget only when the user asked for it
           if (apCost && addBudgetLine === true && !p.lines.some((l) => l.crId === c.id))
             p.lines.push({ id: uid(), name: c.code + ' ' + (c.title || 'Change request'), amount: apCost, per: 'project' });
@@ -105,7 +106,7 @@ export function useChange() {
           const bid = uid();
           p.baselines.push({
             id: bid, version, kind: 'Change', date: today(), crId: c.id, crCode: c.code,
-            note: c.title, approvedCost: apCost, approvedDays: apDays, ...snapshot(p),
+            note: c.title, approvedCost: apCost, approvedDays: apDays, ...snap,
             bac, end, weeks: Math.max(1, Math.ceil(((pd(end) - pd(prev.start || p.meta.start)) / DAY + 1) / 7)),
             // reserves: carried over unchanged, except the percentages this request set
             reserve: { contPct: res.contPct, mgmtPct: res.mgmtPct, contingency: res.contingency, management: res.management },

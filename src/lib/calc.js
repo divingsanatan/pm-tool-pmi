@@ -679,6 +679,23 @@ export function normalize(S) {
       b.incl = true;
     }
   });
+  // A baseline's finish used to be worked out as the previous finish plus the approved days. It is the latest sprint end of the
+  // plan as baselined, so rebuild it once from the sprint dates the baseline froze (b.endFromSprints marks it as done).
+  S.baselines.forEach((b) => {
+    if (b.endFromSprints) return;
+    const ends = (b.sprints || []).map((x) => x.end).filter(Boolean).sort();
+    if (ends.length) {
+      b.end = ends[ends.length - 1];
+      b.weeks = Math.max(1, Math.ceil(((pd(b.end) - pd(b.start || m.start)) / DAY + 1) / 7));
+    }
+    b.endFromSprints = true;
+  });
+  // a sprint whose dates were moved outside its baseline through a request keeps that link until the baseline takes the dates
+  S.sprints.forEach((sp) => {
+    if (!sp.dateCrId) return;
+    const w = (S.baselines.length && S.baselines[S.baselines.length - 1].sprints || []).find((x) => x.id === sp.id);
+    if (!S.cr.find((c) => c.id === sp.dateCrId) || (w && sp.start >= w.start && sp.end <= w.end)) delete sp.dateCrId;
+  });
   const lastB = S.baselines[S.baselines.length - 1];
   if (lastB) {
     if (!lastB.reserve) {

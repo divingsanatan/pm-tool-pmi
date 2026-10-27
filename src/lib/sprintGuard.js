@@ -59,6 +59,22 @@ export function datePatchViolations(S, ids, patch) {
 // (only lowest-level items: a parent's dates are rolled up from its children)
 export const tasksOutside = (c, w) => leafTasks(c.tasks).filter((t) => !inWin(w, t.start) || !inWin(w, t.due));
 
+/* Baseline lock. Once a baseline exists, a sprint's dates may move freely only inside the dates it was baselined with.
+   Anything outside them changes the approved schedule, so it needs a change request (linked on the sprint as dateCrId). */
+export const lastBaseline = (S) => (S.baselines && S.baselines.length ? S.baselines[S.baselines.length - 1] : null);
+export const OPEN_CR = ['Draft', 'Submitted', 'Under review', 'Approved']; // a request that can still carry a change into the next baseline
+export const baselinedDates = (S, id) => {
+  const b = lastBaseline(S);
+  const x = b && Array.isArray(b.sprints) ? b.sprints.find((y) => y.id === id) : null;
+  return x && x.start && x.end ? x : null; // null: no baseline, a sprint added after it (it has its own request) or never dated
+};
+export const outsideBaseline = (S, id, start, end) => {
+  const w = baselinedDates(S, id);
+  return !!w && !!((start && start < w.start) || (end && end > w.end));
+};
+// the request that already covers this sprint's dates (still open, so the baseline will take them when it is implemented)
+export const dateCrOf = (S, sp) => (sp && sp.dateCrId ? (S.cr || []).find((c) => c.id === sp.dateCrId && OPEN_CR.includes(c.status)) || null : null);
+
 // Sprints of the same project must not share a day (start and end dates are both inclusive).
 // Returns the other dated sprints that overlap start..end; `selfId` is the sprint being edited (ignored).
 export const sprintClash = (S, selfId, start, end) =>

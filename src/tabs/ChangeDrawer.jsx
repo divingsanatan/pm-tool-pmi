@@ -207,6 +207,11 @@ export default function ChangeDrawer({ id, onClose }) {
           <div className="fld" style={{ gridColumn: '1 / -1' }}>Work items affected
             <Picker ids={cr.tasks} options={tasks} disabled={lockImp} label="Add work item" onChange={(v) => set({ tasks: v })} />
           </div>
+          {S.sprints.some((sp) => sp.dateCrId === cr.id) && (
+            <div className="fld" style={{ gridColumn: '1 / -1' }}>Sprint dates moved by this request
+              <span className="msg">{S.sprints.filter((sp) => sp.dateCrId === cr.id).map((sp) => sp.name + ' (' + fdate(sp.start) + ' – ' + fdate(sp.end) + ')').join(', ')}. The new baseline will record these dates.</span>
+            </div>
+          )}
           {S.sprints.some((sp) => sp.crId === cr.id) && (
             <div className="fld" style={{ gridColumn: '1 / -1' }}>Sprints added by this request
               <span className="msg">{S.sprints.filter((sp) => sp.crId === cr.id).map((sp) => sp.name + ' (' + (sp.plannedHours != null ? sp.plannedHours + ' h planned' : 'no planned hours') + ')').join(', ')}. Their work items are listed above automatically.</span>
@@ -378,7 +383,7 @@ export default function ChangeDrawer({ id, onClose }) {
                     <p style={{ margin: '0 0 8px' }}>The new baseline is the current one ({pl.prev.version}) plus what was approved:</p>
                     <ul style={{ margin: '0 0 10px', paddingLeft: 18 }}>
                       <li>Budget at completion (work budget + contingency): {money(pl.prev.bac)} → <b>{money(pl.bac)}</b> ({signedMoney(pl.bac - pl.prev.bac, money)})</li>
-                      <li>Finish date: {fdate(pl.prev.end)} → <b>{fdate(pl.end)}</b> ({signedDays(pl.apDays)})</li>
+                      <li>Finish date (from the sprint dates): {fdate(pl.prev.end)} → <b>{fdate(pl.end)}</b>{pl.end !== pl.expEnd ? ' (the request expected ' + fdate(pl.expEnd) + ', ' + signedDays(pl.apDays) + ')' : ' (' + signedDays(pl.apDays) + ', as approved)'}</li>
                       {pl.res && pl.res.changed
                         ? <li>Reserves: contingency {money(pl.res.before.contingency)} → <b>{money(pl.res.contingency)}</b> ({signedMoney(pl.res.dCont, money)}), management reserve {money(pl.res.before.management)} → <b>{money(pl.res.management)}</b> ({signedMoney(pl.res.dMgmt, money)}). Total project budget {money(pl.res.totalBefore)} → <b>{money(pl.res.totalAfter)}</b></li>
                         : <li>Reserves: unchanged (locked).</li>}

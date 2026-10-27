@@ -5,8 +5,9 @@ import { alignSprintDates } from '../lib/calc';
 import { childTypeFor, containerById, findTask, firstOpenStatus, isDoneStatus, makeTask, uid } from '../lib/tasks';
 import { leafTasks, subtreeIds } from '../lib/hier';
 import { cleanEffort } from '../lib/format';
-import { fdate } from '../lib/dates';
-import { clampDates, datePatchViolations, gapWindow, inWin, nextFreeDay, rollover, sane, sprintClash, sprintCovers, tasksOutside, windowOf } from '../lib/sprintGuard';
+import { DAY, fdate, pd } from '../lib/dates';
+import { blankCr, currentBaseline, sprintCrs } from '../lib/change';
+import { baselinedDates, clampDates, datePatchViolations, dateCrOf, gapWindow, inWin, nextFreeDay, outsideBaseline, rollover, sane, sprintClash, sprintCovers, tasksOutside, windowOf } from '../lib/sprintGuard';
 
 const plural = (n, a, b) => (n === 1 ? a : b);
 const span = (c) => (c.start ? fdate(c.start) : '…') + ' – ' + (c.end ? fdate(c.end) : '…');
@@ -246,6 +247,32 @@ export function useTasks() {
           say({ id: 'guard', tone: 'bad', text: 'Sprint dates cannot overlap. ' + fdate(next.start) + ' – ' + fdate(next.end) + ' overlaps ' + hit.map((s) => s.name + ' (' + span(s) + ')').join(', ') + '.' + (free !== next.start ? ' The first free start date is ' + fdate(free) + '.' : ''), ttl: 9000 });
           return true;
         }
+      }
+      // Baseline lock: inside the dates the sprint was baselined with, move freely; outside them, a change request must cover it
+      if (('start' in patch || 'end' in patch) && outsideBaseline(S0, cid, next.start, next.end) && !dateCrOf(S0, c)) {
+        const bw = baselinedDates(S0, cid), b0 = currentBaseline(S0);
+        const apply = (p, crId) => {
+          const sp = containerById(p, cid);
+          Object.assign(sp, patch);
+          sp.dateCrId = crId;
+          const cr = p.cr.find((x) => x.id === crId);
+          if (cr) cr.log.push({ on: new Date().toISOString().slice(0, 10), text: sp.name + ' dates set to ' + fdate(sp.start) + ' – ' + fdate(sp.end) + ' (baselined ' + fdate(bw.start) + ' – ' + fdate(bw.end) + ')' });
+        };
+        const open = sprintCrs(S0).slice(-3).reverse();
+        const lastEnd = [next.end].concat(S0.sprints.filter((x) => x.id !== cid && x.end).map((x) => x.end)).sort().pop();
+        const days = Math.max(0, Math.round((pd(lastEnd) - pd(b0.end)) / DAY));
+        const actions = [{
+          label: 'Raise a new change request',
+          primary: true,
+          onClick: () =>
+            update((p) => {
+              const id = uid();
+              p.cr.push(blankCr(p, id, { title: 'Change ' + c.name + ' dates', kind: 'Corrective action', affects: ['Schedule'], cost: 0, days, desc: c.name + ' moves from its baselined dates (' + fdate(bw.start) + ' – ' + fdate(bw.end) + ') to ' + fdate(next.start) + ' – ' + fdate(next.end) + '.' }));
+              apply(p, id);
+            }),
+        }].concat(open.map((cr) => ({ label: 'Link to ' + cr.code + (cr.title ? ' · ' + cr.title : ''), onClick: () => update((p) => apply(p, cr.id)) })));
+        withDecision({ text: 'The baseline (' + b0.version + ') fixes ' + c.name + ' at ' + fdate(bw.start) + ' – ' + fdate(bw.end) + '. ' + fdate(next.start) + ' – ' + fdate(next.end) + ' is outside it, so a change request must cover the change. Dates inside the baselined dates need no request.', actions });
+        return true;
       }
       const w = { lo: next.start, hi: next.end };
       const out = next.start || next.end ? tasksOutside(c, w) : [];
