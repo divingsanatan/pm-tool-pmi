@@ -18,6 +18,21 @@ export const signedMoney = (n, money) => (!n ? money(0) : (n > 0 ? '+' : '−') 
 export const signedDays = (n) => (!n ? '0 days' : (n > 0 ? '+' : '−') + Math.abs(n) + (Math.abs(n) === 1 ? ' day' : ' days'));
 
 /* ---------- baselines ---------- */
+// Real finish of the schedule: the latest sprint end or task date (not rounded up to a whole week)
+export function scheduleEnd(S) {
+  let hi = '';
+  S.sprints.forEach((sp) => [sp.end].concat(sp.tasks.map((t) => t.due || t.start)).forEach((d) => { if (d && d > hi) hi = d; }));
+  return hi || isoOf(projectEnd(S));
+}
+// Planned effort: each sprint's Planned hours when entered, otherwise the sum of its work items' effort
+export function plannedEffort(S) {
+  const r = S.sprints.reduce((a, sp) => {
+    const items = sp.tasks.filter((t) => !t.parent).reduce((x, t) => x + nz(t.effort), 0); // top-level items already hold their children's hours
+    return a + (sp.plannedHours > 0 ? nz(sp.plannedHours) : items);
+  }, 0);
+  return Math.round(r * 100) / 100;
+}
+
 // A baseline is a frozen copy of the three things PMI asks you to baseline: scope, schedule and cost.
 export function snapshot(S) {
   const tasks = S.sprints.flatMap((sp) => sp.tasks); // the Backlog is unscheduled, so it is not part of the scope baseline
@@ -25,10 +40,10 @@ export function snapshot(S) {
     bac: Math.round(projectBAC(S) * 100) / 100,
     weekly: Math.round(weeklyBAC(S) * 100) / 100,
     start: S.meta.start,
-    end: isoOf(projectEnd(S)),
+    end: scheduleEnd(S),
     weeks: nW(S),
     items: tasks.length,
-    effort: Math.round(tasks.filter((t) => !t.parent).reduce((a, t) => a + nz(t.effort), 0) * 100) / 100, // top-level items already hold their children's hours
+    effort: plannedEffort(S),
     codes: tasks.map((t) => t.code),
     // the sprint plan at that moment: PV and the share of each sprint come from the planned hours
     sprints: S.sprints.map((sp) => ({ id: sp.id, name: sp.name, start: sp.start || '', end: sp.end || '', plannedHours: sp.plannedHours == null ? null : sp.plannedHours, crId: sp.crId || '' })),
