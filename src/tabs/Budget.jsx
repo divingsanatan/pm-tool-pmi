@@ -402,10 +402,10 @@ export default function Budget() {
             {newRes.length > 0 && (<><span className="msg">· of which new resources</span><span className="mono msg">{money(newSum)}</span></>)}
             <span>Recurring line items</span><span className="mono">{money(recur)}</span>
             <span>One-time line items</span><span className="mono">{money(lineOnce(S))}</span>
-            <span className="big">Work budget (BAC)</span><span className="mono big">{money(pB)}</span>
+            <span className="big">Work budget</span><span className="mono big">{money(R.base)}</span>
             {baselined && Math.abs(pending) > 0.5 && (<><span className="msg">· pending change requests (not in BAC yet)</span><span className="mono msg" title="Live plan minus the approved baseline. It joins BAC when the change request is implemented.">{pending > 0 ? '+' : '−'}{money(Math.abs(pending))}</span></>)}
             <span>Contingency reserve ({pc(R.contPct, 1)})</span><span className="mono">{money(R.contingency)}</span>
-            <span>Cost baseline (BAC + contingency)</span><span className="mono">{money(R.costBaseline)}</span>
+            <span className="big">Budget at completion (BAC = work budget + contingency)</span><span className="mono big">{money(R.costBaseline)}</span>
             <span>Management reserve ({pc(R.mgmtPct, 1)})</span><span className="mono">{money(R.management)}</span>
             <span className="big">Total project budget</span><span className="mono big">{money(R.total)}</span>
             <div className="sep" />
@@ -414,9 +414,9 @@ export default function Budget() {
             <span>Spent</span><span className="mono">{pc(pB ? ac / pB : null)}</span>
           </div>
           <p className="msg" style={{ margin: '12px 0 0', lineHeight: 1.6 }}>
-            Contingency = {pc(R.contPct, 1)} × work budget {money(R.locked ? R.contingency / (R.contPct || 1) : pB)} = {money(R.contingency)}. Management reserve = {pc(R.mgmtPct, 1)} × work budget = {money(R.management)}.
+            Contingency = {pc(R.contPct, 1)} × work budget {money(R.base)} = {money(R.contingency)}. Management reserve = {pc(R.mgmtPct, 1)} × work budget = {money(R.management)}.
             {R.locked ? ' Locked by baseline ' + R.version + ': the percentages and amounts stay as approved, even if the work budget moves.' : ' Until a baseline is set the amounts follow the work budget; the percentages can be changed in the planned budget line items.'}
-            {' '}Earned value, SPI and CPI are measured against the work budget (BAC); the reserves are held on top of it.
+            {' '}Earned value, SPI and CPI are measured against the budget at completion (BAC), which is the work budget plus the contingency reserve. The management reserve is held on top of BAC.
           </p>
         </div>
       </div>
@@ -504,8 +504,9 @@ export default function Budget() {
                   </tr>
                 );
               })}
-              <tr className="sub-row"><td data-l="Line item"><span className="cell">Work budget (BAC)</span></td><td data-l=""></td><td data-l=""></td><td data-l=""></td><td data-l="Project total" className="r mono"><span className="cell">{money(pB)}</span></td><td data-l=""></td></tr>
+              <tr className="sub-row"><td data-l="Line item"><span className="cell">Work budget</span></td><td data-l=""></td><td data-l=""></td><td data-l=""></td><td data-l="Project total" className="r mono"><span className="cell">{money(R.base)}</span></td><td data-l=""></td></tr>
               {reserveRow('contingency', 'Contingency reserve', R.contPct, R.contingency, 'of the work budget, for identified risks')}
+              <tr className="sub-row"><td data-l="Line item"><span className="cell">Budget at completion (BAC)</span></td><td data-l=""></td><td data-l=""></td><td data-l=""></td><td data-l="Project total" className="r mono"><span className="cell">{money(R.costBaseline)}</span></td><td data-l=""></td></tr>
               {reserveRow('management', 'Management reserve', R.mgmtPct, R.management, 'of the work budget, for unknown risks')}
             </tbody>
             <tfoot><tr><td>Total project budget</td><td></td><td></td><td></td><td className="r mono">{money(R.total)}</td><td></td></tr></tfoot>

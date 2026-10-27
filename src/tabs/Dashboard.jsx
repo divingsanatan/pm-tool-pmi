@@ -37,18 +37,18 @@ export default function Dashboard() {
   const spiText = E.spi == null ? 'No data' : E.spi >= 1 ? 'On or ahead of plan' : E.spi >= 0.9 ? 'Slightly behind' : 'Behind plan';
   const cpiText = E.cpi == null ? 'No data' : E.cpi >= 1 ? 'Under budget' : E.cpi >= 0.9 ? 'Slightly over' : 'Over budget';
 
-  // the budget as a structure: work budget, contingency, management reserve, and how much of the reserves the actual cost has used
+  // the budget as a structure: work budget + contingency = BAC, then the management reserve on top. Spending past the work budget draws on the contingency; past BAC it draws on the management reserve
   const contUsed = Math.min(RS.contingency, Math.max(0, E.ac - RS.base));
   const mgmtUsed = Math.min(RS.management, Math.max(0, E.ac - RS.costBaseline));
   const seg = (v) => (RS.total ? (v / RS.total) * 100 : 0) + '%';
   // the same reserves seen from the forecast: where the cost lands if today's cost performance continues
-  const fcCont = E.eac == null ? null : Math.min(RS.contingency, Math.max(0, E.eac - RS.base));
   const fcMgmt = E.eac == null ? null : Math.min(RS.management, Math.max(0, E.eac - RS.costBaseline));
   const fcBeyond = E.eac == null ? null : Math.max(0, E.eac - RS.total);
 
   // what the budget is made of, over the whole project; the pieces add up to the budget at completion
   const parts = [{ n: 'Team labour', v: labourTotal(S) }]
     .concat(S.lines.map((l) => ({ n: l.name || 'Line item', v: planLineTotal(S, l) })))
+    .concat([{ n: 'Contingency reserve', v: RS.contingency }]) // BAC = work budget + contingency
     .filter((p) => p.v > 0);
   const ptot = parts.reduce((x, p) => x + p.v, 0);
 
@@ -149,20 +149,20 @@ export default function Dashboard() {
 
       <section className="card">
         <h2>Budget and reserves</h2>
-        <p className="hint">Earned value, SPI and CPI are measured against the work budget (BAC). The reserves are held on top of it{RS.locked ? ' and are locked by baseline ' + RS.version : ' until a baseline is set'}.</p>
+        <p className="hint">Earned value, SPI and CPI are measured against the budget at completion (BAC): the work budget plus the contingency reserve. The management reserve is held on top of BAC{RS.locked ? ' and are locked by baseline ' + RS.version : ' until a baseline is set'}.</p>
         <div className="grid2e" style={{ alignItems: 'start' }}>
           <div className="totals">
-            <span>Work budget (BAC)</span><span className="mono">{money(RS.base)}</span>
+            <span>Work budget</span><span className="mono">{money(RS.base)}</span>
             <span>Contingency reserve ({pc(RS.contPct, 1)})</span><span className="mono">{money(RS.contingency)}</span>
-            <span>Cost baseline (BAC + contingency)</span><span className="mono">{money(RS.costBaseline)}</span>
+            <span className="big">Budget at completion (BAC)</span><span className="mono big">{money(RS.costBaseline)}</span>
             <span>Management reserve ({pc(RS.mgmtPct, 1)})</span><span className="mono">{money(RS.management)}</span>
             <span className="big">Total project budget</span><span className="mono big">{money(RS.total)}</span>
           </div>
           <div className="totals">
             <span>Actual cost to date</span><span className="mono">{money(E.ac)}</span>
-            <span>Contingency used (cost above BAC)</span><span className="mono" style={contUsed > 0 ? { color: 'var(--warn)' } : undefined}>{money(contUsed)}</span>
+            <span>Contingency used (cost above the work budget)</span><span className="mono" style={contUsed > 0 ? { color: 'var(--warn)' } : undefined}>{money(contUsed)}</span>
             <span>Contingency left</span><span className="mono">{money(RS.contingency - contUsed)}</span>
-            <span>Management reserve used (cost above cost baseline)</span><span className="mono" style={mgmtUsed > 0 ? { color: 'var(--bad)' } : undefined}>{money(mgmtUsed)}</span>
+            <span>Management reserve used (cost above BAC)</span><span className="mono" style={mgmtUsed > 0 ? { color: 'var(--bad)' } : undefined}>{money(mgmtUsed)}</span>
             <span>Management reserve left</span><span className="mono">{money(RS.management - mgmtUsed)}</span>
           </div>
         </div>
@@ -170,8 +170,7 @@ export default function Dashboard() {
           <>
             <div className="flabel" style={{ margin: '16px 0 6px' }}>If today’s cost performance continues (forecast {money(r2(E.eac))})</div>
             <div className="totals">
-              <span>Forecast cost above the work budget, met by the contingency reserve</span><span className="mono" style={fcCont > 0 ? { color: 'var(--warn)' } : undefined}>{money(r2(fcCont))} of {money(RS.contingency)}</span>
-              <span>Forecast cost above the cost baseline, needing the management reserve</span><span className="mono" style={fcMgmt > 0 ? { color: 'var(--bad)' } : undefined}>{money(r2(fcMgmt))} of {money(RS.management)}</span>
+              <span>Forecast cost above BAC, needing the management reserve</span><span className="mono" style={fcMgmt > 0 ? { color: 'var(--bad)' } : undefined}>{money(r2(fcMgmt))} of {money(RS.management)}</span>
               <span>Forecast cost above the total project budget</span><span className="mono" style={fcBeyond > 0 ? { color: 'var(--bad)' } : undefined}>{money(r2(fcBeyond))}</span>
             </div>
           </>

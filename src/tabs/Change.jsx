@@ -27,12 +27,12 @@ export default function Change() {
   const live = snapshot(S);
   const RS = reserves(S);
   const br = base && base.reserve; // the reserves frozen in the current baseline
-  const bTotal = base ? base.bac + (br ? nz(br.contingency) + nz(br.management) : 0) : 0;
+  const bTotal = base ? base.bac + (br ? nz(br.management) : 0) : 0; // base.bac already includes the contingency
 
   const setBase = () =>
     ui.ask({
       title: 'Set baseline v1.0?',
-      body: 'The plan as it stands now (budget ' + money(live.bac) + ', plus contingency ' + money(RS.contingency) + ' and management reserve ' + money(RS.management) + ' = total project budget ' + money(RS.total) + ', finish ' + fdate(live.end) + ', ' + live.items + ' work items) becomes the approved baseline. After this, every change to it goes through a change request.',
+      body: 'The plan as it stands now (work budget ' + money(RS.base) + ' + contingency ' + money(RS.contingency) + ' = budget at completion ' + money(live.bac) + ', plus management reserve ' + money(RS.management) + ' = total project budget ' + money(RS.total) + ', finish ' + fdate(live.end) + ', ' + live.items + ' work items) becomes the approved baseline. After this, every change to it goes through a change request.',
       confirm: 'Set baseline',
       onConfirm: () => ch.setInitialBaseline(note),
     });
@@ -45,8 +45,9 @@ export default function Change() {
           <h2>Set the baseline first</h2>
           <p className="hint">A change request measures its impact against an approved baseline: the scope, schedule and cost you committed to. Capture the plan as it stands now. This should be the version the sponsor approved.</p>
           <div className="totals" style={{ maxWidth: 420 }}>
-            <span>Budget at completion (work budget)</span><span className="mono">{money(live.bac)}</span>
+            <span>Work budget</span><span className="mono">{money(RS.base)}</span>
             <span>Contingency reserve ({pc(RS.contPct, 1)})</span><span className="mono">{money(RS.contingency)}</span>
+            <span>Budget at completion (BAC = work budget + contingency)</span><span className="mono">{money(live.bac)}</span>
             <span>Management reserve ({pc(RS.mgmtPct, 1)})</span><span className="mono">{money(RS.management)}</span>
             <span>Total project budget</span><span className="mono">{money(RS.total)}</span>
             <span>Finish date</span><span className="mono">{fdate(live.end)}</span>
@@ -63,8 +64,8 @@ export default function Change() {
       {base && (
         <section className="kpis">
           <Kpi l="Current baseline" v={base.version} s={'Set ' + fdate(base.date) + (base.crCode ? ' by ' + base.crCode : '')} />
-          <Kpi l="Baseline budget" v={money(base.bac)} s={d && Math.abs(d.dCost) > 0.5 ? 'Plan now ' + money(d.live.bac) + ' (' + signedMoney(d.dCost, money) + ')' : 'Plan matches'} />
-          <Kpi l="Total project budget" v={money(bTotal)} s={br ? 'BAC + contingency ' + money(br.contingency) + ' + management ' + money(br.management) : 'BAC only'} />
+          <Kpi l="Baseline BAC" v={money(base.bac)} s={d && Math.abs(d.dCost) > 0.5 ? 'Plan now ' + money(d.live.bac) + ' (' + signedMoney(d.dCost, money) + ')' : 'Plan matches'} />
+          <Kpi l="Total project budget" v={money(bTotal)} s={br ? 'BAC (incl. contingency ' + money(br.contingency) + ') + management reserve ' + money(br.management) : 'BAC only'} />
           <Kpi l="Awaiting decision" v={P.open.length} s={P.open.length ? signedMoney(P.openCost, money) + ' · ' + signedDays(P.openDays) + ' if all approved' : 'Nothing pending'} />
           <Kpi l="Approved, not in baseline" v={P.appr.length} s={P.appr.length ? signedMoney(P.apprCost, money) + ' · ' + signedDays(P.apprDays) : 'None'} />
         </section>

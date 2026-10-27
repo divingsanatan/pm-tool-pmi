@@ -1,6 +1,6 @@
 import { DAY, addDays, pd, today } from './dates';
 import { nz } from './format';
-import { labourOf, nW, personOf, projectBAC, projectEnd, reserves, weeklyBAC } from './calc';
+import { baseWork, labourOf, nW, personOf, projectBAC, projectEnd, reserves, weeklyBAC, workBudget } from './calc';
 import { uid } from './tasks';
 
 /* ---------- vocabulary ---------- */
@@ -37,7 +37,9 @@ export function plannedEffort(S) {
 export function snapshot(S) {
   const tasks = S.sprints.flatMap((sp) => sp.tasks); // the Backlog is unscheduled, so it is not part of the scope baseline
   return {
-    bac: Math.round(projectBAC(S) * 100) / 100,
+    bac: Math.round(projectBAC(S) * 100) / 100, // BAC = work budget + contingency reserve (management reserve excluded)
+    work: Math.round(workBudget(S) * 100) / 100,
+    incl: true, // marks a baseline whose bac already includes the contingency
     weekly: Math.round(weeklyBAC(S) * 100) / 100,
     start: S.meta.start,
     end: scheduleEnd(S),
@@ -176,16 +178,19 @@ export function reserveAfter(cr, S, basis = 'ap') {
   const prev = currentBaseline(S);
   if (!prev) return null;
   const R = reserves(S); // the baseline's own (locked) reserves
-  const bac = Math.round((prev.bac + nz(basis === 'ap' ? cr.apCost : cr.cost)) * 100) / 100;
+  const r2 = (n) => Math.round(n * 100) / 100;
+  // the work budget moves by the cost change; BAC is that work budget plus the contingency; the management reserve sits on top of BAC
+  const work = r2(baseWork(prev) + nz(basis === 'ap' ? cr.apCost : cr.cost));
   const has = (v) => v != null && !isNaN(v);
   const contPct = has(cr.reCont) ? cr.reCont : R.contPct;
   const mgmtPct = has(cr.reMgmt) ? cr.reMgmt : R.mgmtPct;
-  const contingency = has(cr.reCont) ? Math.round(bac * cr.reCont * 100) / 100 : R.contingency;
-  const management = has(cr.reMgmt) ? Math.round(bac * cr.reMgmt * 100) / 100 : R.management;
+  const contingency = has(cr.reCont) ? r2(work * cr.reCont) : R.contingency;
+  const management = has(cr.reMgmt) ? r2(work * cr.reMgmt) : R.management;
+  const bac = r2(work + contingency);
   return {
-    changed: has(cr.reCont) || has(cr.reMgmt), bac, contPct, mgmtPct, contingency, management,
-    dCont: Math.round((contingency - R.contingency) * 100) / 100, dMgmt: Math.round((management - R.management) * 100) / 100,
-    before: R, totalBefore: Math.round((prev.bac + R.contingency + R.management) * 100) / 100, totalAfter: Math.round((bac + contingency + management) * 100) / 100,
+    changed: has(cr.reCont) || has(cr.reMgmt), work, bac, contPct, mgmtPct, contingency, management,
+    dCont: r2(contingency - R.contingency), dMgmt: r2(management - R.management),
+    before: R, totalBefore: r2(prev.bac + R.management), totalAfter: r2(bac + management),
   };
 }
 
@@ -193,9 +198,11 @@ export function implementPlan(cr, S) {
   const prev = currentBaseline(S);
   if (!prev) return null;
   const apCost = nz(cr.apCost), apDays = nz(cr.apDays);
-  const bac = Math.round((prev.bac + apCost) * 100) / 100;
+  const res = reserveAfter(cr, S, 'ap');
+  const bac = res.bac;
   const liveBac = Math.round(projectBAC(S) * 100) / 100;
-  return { prev, apCost, apDays, bac, end: addDays(prev.end, apDays), liveBac, needsBudget: apCost !== 0 && Math.abs(liveBac - bac) > 1, res: reserveAfter(cr, S, 'ap') };
+  const liveWork = Math.round(workBudget(S) * 100) / 100; // what the Budget tab's line items add up to, before reserves
+  return { prev, apCost, apDays, bac, end: addDays(prev.end, apDays), liveBac, liveWork, needsBudget: apCost !== 0 && Math.abs(liveWork - res.work) > 1, res };
 }
 export const missing = (cr, to, S) => checksFor(cr, to, S).filter((c) => c.req && !c.ok);
 

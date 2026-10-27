@@ -94,7 +94,9 @@ export function useChange() {
           const apCost = nz(c.apCost), apDays = nz(c.apDays);
           // The approved cost and schedule change are added to the previous baseline. (Before, the new baseline was only a copy of the
           // live plan, so a cost or schedule change that was approved but not typed in elsewhere never reached it.)
-          const bac = Math.round((prev.bac + apCost) * 100) / 100;
+          // BAC of the new baseline = (previous work budget + approved cost) + contingency; the management reserve stays outside it
+          const res = reserveAfter(c, p, 'ap');
+          const bac = res.bac;
           const end = addDays(prev.end, apDays);
           // the approved cost goes into the plan's budget only when the user asked for it
           if (apCost && addBudgetLine === true && !p.lines.some((l) => l.crId === c.id))
@@ -106,7 +108,8 @@ export function useChange() {
             note: c.title, approvedCost: apCost, approvedDays: apDays, ...snapshot(p),
             bac, end, weeks: Math.max(1, Math.ceil(((pd(end) - pd(prev.start || p.meta.start)) / DAY + 1) / 7)),
             // reserves: carried over unchanged, except the percentages this request set
-            reserve: (() => { const r = reserveAfter(c, p, 'ap'); return { contPct: r.contPct, mgmtPct: r.mgmtPct, contingency: r.contingency, management: r.management }; })(),
+            reserve: { contPct: res.contPct, mgmtPct: res.mgmtPct, contingency: res.contingency, management: res.management },
+            work: res.work,
           });
           c.baselineId = bid;
           c.implementedOn = today();

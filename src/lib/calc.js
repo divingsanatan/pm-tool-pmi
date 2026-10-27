@@ -130,13 +130,23 @@ export const lineRecurring = (S) => S.lines.reduce((a, l) => a + (l.per === 'pro
 export const lineWeeklySum = (S) => lineRecurring(S) / Math.max(1, nW(S));
 export const lineOnce = (S) => S.lines.reduce((a, l) => a + (l.per === 'project' ? nz(l.amount) : 0), 0);
 export const weeklyBAC = (S) => sprintCap(S) + lineWeeklySum(S);
-export const projectBAC = (S) => weeklyBAC(S) * nW(S) + lineOnce(S);
+// Work budget = team labour + line items, before any reserve.
+export const workBudget = (S) => weeklyBAC(S) * nW(S) + lineOnce(S);
+// Budget at completion (BAC) = work budget + contingency reserve. The management reserve is NOT part of BAC.
+export const projectBAC = (S) => workBudget(S) + reserves(S).contingency;
 // The approved baseline is the base for every calculation: once one exists, BAC is the baseline's BAC, not the live plan.
 // Changes typed in afterwards (pending a change request) do not move PV, EV, SPI, CPI or the reserves until the request is implemented.
 export const baseOf = (S) => (S.baselines && S.baselines.length ? S.baselines[S.baselines.length - 1] : null);
 export const planBAC = (S) => {
   const b = baseOf(S);
   return b && b.bac != null ? nz(b.bac) : projectBAC(S);
+};
+// A baseline stores BAC (work budget + contingency). Its work budget is that minus the contingency it froze.
+export const baseWork = (b) => nz(b.bac) - nz(b.reserve && b.reserve.contingency);
+// The work budget of the plan: the baseline's once one exists, otherwise the live one. Reserve percentages apply to this.
+export const planWork = (S) => {
+  const b = baseOf(S);
+  return b && b.bac != null ? baseWork(b) : workBudget(S);
 };
 // a sprint counts in the plan once it is in the current baseline (a sprint still waiting for its change request does not)
 export const inPlan = (S, sp) => {
@@ -477,13 +487,13 @@ const MAX_SERIES_DAYS = 104 * 7 + 400;
 export const DEFAULT_RESERVE = { contingency: 0.1, management: 0.05 };
 
 /* The budget as a structure:
-     work budget (BAC)        team labour + line items. Earned value, SPI and CPI are measured against this.
-     + contingency reserve    % of the work budget, held for identified risks   -> cost baseline
-     + management reserve     % of the work budget, held for unknown risks      -> total project budget
+     work budget              team labour + line items.
+     + contingency reserve    % of the work budget, held for identified risks   -> BAC (cost baseline). Earned value, SPI and CPI are measured against this.
+     + management reserve     % of the work budget, held for unknown risks      -> total project budget (not part of BAC)
    Until a baseline exists the amounts follow the percentages. From the first baseline on, percentages and amounts are the
    baseline's own (locked), so they do not move when the work budget moves; a change goes through a change request. */
 export function reserves(S) {
-  const base = planBAC(S);
+  const base = planWork(S);
   const r2 = (n) => Math.round(n * 100) / 100;
   const rs = S.reserve || DEFAULT_RESERVE;
   const b = S.baselines && S.baselines.length ? S.baselines[S.baselines.length - 1] : null;
@@ -492,7 +502,7 @@ export function reserves(S) {
   const mgmtPct = br ? br.mgmtPct : rs.management;
   const contingency = br ? br.contingency : r2(base * contPct);
   const management = br ? br.management : r2(base * mgmtPct);
-  return { base, contPct, mgmtPct, contingency, management, costBaseline: r2(base + contingency), total: r2(base + contingency + management), locked: !!b, version: b ? b.version : '' };
+  return { base, contPct, mgmtPct, contingency, management, costBaseline: r2(base + contingency), bac: r2(base + contingency), total: r2(base + contingency + management), locked: !!b, version: b ? b.version : '' };
 }
 
 export function sprintHours(S, sp) {
@@ -521,16 +531,14 @@ export function alerts(S) {
   {
     const R = reserves(S), E = projectEvm(S), spent = E.ac, f = (n) => Math.round(n).toLocaleString('en-US');
     if (spent > R.costBaseline + 0.5)
-      a.push({ cls: 'bad', text: 'Actual cost (' + f(spent) + ') is above the cost baseline (' + f(R.costBaseline) + '), so it is using the management reserve. Releasing it needs a change request.' });
+      a.push({ cls: 'bad', text: 'Actual cost (' + f(spent) + ') is above the budget at completion (BAC, ' + f(R.costBaseline) + '), so it is using the management reserve. Releasing it needs a change request.' });
     else if (spent > R.base + 0.5)
       a.push({ cls: 'warn', text: 'Actual cost (' + f(spent) + ') is above the work budget (' + f(R.base) + '): ' + f(spent - R.base) + ' of the ' + f(R.contingency) + ' contingency reserve is in use.' });
     // the forecast looks ahead: cost performance so far, carried to the end of the project
     if (E.eac != null && E.eac > R.total + 0.5)
       a.push({ cls: 'bad', text: 'At the current cost performance (CPI ' + (Math.round(E.cpi * 100) / 100) + ') the project will finish at ' + f(E.eac) + ', which is ' + f(E.eac - R.total) + ' above the total project budget of ' + f(R.total) + ' even with both reserves. Act on cost now.' });
     else if (E.eac != null && E.eac > R.costBaseline + 0.5)
-      a.push({ cls: 'bad', text: 'At the current cost performance (CPI ' + (Math.round(E.cpi * 100) / 100) + ') the project will finish at ' + f(E.eac) + ', above the cost baseline of ' + f(R.costBaseline) + '. The contingency reserve will not cover it and the management reserve would be needed.' });
-    else if (E.eac != null && E.eac > R.base + 0.5)
-      a.push({ cls: 'warn', text: 'At the current cost performance (CPI ' + (Math.round(E.cpi * 100) / 100) + ') the project will finish at ' + f(E.eac) + ', ' + f(E.eac - R.base) + ' above the work budget of ' + f(R.base) + '. Contingency would cover it.' });
+      a.push({ cls: 'bad', text: 'At the current cost performance (CPI ' + (Math.round(E.cpi * 100) / 100) + ') the project will finish at ' + f(E.eac) + ', above the budget at completion (BAC) of ' + f(R.costBaseline) + '. The management reserve would be needed.' });
     if (E.hasPlan && E.unscheduled > 0.0005)
       a.push({ cls: 'warn', text: Math.round(E.unscheduled * 100) + '% of the budget belongs to sprints without start and end dates, so it is left out of planned value and SPI is overstated until they are dated.' });
     // planned hours that no work item covers yet: delivery status only counts work items, so say what is missing
@@ -652,6 +660,18 @@ export function normalize(S) {
   const pct01 = (v, d) => (typeof v === 'number' && isFinite(v) ? Math.min(1, Math.max(0, v)) : d);
   S.reserve.contingency = pct01(S.reserve.contingency, DEFAULT_RESERVE.contingency);
   S.reserve.management = pct01(S.reserve.management, DEFAULT_RESERVE.management);
+  // BAC now includes the contingency reserve. A baseline saved before that stored only the work budget in bac: add its own
+  // frozen contingency once (b.incl marks it as done) so every baseline holds BAC = work budget + contingency.
+  S.baselines.forEach((b) => {
+    if (!b.reserve) {
+      const w = nz(b.bac);
+      b.reserve = { contPct: S.reserve.contingency, mgmtPct: S.reserve.management, contingency: Math.round(w * S.reserve.contingency * 100) / 100, management: Math.round(w * S.reserve.management * 100) / 100 };
+    }
+    if (!b.incl) {
+      b.bac = Math.round((nz(b.bac) + nz(b.reserve.contingency)) * 100) / 100;
+      b.incl = true;
+    }
+  });
   const lastB = S.baselines[S.baselines.length - 1];
   if (lastB) {
     if (!lastB.reserve) {
