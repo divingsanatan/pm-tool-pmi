@@ -3,6 +3,7 @@ import { nz, cl, cleanEffort, money as money0 } from './format';
 import { DEFAULT_STATUSES, DEFAULT_TYPES, allContainers, firstOpenStatus, isDoneStatus, makeTask, statusPct, typeOf, uid } from './tasks';
 import { flatTree, leafTasks, rollupContainer, rootTasks } from './hier';
 import { ACTIVITY_MAX } from './activity';
+import { offDaysOf, sprintCalendar } from './offdays';
 
 /* ---------- timeline helpers ---------- */
 export const nW = (S) => S.meta.weeks;
@@ -333,7 +334,7 @@ export function sprintLedger(S) {
 /* Earned value measures for one sprint, as of a date (today by default). Nothing is typed in; every figure is worked out from
    the sprint's planned hours, dates, work items and cost entries, and sprintEvm returns the working so the screen can show it.
      budget     = BAC x the sprint's share of the planned hours
-     planned %  = days of the sprint gone (counting today) / days in the sprint
+     planned %  = working days of the sprint gone (counting today) / working days in the sprint (calendar days - off days)
      earned %   = done work item hours / planned hours, never above 100%
      PV = budget x planned %     EV = budget x earned %     AC = cost entries dated inside the sprint up to the date
      SPI = EV / PV               CPI = EV / AC */
@@ -346,10 +347,16 @@ export function sprintEvm(S, sp, asOf = today()) {
   const share = row ? row.share : 0;
   const budget = bac * share;
   const hasDates = !!(sp.start && sp.end && pd(sp.end) >= pd(sp.start));
-  const days = hasDates ? Math.round((pd(sp.end) - pd(sp.start)) / DAY) + 1 : 0;
+  // Off days (Sundays, holidays...) are not working days: they are left out of both the days in the sprint and the days gone,
+  // so planned % moves only on working days and reaches 100% on the last working day.
+  const cal = hasDates ? sprintCalendar(sp, asOf) : null;
+  const calDays = cal ? cal.cal : 0; // calendar days in the sprint
+  const offN = cal ? cal.off : 0; // off days in the sprint
+  const days = cal ? cal.work : 0; // working days in the sprint
   const started = hasDates && pd(asOf) >= pd(sp.start);
   const ended = hasDates && pd(asOf) > pd(sp.end);
-  const elapsed = hasDates ? Math.max(0, Math.min(days, Math.round((pd(asOf) - pd(sp.start)) / DAY) + 1)) : 0;
+  const elapsed = cal ? cal.gone : 0; // working days gone, today counts
+  const offToday = !!cal && cal.offList.includes(asOf);
   const plannedPct = days ? elapsed / days : 0;
   const h = sprintHours(S, sp);
   const open = Math.max(0, h.items - h.done);
@@ -365,6 +372,8 @@ export function sprintEvm(S, sp, asOf = today()) {
   const left = hasDates ? Math.round((pd(sp.end) - pd(asOf)) / DAY) : 0;
   if (pending) {
     status = 'Awaiting change request'; cls = 'warn'; why = 'This sprint is not in the approved baseline yet, so it is left out of planned value, earned value and the budget until its change request is implemented.';
+  } else if (hasDates && !(days > 0)) {
+    status = 'Set up needed'; cls = 'warn'; why = 'Every day of the sprint is marked off. Leave at least one working day.';
   } else if (!(planned > 0) || !hasDates) {
     status = 'Set up needed'; cls = 'warn'; why = 'Enter planned hours and the start and end dates.';
   } else if (!started) {
@@ -384,7 +393,7 @@ export function sprintEvm(S, sp, asOf = today()) {
   }
   const costStatus = cpi == null ? 'No cost entries yet' : cpi >= 1 ? 'Under budget' : cpi >= 0.9 ? 'Slightly over budget' : 'Over budget';
   return {
-    bac, planned, total, share, typed: !!(row && row.typed), budget, hasDates, days, elapsed, left, started, ended,
+    bac, planned, total, share, typed: !!(row && row.typed), budget, hasDates, days, calDays, offN, offToday, elapsed, left, started, ended,
     plannedPct, earnedPct, doneH: h.done, itemsH: h.items, openH: open, nItems: h.n,
     pv, ev, ac, entries, spi, cpi, sv: ev - pv, cv: ac > 0 ? ev - ac : null, status, cls, why, costStatus,
     costCls: cpi == null ? 'neutral' : cpi >= 1 ? 'good' : cpi >= 0.9 ? 'warn' : 'bad',
@@ -398,7 +407,7 @@ export function sprintEvm(S, sp, asOf = today()) {
 /* ---------- real-time earned value for the whole project (the Dashboard) ---------- */
 /* Every figure is "as of" one date (today by default) and worked out from the live plan: nothing is typed in per week.
      BAC = the live work budget (Budget tab)
-     PV  = sum over the sprints of  sprint budget x share of the sprint's days gone (today counts)     [sprintEvm]
+     PV  = sum over the sprints of  sprint budget x share of the sprint's working days gone (today counts)     [sprintEvm]
      EV  = sum over the sprints of  sprint budget x done hours / planned hours, at most 100% per sprint [sprintEvm]
      AC  = the sum of all cost entries recorded on the Budget tab
      SPI = EV / PV      CPI = EV / AC      SV = EV - PV      CV = EV - AC
@@ -432,7 +441,7 @@ export function projectEvm(S, asOf = today()) {
 }
 
 /* The same PV / EV / AC, day by day, cumulative, for the S-curve. The last EV and AC points are the figures above:
-   PV(day) uses the share of each sprint's days gone by that day; EV(day) the done hours finished by that day (an item
+   PV(day) uses the share of each sprint's working days gone by that day (off days add nothing); EV(day) the done hours finished by that day (an item
    done with no completion date counts on its due date, never later than today); AC(day) the cost entries dated by that day.
    EV and AC stop at the as-of date, because nothing after it has happened yet. */
 export function evmSeries(S, asOf = today()) {
@@ -454,9 +463,14 @@ export function evmSeries(S, asOf = today()) {
     rows.forEach((r) => {
       if (!(r.planned > 0)) return;
       const sp = r.sp, budget = bac * r.share;
-      if (sp.start && sp.end && pd(sp.end) >= pd(sp.start)) {
-        const a = pd(sp.start), days = Math.round((pd(sp.end) - a) / DAY) + 1;
-        for (let i = 0; i < n; i++) pv[i] += budget * Math.max(0, Math.min(days, Math.round((ms[i] - a) / DAY) + 1)) / days;
+      const cal = sprintCalendar(sp); // working days only: the line stays flat over an off day
+      if (cal && cal.work > 0) {
+        const a = pd(sp.start);
+        for (let i = 0; i < n; i++) {
+          const k = Math.round((ms[i] - a) / DAY);
+          const gone = k < 0 ? 0 : k >= cal.cum.length ? cal.work : cal.cum[k];
+          pv[i] += (budget * gone) / cal.work;
+        }
       }
       const done = Array(n).fill(0);
       leafTasks(sp.tasks).forEach((t) => {
@@ -522,6 +536,11 @@ export function alerts(S) {
       a.push({ cls: 'warn', text: sp.name + ' has no planned hours. Enter them in the Planned hours box on the sprint page.' });
     else if (h.items > h.planned)
       a.push({ cls: 'warn', text: sp.name + ': work items add up to ' + r(h.items) + ' h, which is ' + r(h.items - h.planned) + ' h over the ' + r(h.planned) + ' h planned.' });
+  });
+  S.sprints.forEach((sp) => {
+    const cal = sprintCalendar(sp);
+    if (cal && cal.work === 0)
+      a.push({ cls: 'bad', text: sp.name + ' has every day marked off, so it has no working days and no planned value. Open the sprint and unmark at least one day.' });
   });
   S.sprints.forEach((sp) => {
     const c = sp.crId && S.cr.find((x) => x.id === sp.crId);
@@ -689,6 +708,12 @@ export function normalize(S) {
       b.weeks = Math.max(1, Math.ceil(((pd(b.end) - pd(b.start || m.start)) / DAY + 1) / 7));
     }
     b.endFromSprints = true;
+  });
+  // off days only make sense inside their sprint: when the sprint dates move, off days left outside them are dropped
+  S.sprints.forEach((sp) => {
+    if (!Array.isArray(sp.offDays) || !sp.start || !sp.end || pd(sp.end) < pd(sp.start)) return;
+    const keep = offDaysOf(sp);
+    if (keep.length !== sp.offDays.length || keep.some((d, i) => d !== sp.offDays[i])) sp.offDays = keep;
   });
   // a sprint whose dates were moved outside its baseline through a request keeps that link until the baseline takes the dates
   S.sprints.forEach((sp) => {

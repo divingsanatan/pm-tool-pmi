@@ -651,3 +651,16 @@ label.fld{max-width:100%;min-width:0}
 
 .tbl tr.sub-row td{border-top:2px solid var(--line);font-weight:600}
 .tbl tr.res-row td{background:var(--row)}
+
+/* Sprint off days: one button per calendar day of the sprint */
+.od-card{margin-top:12px}
+.od-strip{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.od{appearance:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:46px;padding:5px 6px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font:inherit;font-size:11.5px;line-height:1.15;cursor:pointer}
+.od b{font-size:15px;font-variant-numeric:tabular-nums}
+.od span{color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em;font-size:10.5px}
+.od.we{background:var(--row)}
+.od.today{outline:2px solid var(--accent);outline-offset:1px}
+.od[aria-pressed="true"]{background:var(--warn-bg);border-color:transparent;color:var(--warn)}
+.od[aria-pressed="true"] b{text-decoration:line-through}
+.od[aria-pressed="true"] span{color:var(--warn)}
+@media (max-width:720px){.od{min-width:40px;min-height:44px}}

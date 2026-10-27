@@ -28,7 +28,7 @@ const LABELS = {
   iResources: 'Resource impact', iRisk: 'Risk impact', alt: 'Alternatives', noop: 'If not done', decidedBy: 'Decided by',
   rationale: 'Rationale', apCost: 'Approved cost', apDays: 'Approved days', target: 'Target date', conditions: 'Conditions',
   chk: 'Checklist', reconcile: 'Reconciliation', verified: 'Verification', planPct: 'Planned %', earnPct: 'Earned %', note: 'Note',
-  weeks: 'Duration (weeks)', sprintWeeks: 'Sprint length (weeks)', hoursPerDay: 'Hours per day', sprintDays: 'Working days per sprint', hours: 'Total hours', plannedHours: 'Planned hours', off: 'Off hours', iterations: 'Iterations',
+  weeks: 'Duration (weeks)', sprintWeeks: 'Sprint length (weeks)', hoursPerDay: 'Hours per day', sprintDays: 'Working days per sprint', hours: 'Total hours', plannedHours: 'Planned hours', offDays: 'Off days', off: 'Off hours', iterations: 'Iterations',
   label: 'Name', color: 'Colour', done: 'Counts as done', pct: 'Progress weight', icon: 'Icon', milestone: 'Milestone', effort: 'Effort (h)',
 };
 const humanize = (k) => {
@@ -61,7 +61,7 @@ function val(ctx, key, v) {
   if (v == null || v === '') return '(empty)';
   if (typeof v === 'boolean') return v ? 'Yes' : 'No';
   if (typeof v === 'number') return MONEY.has(key) ? money(v) : PCT.has(key) ? pc(v, 0) : String(Math.round(v * 100) / 100);
-  if (Array.isArray(v)) return v.length ? v.map((x) => resolve(ctx, x)).join(', ') : '(none)';
+  if (Array.isArray(v)) return v.length ? v.map((x) => (typeof x === 'string' && ISO.test(x) ? fdate(x) : resolve(ctx, x))).join(', ') : '(none)';
   if (typeof v === 'object') return 'changed';
   const s = String(v);
   if (ISO.test(s)) return fdate(s);

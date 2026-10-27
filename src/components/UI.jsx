@@ -8,6 +8,7 @@ import { DAY, pd, today } from '../lib/dates';
 import { hrsf } from '../lib/format';
 import { newSprint, uid } from '../lib/tasks';
 import { insertAt, sane, sprintClash } from '../lib/sprintGuard';
+import { datesOnWeekdays } from '../lib/offdays';
 import { blankCr, currentBaseline, sprintCrs } from '../lib/change';
 import './toast.css';
 
@@ -23,7 +24,7 @@ function SprintForm({ pid, opts = {}, onClose }) {
   const p = W.projects.find((x) => x.id === pid);
   const [f, setF] = useState(() => {
     const d = newSprint(p);
-    return { name: opts.name || d.name, start: opts.start || d.start, end: opts.end || d.end, hours: '', cr: '', crTitle: '', crCost: '', crDays: '' };
+    return { name: opts.name || d.name, start: opts.start || d.start, end: opts.end || d.end, hours: '', off: 'none', cr: '', crTitle: '', crCost: '', crDays: '' };
   });
   if (!p) return null;
   const base = currentBaseline(p);
@@ -37,8 +38,11 @@ function SprintForm({ pid, opts = {}, onClose }) {
   const num = (v) => v !== '' && !isNaN(parseFloat(v));
   const crOk = !base || (choice && choice !== NEW_CR) || (choice === NEW_CR && f.crTitle.trim() !== '' && num(f.crCost) && num(f.crDays));
   const clash = orderOk ? sprintClash(p, '', f.start, f.end) : []; // sprints of one project cannot overlap
-  const ok = nameOk && orderOk && afterStart && !clash.length && hoursOk && crOk;
+  const ok = nameOk && orderOk && afterStart && !clash.length && hoursOk && crOk && (workDays == null || workDays > 0);
   const days = orderOk ? Math.round((pd(f.end) - pd(f.start)) / DAY) + 1 : null;
+  // off days chosen up front (more can be marked on the sprint page); planned % counts working days only
+  const offList = orderOk ? datesOnWeekdays({ start: f.start, end: f.end }, f.off === 'sun' ? [0] : f.off === 'weekend' ? [0, 6] : []) : [];
+  const workDays = days == null ? null : days - offList.length;
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const save = () => {
     if (!ok) return;
@@ -58,6 +62,7 @@ function SprintForm({ pid, opts = {}, onClose }) {
         }
       }
       const sp = { ...newSprint(pr, id), name: f.name.trim(), start: f.start, end: f.end, plannedHours: hrs };
+      if (offList.length) sp.offDays = offList;
       if (crId) sp.crId = crId;
       pr.sprints.splice(insertAt(pr, f.start), 0, sp);
       w.nav = { ...w.nav, projectId: pid, view: 'sprint', sprintId: id };
@@ -83,6 +88,13 @@ function SprintForm({ pid, opts = {}, onClose }) {
         </div>
         <label className="fld">Planned hours *
           <input className="c" type="number" min="0" step="any" inputMode="decimal" placeholder="e.g. 80" value={f.hours} onChange={set('hours')} onKeyDown={key} aria-invalid={(f.hours !== '' && !hoursOk) || undefined} />
+        </label>
+        <label className="fld">Off days in this sprint
+          <select className="c" value={f.off} onChange={set('off')}>
+            <option value="none">None, every day is a working day</option>
+            <option value="sun">Sundays are off</option>
+            <option value="weekend">Saturdays and Sundays are off</option>
+          </select>
         </label>
       </div>
 
@@ -124,7 +136,8 @@ function SprintForm({ pid, opts = {}, onClose }) {
         {nameOk && afterStart && orderOk && clash.length > 0 && 'Sprint dates cannot overlap another sprint. Change the start or end date.'}
         {nameOk && afterStart && orderOk && !clash.length && !hoursOk && 'Enter the planned hours (more than 0).'}
         {nameOk && afterStart && orderOk && !clash.length && hoursOk && !crOk && (choice === NEW_CR ? 'Enter the change request title, cost change and schedule change (0 is fine).' : 'Choose the change request this sprint belongs to.')}
-        {ok && days + ' day' + (days === 1 ? '' : 's') + ' · ' + hrsf(hrs) + ' planned hours'}
+        {ok && days + ' calendar day' + (days === 1 ? '' : 's') + (offList.length ? ' − ' + offList.length + ' off = ' + workDays + ' working' : '') + ' · ' + hrsf(hrs) + ' planned hours'}
+        {nameOk && afterStart && orderOk && !clash.length && workDays === 0 && 'Every day would be off. Choose fewer off days.'}
       </div>
       {clash.length > 0 && <div className="banner" style={{ marginTop: 8 }}>These dates overlap {clash.map((s) => s.name + ' (' + s.start + ' to ' + s.end + ')').join(', ')}. Sprints in the same project cannot overlap, so this sprint cannot be created yet.</div>}
       <div className="row" style={{ justifyContent: 'flex-end', marginTop: 16 }}>

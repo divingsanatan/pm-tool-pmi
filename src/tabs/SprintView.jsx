@@ -14,6 +14,7 @@ import { outsideSprint, sprintEvm, stCls } from '../lib/calc';
 import { hrsf, money, nz, pc } from '../lib/format';
 import { crCls, signedMoney } from '../lib/change';
 import { kidsMap, leafTasks, rootTasks, withAncestors } from '../lib/hier';
+import { WEEKDAYS_SHORT, datesOnWeekdays, sprintDayList } from '../lib/offdays';
 import BulkBar from '../components/BulkBar';
 import WbsTree from '../components/WbsTree';
 import TaskDrawer from './TaskDrawer';
@@ -120,6 +121,59 @@ function Tile({ l, s, cls = '', vcls = '', title, children, bar }) {
 const Bar = ({ f, tone, label }) => <div className={'bar ' + (tone || '')} role="img" aria-label={label}><i style={{ width: Math.max(0, Math.min(100, f * 100)) + '%' }} /></div>;
 const ratio = (v) => (v == null ? '–' : v.toFixed(2) + ' (' + Math.round(v * 100) + '%)');
 
+// Off days of one sprint: click a day to mark it off (or working again). Planned %, planned value, SPI and the Dashboard
+// count working days only, so a Sunday or a holiday inside the sprint must be marked here.
+function OffDays({ c, E, tk }) {
+  const ui = useUI();
+  const list = sprintDayList(c);
+  if (!list.length) return null;
+  const off = list.filter((d) => d.off).map((d) => d.date);
+  const save = (next) => {
+    const set = Array.from(new Set(next)).sort();
+    if (set.length >= list.length) {
+      ui.toast({ id: 'offdays', tone: 'bad', ttl: 6000, text: 'Every day of the sprint would be off. Leave at least one working day, because the sprint\u2019s planned % is counted over its working days.' });
+      return;
+    }
+    tk.patchContainer(c.id, { offDays: set });
+  };
+  const toggle = (date) => save(off.includes(date) ? off.filter((x) => x !== date) : off.concat(date));
+  const mark = (weekdays) => save(off.concat(datesOnWeekdays(c, weekdays)));
+  const has = (weekdays) => datesOnWeekdays(c, weekdays).length > 0;
+  const now = today();
+  return (
+    <div className="card od-card">
+      <div className="row sp" style={{ alignItems: 'flex-start' }}>
+        <div>
+          <h3 className="sp-h" style={{ margin: 0 }}>Off days · {E.offN} of {E.calDays}</h3>
+          <p className="hint" style={{ margin: '4px 0 0' }}>
+            Click a day to mark it off (Sunday, holiday, shutdown). Off days are skipped, so planned % counts the <b>{E.days}</b> working day{E.days === 1 ? '' : 's'} only: {E.calDays} calendar day{E.calDays === 1 ? '' : 's'} − {E.offN} off.
+          </p>
+        </div>
+        <div className="row" style={{ gap: 6 }}>
+          {has([0]) && <button className="btn" onClick={() => mark([0])}>Mark Sundays off</button>}
+          {has([0, 6]) && <button className="btn" onClick={() => mark([0, 6])}>Mark Sat + Sun off</button>}
+          {off.length > 0 && <button className="btn" onClick={() => save([])}>Clear</button>}
+        </div>
+      </div>
+      <div className="od-strip" role="group" aria-label="Days of the sprint">
+        {list.map((d) => (
+          <button
+            key={d.date}
+            type="button"
+            className={'od' + (d.off ? ' off' : '') + (d.date === now ? ' today' : '') + (d.dow === 0 || d.dow === 6 ? ' we' : '')}
+            aria-pressed={d.off}
+            title={fdate(d.date) + (d.off ? ' · off day (click to make it a working day)' : ' · working day (click to mark it off)')}
+            onClick={() => toggle(d.date)}
+          >
+            <span>{WEEKDAYS_SHORT[d.dow]}</span>
+            <b>{d.day}</b>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Sprint plan, live progress and earned value for one sprint, with the working shown underneath.
 function SprintPanel({ S, c, E, cr, tk, setNav }) {
   const hasPlan = E.typed && E.planned > 0;
@@ -130,7 +184,8 @@ function SprintPanel({ S, c, E, cr, tk, setNav }) {
     ['Project budget (BAC)', 'From the Budget tab', '', money(E.bac)],
     ['Share of the project plan', 'Planned hours ÷ planned hours of all sprints', hrsf(E.planned) + ' h ÷ ' + hrsf(E.total) + ' h' + (E.typed ? '' : ' (no planned hours typed, so its work item hours are used)'), pc(E.share, 2)],
     ['Sprint budget', 'BAC × share', money(E.bac) + ' × ' + pc(E.share, 2), money(E.budget)],
-    ['Planned % (time gone)', 'Days gone ÷ days in the sprint', E.hasDates ? E.elapsed + ' ÷ ' + E.days + ' days' : 'no dates', pc(E.plannedPct, 1)],
+    ['Working days in the sprint', 'Calendar days − off days', E.hasDates ? E.calDays + ' − ' + E.offN + ' off' : 'no dates', E.hasDates ? E.days + ' day' + (E.days === 1 ? '' : 's') : '–'],
+    ['Planned % (time gone)', 'Working days gone ÷ working days in the sprint', E.hasDates ? E.elapsed + ' ÷ ' + E.days + ' working days' : 'no dates', pc(E.plannedPct, 1)],
     ['Planned value (PV)', 'Sprint budget × planned %', money(E.budget) + ' × ' + pc(E.plannedPct, 1), money(E.pv)],
     ['Earned % (work done)', 'Done work item hours ÷ planned hours, at most 100%', hrsf(E.doneH) + ' h ÷ ' + hrsf(E.planned) + ' h', pc(E.earnedPct, 1)],
     ['Earned value (EV)', 'Sprint budget × earned %', money(E.budget) + ' × ' + pc(E.earnedPct, 1), money(E.ev)],
@@ -148,8 +203,11 @@ function SprintPanel({ S, c, E, cr, tk, setNav }) {
           <Tile l="Start date" s="Editable">
             <Cell value={c.start} type="date" label="Sprint start" onCommit={(v) => v && tk.patchContainer(c.id, { start: v })} />
           </Tile>
-          <Tile l="End date" s={E.days ? E.days + ' day' + (E.days === 1 ? '' : 's') + ' · editable' : 'Editable'}>
+          <Tile l="End date" s={E.calDays ? E.calDays + ' calendar day' + (E.calDays === 1 ? '' : 's') + ' · editable' : 'Editable'}>
             <Cell value={c.end} type="date" label="Sprint end" onCommit={(v) => v && tk.patchContainer(c.id, { end: v })} />
+          </Tile>
+          <Tile l="Working days" cls={E.hasDates && !E.days ? 'need' : ''} s={E.hasDates ? E.calDays + ' calendar − ' + E.offN + ' off day' + (E.offN === 1 ? '' : 's') : 'Needs dates'} title="Calendar days in the sprint minus its off days. Planned % is counted over these.">
+            {E.hasDates ? E.days : '–'}
           </Tile>
           <Tile l={'Planned hours' + (hasPlan ? '' : ' · required')} cls={hasPlan ? '' : 'need'} s={hasPlan ? pc(E.share, 1) + ' of the project plan (' + hrsf(E.total) + ' h) · editable' : 'Enter how many hours this sprint can take'}>
             <Cell value={c.plannedHours} type="num" min={0} placeholder="Enter hours" label="Planned hours" onCommit={(v) => tk.patchContainer(c.id, { plannedHours: v })} />
@@ -158,6 +216,7 @@ function SprintPanel({ S, c, E, cr, tk, setNav }) {
             {money(E.budget)}
           </Tile>
         </div>
+        <OffDays c={c} E={E} tk={tk} />
       </div>
 
       <div>
@@ -167,7 +226,7 @@ function SprintPanel({ S, c, E, cr, tk, setNav }) {
             bar={E.planned > 0 && <Bar f={E.itemsH / E.planned} tone={over ? 'bad' : 'good'} label={pc(E.itemsH / E.planned, 0) + ' of planned hours'} />}>
             {hrsf(E.itemsH)} h
           </Tile>
-          <Tile l="Planned %" s={E.hasDates ? (E.started ? 'Day ' + Math.min(E.elapsed, E.days) + ' of ' + E.days : 'Starts ' + fdate(c.start)) : 'Needs dates'} title="Days gone ÷ days in the sprint"
+          <Tile l="Planned %" s={E.hasDates ? (E.started ? 'Working day ' + E.elapsed + ' of ' + E.days + (E.offToday ? ' · today is an off day' : '') : 'Starts ' + fdate(c.start)) : 'Needs dates'} title="Working days gone ÷ working days in the sprint (off days are skipped)"
             bar={E.hasDates && <Bar f={E.plannedPct} label={pc(E.plannedPct, 0) + ' of the time has gone'} />}>
             {E.hasDates ? pc(E.plannedPct, 0) : '–'}
           </Tile>
@@ -221,8 +280,8 @@ function SprintPanel({ S, c, E, cr, tk, setNav }) {
         <ul className="msg" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
           <li><b>Complete:</b> every work item in the sprint is done. <b>Overdue:</b> the end date has passed with work still open.</li>
           <li>Otherwise by SPI: <b>Ahead</b> 105% or more, <b>On track</b> 95% to 105%, <b>At risk</b> 80% to 95%, <b>Behind</b> below 80%. Cost status uses CPI: under budget at 100% or more, slightly over from 90%, over budget below 90%.</li>
-          <li>Days are calendar days and today counts as gone, so planned value reaches 100% on the sprint's last day. Cost entries dated outside every sprint are not counted in any sprint.</li>
-          <li>The Dashboard works in whole weeks, so its sprint figures can differ slightly from these day-by-day figures.</li>
+          <li>Only working days count: off days marked on this sprint are skipped, and today counts as gone when it is a working day, so planned value reaches 100% on the sprint's last working day. Cost entries dated outside every sprint are not counted in any sprint.</li>
+          <li>The Dashboard adds up these same sprint figures, so its planned value, SPI and S-curve follow the off days marked here.</li>
         </ul>
       </details>
     </section>
