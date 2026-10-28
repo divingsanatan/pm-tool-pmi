@@ -455,7 +455,7 @@ export default function SprintView() {
       <div className="s-cards">
         <div className="s-card"><span className={'s-ic ' + (c.tasks.length ? 'good' : 'warn')}>{c.tasks.length ? '✓' : '!'}</span><div><b>Work items</b><div className="msg">{c.tasks.length} planned{leaves.length !== c.tasks.length ? ' · ' + leaves.length + ' at the lowest level' : ''}</div></div></div>
         <div className="s-card"><span className={'s-ic ' + (pctA === 100 ? 'good' : 'warn')}>{pctA === 100 ? '✓' : '!'}</span><div><b>Assigned</b><div className="msg">{pctA == null ? 'No tasks yet' : pctA + '% assigned'}</div></div></div>
-        <div className="s-card"><span className={'s-ic ' + (missing ? 'warn' : 'good')}>{missing ? '!' : '✓'}</span><div><b>Effort</b><div className="msg">{missing ? missing + ' task' + (missing > 1 ? 's' : '') + ' missing effort' : 'All tasks estimated'}</div></div></div>
+        <div className="s-card"><span className={'s-ic ' + (!c.tasks.length || missing ? 'warn' : 'good')}>{!c.tasks.length || missing ? '!' : '✓'}</span><div><b>Effort</b><div className="msg">{!c.tasks.length ? 'No tasks yet' : missing ? missing + ' task' + (missing > 1 ? 's' : '') + ' missing effort' : 'All tasks estimated'}</div></div></div>
       </div>
 
       {view === 'dash' ? (
