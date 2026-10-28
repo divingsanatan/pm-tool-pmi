@@ -228,7 +228,17 @@ export function useTasks() {
       actions.push({
         label: viol.length === 1 && one ? 'Set it to ' + fdate(clampDates(windowOf(one), { ...viol[0].task, ...patch })[key] || windowOf(one).lo) : 'Set dates inside the sprint',
         primary: true,
-        onClick: () => update((p) => applyClamped(p, allIds, patch)),
+        onClick: () => {
+          update((p) => applyClamped(p, allIds, patch));
+          // the nearest allowed day can itself be an off day: warn about the dates the items actually got
+          const S0 = sRef.current;
+          const got = {};
+          allIds.forEach((id) => {
+            const f = findTask(S0, id), w = f && windowOf(f.c);
+            if (f) ['start', 'due'].forEach((k) => patch[k] && !got[k] && (got[k] = w ? clampDates(w, { ...f.t, ...patch })[k] || patch[k] : patch[k]));
+          });
+          warnOffDays(allIds, got);
+        },
       });
       // 2. move it to a sprint that covers the date: an existing one, otherwise a new one
       if (one) {

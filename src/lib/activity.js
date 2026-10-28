@@ -231,7 +231,7 @@ export function diffProject(before, after) {
     made: (x) => 'Added ' + resolve(ctx, x.person) + ' to the budget team', gone: (x) => 'Removed ' + resolve(ctx, x.person) + ' from the budget team' });
   q({ cat: 'budget', noun: 'budget line', a: before.lines, b: after.lines, label: (x) => '“' + (x.name || 'untitled') + '”' });
   q({ cat: 'budget', noun: 'cost entry', a: before.ledger, b: after.ledger, label: (x) => '“' + (x.desc || x.element || 'cost') + '” (' + money(x.amount) + ')' });
-  q({ cat: 'raid', noun: 'RAID item', a: before.raid, b: after.raid, label: (x) => x.id + (x.desc ? ' “' + x.desc + '”' : ''), skip: ['rev', 'key'] });
+  q({ cat: 'raid', noun: 'RAID item', a: before.raid, b: after.raid, label: (x) => x.id + (x.desc ? ' “' + x.desc + '”' : ''), skip: ['rev', 'key', 'descHtml', 'respHtml'] });
   q({ cat: 'change', noun: 'change request', a: before.cr, b: after.cr, label: (x) => x.code + ' “' + (x.title || 'untitled') + '”', skip: CR_SKIP,
     made: (x) => 'Created change request ' + x.code + (x.title ? ' “' + x.title + '”' : ''),
     gone: (x) => 'Deleted change request ' + x.code + (x.title ? ' “' + x.title + '”' : '') });
