@@ -222,8 +222,11 @@ const norm = (x) => (x || '').trim().toLowerCase();
 
 /** Planned vs actual cost grouped by 'week' | 'month' | 'sprint' | 'element'. */
 export function costBy(S, mode) {
-  const wB = weeklyBAC(S), perDay = wB / 7;
-  const start = pd(S.meta.start), end = projectEnd(S);
+  // The project runs from its start to its real last day (not to the end of the last 7-day block), so a project that
+  // ends on Tuesday 3 Nov has a short last week (2-3 Nov) and the planned budget is spread over those real days only.
+  const start = pd(S.meta.start), end = lastDay(S);
+  const nDays = Math.max(1, Math.round((end - start) / DAY) + 1);
+  const perDay = (labourTotal(S) + lineRecurring(S)) / nDays; // one-time lines are not time-phased (shown under By element)
   const led = S.ledger.map((e) => ({ amount: nz(e.amount), element: e.element, t: e.date ? pd(e.date) : null }));
   const sumIn = (a, b) => {
     let s = 0, n = 0;
@@ -242,8 +245,8 @@ export function costBy(S, mode) {
   const rows = [];
   if (mode === 'week') {
     for (let w = 1; w <= nW(S); w++) {
-      const a = wkS(S, w), b = wkE(S, w), { s, n } = sumIn(a, b);
-      rows.push({ key: 'w' + w, label: 'Week ' + w, sub: fsh(a) + ' – ' + fsh(b), planned: wB, actual: s, n });
+      const a = wkS(S, w), b = Math.min(wkE(S, w), end), { s, n } = sumIn(a, b);
+      rows.push({ key: 'w' + w, label: 'Week ' + w, sub: fsh(a) + ' – ' + fsh(b), planned: overlap(a, b) * perDay, actual: s, n });
     }
     const out = led.filter((e) => e.t == null || e.t < start || e.t > end);
     if (out.length) rows.push({ key: 'out', label: 'Outside the project weeks', sub: 'Dated before the start or after the last week', planned: 0, actual: out.reduce((a, e) => a + e.amount, 0), n: out.length });
@@ -252,7 +255,7 @@ export function costBy(S, mode) {
     const lo = mStart(Math.min(start, ...dated)), hi = Math.max(end, ...dated);
     for (let m = lo; m <= hi; m = mNext(m)) {
       const b = mNext(m) - DAY, { s, n } = sumIn(m, b);
-      rows.push({ key: 'm' + m, label: new Date(m).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }), sub: '', planned: overlap(m, b) * perDay, actual: s, n });
+      rows.push({ key: 'm' + m, label: new Date(m).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }), sub: overlap(m, b) ? fsh(Math.max(m, start)) + ' – ' + fsh(Math.min(b, end)) : '', planned: overlap(m, b) * perDay, actual: s, n });
     }
     const nd = led.filter((e) => e.t == null);
     if (nd.length) rows.push({ key: 'nd', label: 'No date', sub: '', planned: 0, actual: nd.reduce((a, e) => a + e.amount, 0), n: nd.length });
