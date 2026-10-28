@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { hoursCrOf, hoursLocked, sprintOverlaps } from '../lib/sprintGuard';
+import { dateCrOf, hoursCrOf, hoursLocked, inBaseline, sprintOverlaps } from '../lib/sprintGuard';
 import { useStore } from '../store/StoreContext';
 import { useTasks } from '../store/useTasks';
 import { useUI } from '../components/UI';
@@ -109,6 +109,9 @@ export function groupsOf(tasks, by, S, showEmpty) {
 }
 
 // One tile of the sprint panel. Every tile has the same label, value and note styles, so the row lines up.
+// 18-Oct-2026, the same look as the date boxes
+const longDate = (d) => (d ? new Date(Date.parse(d + 'T00:00:00Z')).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).replace(/ /g, '-') : '–');
+
 function Tile({ l, s, cls = '', vcls = '', title, children, bar }) {
   return (
     <div className={'kpi sp-t ' + cls} title={title}>
@@ -162,6 +165,7 @@ function OffDays({ c, E }) {
 // Sprint plan, live progress and earned value for one sprint, with the working shown underneath.
 function SprintPanel({ S, c, E, cr, tk, setNav }) {
   const hasPlan = E.typed && E.planned > 0;
+  const datesLocked = inBaseline(S, c.id) && !dateCrOf(S, c); // after the first baseline the sprint dates are read-only (unless a date change request is already open on it)
   const over = E.planned > 0 && E.itemsH > E.planned;
   const tone = (cls) => (cls === 'good' || cls === 'warn' || cls === 'bad' ? cls : '');
   const sMoney = (n) => (n == null ? '–' : signedMoney(n, money));
@@ -185,11 +189,11 @@ function SprintPanel({ S, c, E, cr, tk, setNav }) {
       <div>
         <h3 className="sp-h">Plan</h3>
         <div className="sp-grid">
-          <Tile l="Start date" s="Editable">
-            <Cell value={c.start} type="date" label="Sprint start" onCommit={(v) => v && tk.patchContainer(c.id, { start: v })} />
+          <Tile l="Start date" s={datesLocked ? 'Fixed by baseline ' + currentBaseline(S).version : 'Editable'}>
+            {datesLocked ? <span className="sp-ro mono" title="This date is fixed by the baseline">{longDate(c.start)}</span> : <Cell value={c.start} type="date" label="Sprint start" onCommit={(v) => v && tk.patchContainer(c.id, { start: v })} />}
           </Tile>
-          <Tile l="End date" s={E.calDays ? E.calDays + ' calendar day' + (E.calDays === 1 ? '' : 's') + ' · editable' : 'Editable'}>
-            <Cell value={c.end} type="date" label="Sprint end" onCommit={(v) => v && tk.patchContainer(c.id, { end: v })} />
+          <Tile l="End date" s={(E.calDays ? E.calDays + ' calendar day' + (E.calDays === 1 ? '' : 's') + ' · ' : '') + (datesLocked ? 'fixed by baseline ' + currentBaseline(S).version : 'editable')}>
+            {datesLocked ? <span className="sp-ro mono" title="This date is fixed by the baseline">{longDate(c.end)}</span> : <Cell value={c.end} type="date" label="Sprint end" onCommit={(v) => v && tk.patchContainer(c.id, { end: v })} />}
           </Tile>
           <Tile l="Working days" cls={E.hasDates && !E.days ? 'need' : ''} s={E.hasDates ? E.calDays + ' calendar − ' + E.offN + ' off day' + (E.offN === 1 ? '' : 's') : 'Needs dates'} title="Calendar days in the sprint minus its off days. Planned % is counted over these.">
             {E.hasDates ? E.days : '–'}
@@ -202,6 +206,11 @@ function SprintPanel({ S, c, E, cr, tk, setNav }) {
           </Tile>
         </div>
         <OffDays c={c} E={E} />
+        {datesLocked && (
+          <p className="hint" style={{ margin: '10px 0 0' }}>
+            The start and end dates of this sprint are fixed by baseline {currentBaseline(S).version} and cannot be edited here.
+          </p>
+        )}
         {(hoursCrOf(S, c) || hoursLocked(S, c)) && (
           <p className="hint" style={{ margin: '10px 0 0' }}>
             {hoursCrOf(S, c)

@@ -223,13 +223,16 @@ export function UIProvider({ children }) {
       {children}
       <div className="toasts" role="region" aria-live="polite" aria-label="Notifications">
         {toasts.map((t) => (
-          <div key={t.id} className={'toast ' + (t.tone || 'info')} role={t.actions && t.actions.length ? 'alertdialog' : 'status'}>
+          <div key={t.id} className={'toast ' + (t.tone || 'info')} role={t.actions && t.actions.length ? 'alertdialog' : t.tone === 'bad' ? 'alert' : 'status'}>
+            <span className="toast-i" aria-hidden="true">{t.tone === 'warn' || t.tone === 'bad' ? '!' : 'i'}</span>
+            <div className="toast-b">
             <p>{t.text}</p>
             <div className="toast-act">
               {(t.actions || []).map((a, i) => (
                 <button key={i} className={'btn' + (a.primary ? ' primary' : '')} onClick={() => { dismiss(t.id); a.onClick(); }}>{a.label}</button>
               ))}
               {t.actions && t.actions.length > 0 && <button className="btn" onClick={() => dismiss(t.id)}>Cancel</button>}
+            </div>
             </div>
             <button className="x toast-x" onClick={() => dismiss(t.id)} aria-label="Dismiss">✕</button>
           </div>

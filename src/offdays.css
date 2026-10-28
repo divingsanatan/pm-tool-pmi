@@ -3,3 +3,6 @@
 .od.ro.off{background:var(--warn-bg);border-color:transparent;color:var(--warn)}
 .od.ro.off span{color:var(--warn)}
 .od.ro.off b{text-decoration:line-through}
+
+/* sprint dates once baselined: shown like the date boxes, but not editable */
+.sp-ro{font-size:inherit;color:inherit;cursor:default}
