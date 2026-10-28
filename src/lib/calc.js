@@ -226,7 +226,11 @@ export function costBy(S, mode) {
   // ends on Tuesday 3 Nov has a short last week (2-3 Nov) and the planned budget is spread over those real days only.
   const start = pd(S.meta.start), end = lastDay(S);
   const nDays = Math.max(1, Math.round((end - start) / DAY) + 1);
-  const perDay = (labourTotal(S) + lineRecurring(S)) / nDays; // one-time lines are not time-phased (shown under By element)
+  // BAC includes the contingency reserve, so the time-phased plan carries it too (same basis as PV on the Dashboard):
+  // every phased amount is scaled by (1 + contingency / work budget). The management reserve stays outside.
+  const R = reserves(S);
+  const k = R.base > 0 ? 1 + R.contingency / R.base : 1;
+  const perDay = ((labourTotal(S) + lineRecurring(S)) * k) / nDays; // one-time lines are not time-phased (shown under By element)
   const led = S.ledger.map((e) => ({ amount: nz(e.amount), element: e.element, t: e.date ? pd(e.date) : null }));
   const sumIn = (a, b) => {
     let s = 0, n = 0;
@@ -289,6 +293,7 @@ export function costBy(S, mode) {
       r.n++;
     });
     rows.push(...map.values());
+    if (R.contingency > 0) rows.push({ key: 'contingency', label: 'Contingency reserve', sub: '', planned: R.contingency, actual: 0, n: 0 });
   }
   return rows;
 }

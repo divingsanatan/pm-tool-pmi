@@ -114,8 +114,8 @@ function Ledger() {
           </div>
           <p className="hint" style={{ marginTop: 10 }}>
             {view === 'element'
-              ? 'Planned comes from team labour and your budget line items over the whole project. Costs recorded with a name that is not in the plan show as Unplanned.'
-              : 'Planned is the budget spread evenly over the project’s days. One-time line items are not time-phased, so they appear only under By element.'}
+              ? 'Planned comes from team labour and your budget line items over the whole project, plus the contingency reserve, so the total equals BAC. Costs recorded with a name that is not in the plan show as Unplanned.'
+              : 'Planned is the budget spread evenly over the project’s days, including the contingency reserve (BAC basis; the management reserve is excluded). One-time line items are not time-phased, so they appear only under By element.'}
           </p>
         </>
       )}
