@@ -7,6 +7,7 @@ import { leafTasks, rootTasks, subtreeIds } from '../lib/hier';
 import { cleanEffort, nz } from '../lib/format';
 import { DAY, fdate, pd } from '../lib/dates';
 import { blankCr, currentBaseline, sprintCrs } from '../lib/change';
+import { offDayInfo } from '../lib/offdays';
 import { baselinedDates, clampDates, datePatchViolations, dateCrOf, gapWindow, hoursCrOf, hoursLocked, inWin, nextFreeDay, outsideBaseline, rollover, sane, sprintClash, sprintCovers, tasksOutside, windowOf } from '../lib/sprintGuard';
 
 const plural = (n, a, b) => (n === 1 ? a : b);
@@ -32,6 +33,18 @@ function suggestBacklog(S, sp, excess, exclude = []) {
     hours += nz(t.effort);
   }
   return hours >= excess - 0.005 && ids.length ? { ids, hours: r2(hours) } : null;
+}
+
+
+// Dates of a start / due patch that fall on an off day of the project's Working calendar (weekly off day or holiday).
+// Used only for a warning: work can still be planned on an off day.
+function offDayHits(S, patch) {
+  const seen = new Set();
+  return ['start', 'due']
+    .map((k) => patch && patch[k])
+    .filter((d) => d && !seen.has(d) && seen.add(d))
+    .map((d) => ({ date: d, info: offDayInfo(S, d) }))
+    .filter((x) => x.info);
 }
 
 // effort in hours can never be negative
@@ -162,6 +175,21 @@ export function useTasks() {
     const say = (o) => uRef.current && uRef.current.toast && uRef.current.toast(o);
     const clear = () => uRef.current && uRef.current.dismiss && uRef.current.dismiss('guard');
     const withDecision = (o) => say({ id: 'guard', tone: 'warn', ...o });
+    // Warning only, never a block: tell the user when work is dated on an off day of the Working calendar (Budget tab).
+    // `ids` are the work items just changed (or created); `patch` holds the start / due dates they were given.
+    const warnOffDays = (ids, patch) => {
+      const S0 = sRef.current;
+      const hits = offDayHits(S0, patch);
+      if (!hits.length) return;
+      const why = (h) => fdate(h.date) + ' (' + (h.info.kind === 'holiday' ? 'holiday: ' + h.info.label : h.info.label + ', a weekly off day') + ')';
+      const names = ids.map((id) => (findTask(S0, id) || { t: {} }).t.name).filter(Boolean);
+      const nm = names[0] || (patch && patch.name);
+      const who = ids.length === 1 && nm ? '\u201c' + nm + '\u201d' : ids.length > 1 ? ids.length + ' work items' : 'This work item';
+      say({
+        id: 'offday', tone: 'warn', ttl: 9000,
+        text: who + ' is dated ' + hits.map(why).join(' and ') + ', an off day in the project\u2019s Working calendar. The change is saved, but nobody is expected to work that day. Check the date or the Working calendar on the Budget tab.',
+      });
+    };
     // Every new sprint goes through the New sprint form (planned hours, and a change request once the project has a baseline).
     // The work items only move after the sprint exists, so cancelling the form changes nothing.
     const newSprintFor = (pre, done) => uRef.current && uRef.current.openSprint && uRef.current.openSprint(sRef.current.id, { ...pre, onCreated: done });
@@ -516,6 +544,7 @@ export function useTasks() {
         };
         if (cid !== 'backlog' && nz(fields.effort) > 0 && guardHours(run, { cause: [id] })) return id;
         update(run);
+        warnOffDays([id], fields);
         return id;
       },
       // a new work item under another one (its type steps down the ladder: epic > feature > story > task > subtask)
@@ -530,6 +559,7 @@ export function useTasks() {
         };
         if (nz(fields.effort) > 0 && guardHours(run, { cause: [id] })) return id;
         update(run);
+        warnOffDays([id], fields);
         return id;
       },
       // a new work item right after another one, at the same level
@@ -544,6 +574,7 @@ export function useTasks() {
         };
         if (nz(fields.effort) > 0 && guardHours(run, { cause: [id] })) return id;
         update(run);
+        warnOffDays([id], fields);
         return id;
       },
       patch(id, patch) {
@@ -555,6 +586,7 @@ export function useTasks() {
         };
         if ('effort' in patch && guardHours(run, { cause: [id], lockDown: true })) return;
         update(run);
+        warnOffDays([id], patch);
       },
       // pull every work item's start and due date of one sprint back inside that sprint
       alignDates(sprintId) {
@@ -608,6 +640,7 @@ export function useTasks() {
         };
         if ('effort' in patch && guardHours(run, { cause: ids, lockDown: true })) return;
         update(run);
+        warnOffDays(ids, patch);
       },
       // add (on = true) or remove one stakeholder on every listed work item
       assignMany(ids, personId, on) {

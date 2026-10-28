@@ -3,7 +3,8 @@ import { DAY, pd } from './dates';
 /* Off days: dates on which nobody works. A day inside a sprint is off for one of three reasons:
      weekly   a weekday the team always rests (e.g. Sunday), set once for the project  (meta.weeklyOff, 0 = Sunday ... 6 = Saturday)
      holiday  a public holiday or shutdown, set once for the project                   (S.holidays: [{ id, from, to, label }])
-     sprint   a day marked off on one sprint only (team-specific leave, an event)      (sprint.offDays: ['2026-10-25', ...])
+     sprint   (retired) days once marked off on one sprint only. Leaves are now managed in the project's Working calendar
+              (Budget tab), so anything still stored in sprint.offDays is ignored and no longer counted.
    Every time-based figure (planned %, planned value, SPI, the S-curve) counts working days only:
        working days = calendar days in the sprint - off days
    A project with no weekly off days, no holidays and no sprint off days behaves exactly as before. */
@@ -42,7 +43,7 @@ export function offDaysOf(sp) {
 export function sprintDayList(sp, cal = NO_CAL) {
   if (!hasValidDates(sp)) return [];
   const a = pd(sp.start), n = Math.min(MAX_DAYS, Math.round((pd(sp.end) - a) / DAY) + 1);
-  const own = new Set(offDaysOf(sp));
+  const own = new Set(); // sprint-level off days are retired: only the project's Working calendar decides what is off
   return Array.from({ length: n }, (_, i) => {
     const ms = a + i * DAY, date = iso(ms), dow = new Date(ms).getUTCDay();
     const hol = cal.holidays.find((h) => ms >= h.a && ms <= h.b);
@@ -76,4 +77,16 @@ export function sprintCalendar(sp, asOf, calendar = NO_CAL) {
     cum.push(work);
   });
   return { cal: days.length, off: days.length - work, work, gone, calGone, offWeekly, offHoliday, offOwn, cum, offList };
+}
+
+export const WEEKDAYS_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+// Why a date is off in the project's Working calendar (weekly off day or holiday), or null for a working day / an unusable date.
+export function offDayInfo(S, date) {
+  if (!okDate(date)) return null;
+  const cal = calendarOf(S), ms = pd(date), dow = new Date(ms).getUTCDay();
+  const hol = cal.holidays.find((h) => ms >= h.a && ms <= h.b);
+  if (hol) return { kind: 'holiday', label: hol.label, dow };
+  if (cal.weekly.includes(dow)) return { kind: 'weekly', label: WEEKDAYS_LONG[dow], dow };
+  return null;
 }

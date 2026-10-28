@@ -6,7 +6,7 @@ import { uid } from '../lib/tasks';
 import { WEEKDAYS_SHORT, WEEK_ORDER, calendarOf, okDate, sprintCalendar } from '../lib/offdays';
 
 // The project's working calendar: weekdays the team always rests, and holidays. Both apply to every sprint,
-// so planned % and planned value count working days only. Days off for one sprint only are marked on that sprint.
+// so planned % and planned value count working days only. This is the one place leaves are managed; sprints only display them.
 export default function WorkCalendar() {
   const { S, update } = useStore();
   const cal = calendarOf(S);
@@ -42,7 +42,7 @@ export default function WorkCalendar() {
       <h2>Working calendar</h2>
       <p className="hint">
         Set the days the team does not work once, and every sprint follows. Planned %, planned value, SPI and the Dashboard count <b>working days</b> only (calendar days − off days).
-        A day off for one sprint only (team leave, an event) is marked on that sprint's Dashboard tab instead.
+        This is the one place leaves are managed: sprints only display these days. Work can still be planned on an off day, but a warning is shown.
       </p>
 
       <div className="flabel" style={{ margin: '4px 0 6px' }}>Weekly off days</div>
@@ -83,7 +83,7 @@ export default function WorkCalendar() {
           <div className="flabel" style={{ margin: '16px 0 6px' }}>Effect on each sprint · as of {fdate(today())}</div>
           <div className="scroll">
             <table className="tbl rwd">
-              <thead><tr><th>Sprint</th><th className="r">Calendar days</th><th className="r">Weekly off</th><th className="r">Holidays</th><th className="r">Sprint-only off</th><th className="r">Working days</th></tr></thead>
+              <thead><tr><th>Sprint</th><th className="r">Calendar days</th><th className="r">Weekly off</th><th className="r">Holidays</th><th className="r">Working days</th></tr></thead>
               <tbody>
                 {rows.map(({ sp, c }) => (
                   <tr key={sp.id}>
@@ -91,7 +91,6 @@ export default function WorkCalendar() {
                     <td data-l="Calendar days" className="r mono"><span className="cell">{c.cal}</span></td>
                     <td data-l="Weekly off" className="r mono"><span className="cell">{c.offWeekly}</span></td>
                     <td data-l="Holidays" className="r mono"><span className="cell">{c.offHoliday}</span></td>
-                    <td data-l="Sprint-only off" className="r mono"><span className="cell">{c.offOwn}</span></td>
                     <td data-l="Working days" className="r mono"><span className="cell"><b>{c.work}</b></span></td>
                   </tr>
                 ))}
