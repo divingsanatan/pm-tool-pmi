@@ -18,13 +18,13 @@ export const useUI = () => useContext(Ctx);
 // The details every sprint must have before it exists: name, start, end and planned hours (all typed by the user, editable later).
 // Once the project has a baseline, a new sprint is a change to the approved plan, so it must belong to a change request:
 // pick an open one, or raise a new one right here.
-// opts: { name, start, end } pre-fill the form; opts.onCreated(sprintId) runs after the sprint exists.
+// opts: { name, start, end, hours } pre-fill the form (opts.minHours: the work items moving in, which the planned hours must cover); opts.onCreated(sprintId) runs after the sprint exists.
 function SprintForm({ pid, opts = {}, onClose }) {
   const { W, updateW } = useStore();
   const p = W.projects.find((x) => x.id === pid);
   const [f, setF] = useState(() => {
     const d = newSprint(p);
-    return { name: opts.name || d.name, start: opts.start || d.start, end: opts.end || d.end, hours: '', cr: '', crTitle: '', crCost: '', crDays: '' };
+    return { name: opts.name || d.name, start: opts.start || d.start, end: opts.end || d.end, hours: opts.hours ? String(opts.hours) : '', cr: '', crTitle: '', crCost: '', crDays: '' };
   });
   if (!p) return null;
   const base = currentBaseline(p);
@@ -32,17 +32,17 @@ function SprintForm({ pid, opts = {}, onClose }) {
   const choice = f.cr || (base && !crs.length ? NEW_CR : '');
   const hrs = parseFloat(f.hours);
   const orderOk = sane(f.start) && sane(f.end) && f.start <= f.end;
-  const hoursOk = f.hours !== '' && !isNaN(hrs) && hrs > 0;
+  const hoursOk = f.hours !== '' && !isNaN(hrs) && hrs > 0 && (!opts.minHours || hrs >= opts.minHours - 0.005);
   const nameOk = f.name.trim() !== '';
   const num = (v) => v !== '' && !isNaN(parseFloat(v));
   const crOk = !base || (choice && choice !== NEW_CR) || (choice === NEW_CR && f.crTitle.trim() !== '' && num(f.crCost) && num(f.crDays));
   const clash = orderOk ? sprintClash(p, '', f.start, f.end) : []; // sprints of one project cannot overlap
-  const ok = nameOk && orderOk && !clash.length && hoursOk && crOk && (workDays == null || workDays > 0);
   const days = orderOk ? Math.round((pd(f.end) - pd(f.start)) / DAY) + 1 : null;
   // the project's weekly off days and holidays apply to every sprint; planned % counts working days only
   const sc = orderOk ? sprintCalendar({ start: f.start, end: f.end }, null, calendarOf(p)) : null;
   const offN = sc ? sc.off : 0;
   const workDays = sc ? sc.work : null;
+  const ok = nameOk && orderOk && !clash.length && hoursOk && crOk && (workDays == null || workDays > 0);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const save = () => {
     if (!ok) return;
@@ -123,10 +123,10 @@ function SprintForm({ pid, opts = {}, onClose }) {
 
       <div className="hint" style={{ margin: '10px 0 0', minHeight: 20 }} role="status">
         {!nameOk && 'Enter a sprint name.'}
-        {nameOk && afterStart && !orderOk && (sane(f.start) && sane(f.end) ? 'The end date must be on or after the start date.' : 'Enter both a start and an end date.')}
-        {nameOk && afterStart && orderOk && clash.length > 0 && 'Sprint dates cannot overlap another sprint. Change the start or end date.'}
-        {nameOk && afterStart && orderOk && !clash.length && !hoursOk && 'Enter the planned hours (more than 0).'}
-        {nameOk && afterStart && orderOk && !clash.length && hoursOk && !crOk && (choice === NEW_CR ? 'Enter the change request title, cost change and schedule change (0 is fine).' : 'Choose the change request this sprint belongs to.')}
+        {nameOk && !orderOk && (sane(f.start) && sane(f.end) ? 'The end date must be on or after the start date.' : 'Enter both a start and an end date.')}
+        {nameOk && orderOk && clash.length > 0 && 'Sprint dates cannot overlap another sprint. Change the start or end date.'}
+        {nameOk && orderOk && !clash.length && !hoursOk && 'Enter the planned hours (more than 0).'}
+        {nameOk && orderOk && !clash.length && hoursOk && !crOk && (choice === NEW_CR ? 'Enter the change request title, cost change and schedule change (0 is fine).' : 'Choose the change request this sprint belongs to.')}
         {ok && days + ' calendar day' + (days === 1 ? '' : 's') + (offN ? ' − ' + offN + ' off (project calendar) = ' + workDays + ' working' : '') + ' · ' + hrsf(hrs) + ' planned hours'}
         {nameOk && orderOk && !clash.length && workDays === 0 && 'Every day would be off. Choose fewer off days.'}
       </div>

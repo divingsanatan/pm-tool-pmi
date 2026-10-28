@@ -75,6 +75,16 @@ export const outsideBaseline = (S, id, start, end) => {
 // the request that already covers this sprint's dates (still open, so the baseline will take them when it is implemented)
 export const dateCrOf = (S, sp) => (sp && sp.dateCrId ? (S.cr || []).find((c) => c.id === sp.dateCrId && OPEN_CR.includes(c.status)) || null : null);
 
+/* Hours lock. Once a baseline exists, the work item hours and the planned hours of a sprint that is in it are fixed:
+   changing them needs a change request (linked on the sprint as hoursCrId, still open so the next baseline takes the hours).
+   A sprint added after the baseline is covered by its own request; a sprint no baseline has seen yet is free. */
+export const inBaseline = (S, id) => {
+  const b = lastBaseline(S);
+  return !!b && Array.isArray(b.sprints) && b.sprints.some((x) => x.id === id);
+};
+export const hoursCrOf = (S, sp) => (sp && sp.hoursCrId ? (S.cr || []).find((c) => c.id === sp.hoursCrId && OPEN_CR.includes(c.status)) || null : null);
+export const hoursLocked = (S, sp) => !!sp && inBaseline(S, sp.id) && !hoursCrOf(S, sp);
+
 // Sprints of the same project must not share a day (start and end dates are both inclusive).
 // Returns the other dated sprints that overlap start..end; `selfId` is the sprint being edited (ignored).
 export const sprintClash = (S, selfId, start, end) =>

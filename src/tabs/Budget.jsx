@@ -5,7 +5,7 @@ import { useCosts } from '../store/useCosts';
 import { Cell, SelectCell } from '../components/Field';
 import { Modal, useUI } from '../components/UI';
 import WeeksControl from '../components/WeeksControl';
-import { ITER_UNIT, baseLine, baseOf, costBy, labourOf, labourTotal, ledgerTotal, lineOnce, lineRecurring, lineState, lineTotal, maxIter, personOf, planBAC, projectBAC, reserves, suggestIter } from '../lib/calc';
+import { ITER_UNIT, baseLine, baseOf, costBy, labourOf, labourTotal, lastDay, ledgerTotal, lineOnce, lineRecurring, lineState, lineTotal, maxIter, personOf, planBAC, projectBAC, reserves, suggestIter } from '../lib/calc';
 import LineCrDialog from './LineCrDialog';
 import { addLineViaCr, changeLineViaCr, dropPendingLine, lineEditable, revertLine, syncClaim } from '../lib/lineChange';
 import { fdate, fsh, today } from '../lib/dates';

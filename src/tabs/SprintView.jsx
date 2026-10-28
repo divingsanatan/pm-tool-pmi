@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { sprintOverlaps } from '../lib/sprintGuard';
+import { hoursCrOf, hoursLocked, sprintOverlaps } from '../lib/sprintGuard';
 import { useStore } from '../store/StoreContext';
 import { useTasks } from '../store/useTasks';
 import { useUI } from '../components/UI';
@@ -12,7 +12,7 @@ import { PRIORITIES, SPRINT_STATUSES, containerById, isDoneStatus, isOpen, prior
 import { fdate, today } from '../lib/dates';
 import { outsideSprint, sprintEvm, stCls } from '../lib/calc';
 import { hrsf, money, nz, pc } from '../lib/format';
-import { crCls, signedMoney } from '../lib/change';
+import { crCls, currentBaseline, signedMoney } from '../lib/change';
 import { kidsMap, leafTasks, rootTasks, withAncestors } from '../lib/hier';
 import { WEEKDAYS_SHORT, calendarOf, sprintDayList } from '../lib/offdays';
 import BulkBar from '../components/BulkBar';
@@ -225,6 +225,13 @@ function SprintPanel({ S, c, E, cr, tk, setNav }) {
           </Tile>
         </div>
         <OffDays c={c} E={E} tk={tk} />
+        {(hoursCrOf(S, c) || hoursLocked(S, c)) && (
+          <p className="hint" style={{ margin: '10px 0 0' }}>
+            {hoursCrOf(S, c)
+              ? <>The work item hours and planned hours of this sprint are covered by <b>{hoursCrOf(S, c).code}</b>{hoursCrOf(S, c).title ? ' · ' + hoursCrOf(S, c).title : ''}. The next baseline will record them.</>
+              : <>Work item hours and planned hours are fixed by baseline {currentBaseline(S).version}. Changing either needs a change request, raised or linked when you make the change. Moving work items out to the Backlog needs none.</>}
+          </p>
+        )}
       </div>
 
       <div>

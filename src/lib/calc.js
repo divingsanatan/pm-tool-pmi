@@ -738,6 +738,9 @@ export function normalize(S) {
     const w = (S.baselines.length && S.baselines[S.baselines.length - 1].sprints || []).find((x) => x.id === sp.id);
     if (!S.cr.find((c) => c.id === sp.dateCrId) || (w && sp.start >= w.start && sp.end <= w.end)) delete sp.dateCrId;
   });
+  S.sprints.forEach((sp) => {
+    if (sp.hoursCrId && !S.cr.find((c) => c.id === sp.hoursCrId)) delete sp.hoursCrId;
+  });
   const lastB = S.baselines[S.baselines.length - 1];
   if (lastB) {
     if (!lastB.reserve) {

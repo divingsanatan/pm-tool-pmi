@@ -1,16 +1,38 @@
 import { useMemo, useRef } from 'react';
 import { useStore } from './StoreContext';
 import { useUI } from '../components/UI';
-import { alignSprintDates } from '../lib/calc';
-import { childTypeFor, containerById, findTask, firstOpenStatus, isDoneStatus, makeTask, uid } from '../lib/tasks';
-import { leafTasks, subtreeIds } from '../lib/hier';
-import { cleanEffort } from '../lib/format';
+import { alignSprintDates, normalize, sprintHours } from '../lib/calc';
+import { PRIORITIES, childTypeFor, containerById, findTask, firstOpenStatus, isDoneStatus, makeTask, statusPct, uid } from '../lib/tasks';
+import { leafTasks, rootTasks, subtreeIds } from '../lib/hier';
+import { cleanEffort, nz } from '../lib/format';
 import { DAY, fdate, pd } from '../lib/dates';
 import { blankCr, currentBaseline, sprintCrs } from '../lib/change';
-import { baselinedDates, clampDates, datePatchViolations, dateCrOf, gapWindow, inWin, nextFreeDay, outsideBaseline, rollover, sane, sprintClash, sprintCovers, tasksOutside, windowOf } from '../lib/sprintGuard';
+import { baselinedDates, clampDates, datePatchViolations, dateCrOf, gapWindow, hoursCrOf, hoursLocked, inWin, nextFreeDay, outsideBaseline, rollover, sane, sprintClash, sprintCovers, tasksOutside, windowOf } from '../lib/sprintGuard';
 
 const plural = (n, a, b) => (n === 1 ? a : b);
 const span = (c) => (c.start ? fdate(c.start) : '…') + ' – ' + (c.end ? fdate(c.end) : '…');
+
+const r2 = (x) => Math.round(x * 100) / 100;
+const hrs = (x) => r2(x) + ' h';
+
+// Work items of a sprint that could go to the Backlog to bring it back under its planned hours: top-level items that have not
+// been started, lowest priority first (then the biggest), until `excess` hours are covered. `exclude` ids are never suggested.
+// Returns { ids, hours }, or null when the open items cannot cover the excess.
+function suggestBacklog(S, sp, excess, exclude = []) {
+  const rank = Object.fromEntries(PRIORITIES.slice().reverse().map((p, i) => [p.id, i])); // low = 0 ... urgent = 3
+  const started = (t) => (t.pct != null ? nz(t.pct) > 0 : statusPct(S, t.status) > 0);
+  const pool = rootTasks(sp.tasks)
+    .filter((t) => !exclude.includes(t.id) && nz(t.effort) > 0 && !(t.status && isDoneStatus(S, t.status)) && !started(t))
+    .sort((a, b) => (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1) || nz(b.effort) - nz(a.effort));
+  const ids = [];
+  let hours = 0;
+  for (const t of pool) {
+    if (hours >= excess - 0.005) break;
+    ids.push(t.id);
+    hours += nz(t.effort);
+  }
+  return hours >= excess - 0.005 && ids.length ? { ids, hours: r2(hours) } : null;
+}
 
 // effort in hours can never be negative
 const safe = (f) => (f && 'effort' in f ? { ...f, effort: cleanEffort(f.effort) } : f);
@@ -220,6 +242,108 @@ export function useTasks() {
       return true;
     }
 
+    /* Work item hours of a sprint. Two rules, checked on a dry run of the edit (`run`) before anything changes:
+         1. Work items can never add up to more than the sprint's planned hours. The user then chooses: move some work items to the
+            Backlog, or move them to a new sprint (the New sprint form asks for a change request once the project has a baseline).
+         2. Once a baseline exists, the hours of a sprint in it are fixed. A change needs a change request, raised or linked here
+            (kept on the sprint as hoursCrId), unless the sprint's open request already covers it.
+       o.cause: the work items behind the edit (the default is the items the edit created). o.lockDown: lowering hours needs a request too
+       (typing new hours); moving items out of a sprint never does, because that is the way out of rule 1.
+       Returns true when the edit was held back. */
+    function guardHours(run, o = {}) {
+      const S0 = sRef.current;
+      const sim = structuredClone(S0);
+      run(sim, sim);
+      normalize(sim);
+      const had = new Set(S0.sprints.flatMap((s) => s.tasks).concat(S0.backlog.tasks).map((t) => t.id));
+      const hits = [];
+      sim.sprints.forEach((sp) => {
+        const was = S0.sprints.find((x) => x.id === sp.id);
+        if (!was) return;
+        const a = sprintHours(S0, was).items;
+        const h = sprintHours(sim, sp);
+        const d = r2(h.items - a);
+        if (Math.abs(d) < 0.005) return;
+        const over = h.planned > 0 && h.items > h.planned + 0.005 && d > 0;
+        const lock = hoursLocked(S0, was) && (d > 0 || !!o.lockDown);
+        if (over || lock) hits.push({ was, sp, before: a, after: h.items, planned: h.planned, over, lock });
+      });
+      if (!hits.length) {
+        clear();
+        return false;
+      }
+      const h = hits.find((x) => x.over) || hits[0];
+      const added = sim.sprints.flatMap((s) => s.tasks).filter((t) => !had.has(t.id));
+      const addedIds = new Set(added.map((t) => t.id));
+      const cause = (o.cause || added.filter((t) => !addedIds.has(t.parent)).map((t) => t.id)).filter((id) => {
+        const f = findTask(sim, id);
+        return f && f.c.id === h.sp.id;
+      });
+      const causeHours = r2(cause.reduce((a, id) => a + nz((findTask(sim, id) || { t: {} }).t.effort), 0));
+      const what = cause.length === 1 ? 'this work item' : cause.length + ' work items';
+      const b0 = currentBaseline(S0);
+
+      if (h.over) {
+        const excess = r2(h.after - h.planned);
+        const actions = [];
+        if (cause.length)
+          actions.push({
+            label: 'Move ' + what + ' to the Backlog',
+            primary: true,
+            onClick: () => update((p) => { run(p, p); cause.forEach((id) => moveSubtree(p, id, p.backlog, true)); }),
+          });
+        const sug = h.lock ? null : suggestBacklog(sim, h.sp, excess, cause);
+        if (sug)
+          actions.push({
+            label: 'Keep it and move ' + sug.ids.length + ' lower-priority open ' + plural(sug.ids.length, 'item', 'items') + ' (' + hrs(sug.hours) + ') to the Backlog',
+            onClick: () => update((p) => { run(p, p); sug.ids.forEach((id) => moveSubtree(p, id, p.backlog, true)); }),
+          });
+        if (cause.length)
+          actions.push({
+            label: 'Move ' + what + ' to a new sprint',
+            onClick: () => newSprintFor({ hours: causeHours || undefined, minHours: causeHours || undefined }, (sid) => update((p) => { run(p, p); cause.forEach((id) => moveSubtree(p, id, containerById(p, sid), false)); })),
+          });
+        withDecision({
+          text: h.sp.name + ' work items would add up to ' + hrs(h.after) + ', which is ' + hrs(excess) + ' over its ' + hrs(h.planned) + ' planned hours. Work items cannot exceed the sprint\u2019s planned hours. Move some work items to the Backlog, or to a new sprint' + (b0 ? ' (the new sprint needs a change request linked or created, because the project is baselined)' : '') + '. Cancel keeps things as they are.',
+          actions,
+        });
+        return true;
+      }
+
+      // baseline lock: a change request must cover the new hours
+      const locked = hits.filter((x) => x.lock);
+      const apply = (p, crId) => {
+        run(p, p);
+        const cr = p.cr.find((x) => x.id === crId);
+        locked.forEach((x) => {
+          const sp = containerById(p, x.sp.id);
+          if (sp) sp.hoursCrId = crId;
+          if (cr) cr.log.push({ on: new Date().toISOString().slice(0, 10), text: x.sp.name + ' work item hours set to ' + hrs(x.after) + ' (baselined with ' + hrs(x.before) + ')' });
+        });
+      };
+      const open = sprintCrs(S0).slice(-3).reverse();
+      const up = locked.some((x) => x.after > x.before);
+      const actions = [{
+        label: 'Raise a new change request',
+        primary: true,
+        onClick: () =>
+          update((p) => {
+            const id = uid();
+            p.cr.push(blankCr(p, id, {
+              title: 'Change ' + locked.map((x) => x.sp.name).join(', ') + ' work item hours',
+              kind: up ? 'Enhancement or new requirement' : 'Corrective action', affects: ['Scope', 'Cost'], cost: 0, days: 0,
+              desc: locked.map((x) => x.sp.name + ': work item hours change from ' + hrs(x.before) + ' (baselined) to ' + hrs(x.after) + '.').join(' '),
+            }));
+            apply(p, id);
+          }),
+      }].concat(open.map((cr) => ({ label: 'Link to ' + cr.code + (cr.title ? ' · ' + cr.title : ''), onClick: () => update((p) => apply(p, cr.id)) })));
+      withDecision({
+        text: 'The baseline (' + b0.version + ') fixes the work item hours of ' + locked.map((x) => x.sp.name + ' (' + hrs(x.before) + ')').join(', ') + '. This change makes them ' + locked.map((x) => hrs(x.after)).join(', ') + ', so a change request must cover it. Cancel keeps the hours as they are.',
+        actions,
+      });
+      return true;
+    }
+
     // A sprint's dates are changing: say what happens to the work items that would end up outside them
     function guardSprint(cid, patch) {
       const S0 = sRef.current;
@@ -230,6 +354,54 @@ export function useTasks() {
       if ('plannedHours' in patch && !(patch.plannedHours > 0)) {
         say({ id: 'guard', tone: 'bad', text: 'Every sprint needs planned hours above 0, because its share of the budget comes from them.', ttl: 7000 });
         return true;
+      }
+      if ('plannedHours' in patch) {
+        const want = r2(nz(patch.plannedHours)), was = nz(c.plannedHours);
+        const noDates = !('start' in patch || 'end' in patch);
+        if (Math.abs(want - was) < 0.005 && noDates) return true; // nothing changed
+        const items = sprintHours(S0, c).items;
+        const locked = hoursLocked(S0, c) && was > 0; // a sprint with no planned hours yet can still get them
+        // rule 1: the planned hours can never go below the work items already in the sprint
+        if (want < items - 0.005) {
+          const excess = r2(items - want);
+          const sug = suggestBacklog(S0, c, excess);
+          const actions = sug
+            ? [{
+                label: 'Move ' + sug.ids.length + ' lower-priority open ' + plural(sug.ids.length, 'item', 'items') + ' (' + hrs(sug.hours) + ') to the Backlog' + (locked ? '' : ' and set ' + hrs(want)),
+                primary: true,
+                onClick: () => update((p) => { if (!locked) Object.assign(containerById(p, cid), patch); sug.ids.forEach((id) => moveSubtree(p, id, p.backlog, true)); }),
+              }]
+            : [];
+          withDecision({
+            text: c.name + ' has ' + hrs(items) + ' of work items, so its planned hours cannot be ' + hrs(want) + ' (' + hrs(excess) + ' short). Move some work items to the Backlog or to a new sprint first.' + (locked ? ' The baseline fixes the planned hours, so changing them afterwards needs a change request.' : ''),
+            actions,
+          });
+          return true;
+        }
+        // rule 2: after the first baseline the planned hours change only through a change request
+        if (locked && Math.abs(want - was) >= 0.005) {
+          const b0 = currentBaseline(S0);
+          const apply = (p, crId) => {
+            const sp = containerById(p, cid);
+            Object.assign(sp, patch);
+            sp.hoursCrId = crId;
+            const cr = p.cr.find((x) => x.id === crId);
+            if (cr) cr.log.push({ on: new Date().toISOString().slice(0, 10), text: sp.name + ' planned hours set to ' + hrs(want) + ' (baselined with ' + hrs(was) + ')' });
+          };
+          const open = sprintCrs(S0).slice(-3).reverse();
+          const actions = [{
+            label: 'Raise a new change request',
+            primary: true,
+            onClick: () =>
+              update((p) => {
+                const id = uid();
+                p.cr.push(blankCr(p, id, { title: 'Change ' + c.name + ' planned hours', kind: want > was ? 'Enhancement or new requirement' : 'Corrective action', affects: ['Scope', 'Cost'], cost: 0, days: 0, desc: c.name + ': planned hours change from ' + hrs(was) + ' (baselined) to ' + hrs(want) + '.' }));
+                apply(p, id);
+              }),
+          }].concat(open.map((cr) => ({ label: 'Link to ' + cr.code + (cr.title ? ' · ' + cr.title : ''), onClick: () => update((p) => apply(p, cr.id)) })));
+          withDecision({ text: 'The baseline (' + b0.version + ') fixes the planned hours of ' + c.name + ' at ' + hrs(was) + '. ' + hrs(want) + ' needs a change request. Cancel keeps ' + hrs(was) + '.', actions });
+          return true;
+        }
       }
       if (next.start && next.end && next.start > next.end) {
         say({ id: 'guard', tone: 'bad', text: 'A sprint cannot end before it starts.', ttl: 6000 });
@@ -338,43 +510,51 @@ export function useTasks() {
       add(cid, fields = {}) {
         fields = safe(fields);
         const id = fields.id || uid();
-        update((p) => {
+        const run = (p) => {
           const c = containerById(p, cid);
           if (c) c.tasks.push(makeTask(p, { ...fields, id, ...(cid === 'backlog' ? { status: '' } : {}) }));
-        });
+        };
+        if (cid !== 'backlog' && nz(fields.effort) > 0 && guardHours(run, { cause: [id] })) return id;
+        update(run);
         return id;
       },
       // a new work item under another one (its type steps down the ladder: epic > feature > story > task > subtask)
       addChild(parentId, fields = {}) {
         fields = safe(fields);
         const id = fields.id || uid();
-        update((p) => {
+        const run = (p) => {
           const f = findTask(p, parentId);
           if (!f) return;
           const type = fields.type || childTypeFor(p, f.t.type);
           f.c.tasks.push(makeTask(p, { ...fields, type, id, parent: parentId, ...(f.c.id === 'backlog' ? { status: '' } : {}) }));
-        });
+        };
+        if (nz(fields.effort) > 0 && guardHours(run, { cause: [id] })) return id;
+        update(run);
         return id;
       },
       // a new work item right after another one, at the same level
       addSibling(afterId, fields = {}) {
         fields = safe(fields);
         const id = fields.id || uid();
-        update((p) => {
+        const run = (p) => {
           const f = findTask(p, afterId);
           if (!f) return;
           const t = makeTask(p, { name: 'New task', ...fields, type: fields.type || f.t.type, id, parent: f.t.parent || '', ...(f.c.id === 'backlog' ? { status: '' } : {}) });
           f.c.tasks.splice(f.i + 1, 0, t);
-        });
+        };
+        if (nz(fields.effort) > 0 && guardHours(run, { cause: [id] })) return id;
+        update(run);
         return id;
       },
       patch(id, patch) {
         patch = safe(patch);
         if (('start' in patch || 'due' in patch) && guardDates([id], patch)) return;
-        update((p) => {
+        const run = (p) => {
           const f = findTask(p, id);
           if (f) Object.assign(f.t, patch);
-        });
+        };
+        if ('effort' in patch && guardHours(run, { cause: [id], lockDown: true })) return;
+        update(run);
       },
       // pull every work item's start and due date of one sprint back inside that sprint
       alignDates(sprintId) {
@@ -420,12 +600,14 @@ export function useTasks() {
       patchMany(ids, patch) {
         patch = safe(patch);
         if (('start' in patch || 'due' in patch) && guardDates(ids, patch)) return;
-        update((p) => {
+        const run = (p) => {
           ids.forEach((id) => {
             const f = findTask(p, id);
             if (f) Object.assign(f.t, patch);
           });
-        });
+        };
+        if ('effort' in patch && guardHours(run, { cause: ids, lockDown: true })) return;
+        update(run);
       },
       // add (on = true) or remove one stakeholder on every listed work item
       assignMany(ids, personId, on) {
@@ -440,8 +622,7 @@ export function useTasks() {
       },
       // moving an item moves everything below it too
       moveMany(ids, cid) {
-        moveNote(previewMove(sRef.current, ids, cid), cid);
-        update((p) => {
+        const run = (p) => {
           const to = containerById(p, cid);
           if (!to) return;
           const groups = new Map();
@@ -450,14 +631,19 @@ export function useTasks() {
             if (f && f.c !== to) groups.set(f.c, (groups.get(f.c) || []).concat(id));
           });
           groups.forEach((list, c) => topIds(c, list).forEach((id) => moveSubtree(p, id, to, true)));
-        });
+        };
+        if (cid !== 'backlog' && guardHours(run, { cause: ids })) return;
+        moveNote(previewMove(sRef.current, ids, cid), cid);
+        update(run);
       },
       move(id, cid) {
-        moveNote(previewMove(sRef.current, [id], cid), cid);
-        update((p) => {
+        const run = (p) => {
           const to = containerById(p, cid);
           if (to) moveSubtree(p, id, to, false);
-        });
+        };
+        if (cid !== 'backlog' && guardHours(run, { cause: [id] })) return;
+        moveNote(previewMove(sRef.current, [id], cid), cid);
+        update(run);
       },
       // deleting an item deletes everything below it
       removeMany(ids) {
@@ -468,7 +654,7 @@ export function useTasks() {
       },
       // copies (with everything below them) are placed right after their originals with new codes
       duplicateMany(ids) {
-        update((p) => {
+        const run = (p) => {
           const groups = new Map();
           ids.forEach((id) => {
             const f = findTask(p, id);
@@ -498,7 +684,9 @@ export function useTasks() {
               c.tasks.splice(i + 1, 0, ...copies);
             })
           );
-        });
+        };
+        if (guardHours(run)) return;
+        update(run);
       },
       // put an item under a parent (or at the top level) at an exact spot: used by drag and drop, indent, outdent
       place(id, where) {
@@ -560,13 +748,15 @@ export function useTasks() {
       moveOpen(from, to) {
         const S0 = sRef.current;
         const a0 = containerById(S0, from);
-        if (a0) moveNote(previewMove(S0, openRoots(S0, a0).map((t) => t.id), to), to);
-        update((p) => {
+        const run = (p) => {
           const a = containerById(p, from);
           const b = containerById(p, to);
           if (!a || !b || a === b) return;
           openRoots(p, a).forEach((t) => moveSubtree(p, t.id, b, false));
-        });
+        };
+        if (to !== 'backlog' && guardHours(run, { cause: a0 ? openRoots(S0, a0).map((t) => t.id) : [] })) return;
+        if (a0) moveNote(previewMove(S0, openRoots(S0, a0).map((t) => t.id), to), to);
+        update(run);
       },
     };
   }, [update]);

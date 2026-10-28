@@ -212,6 +212,11 @@ export default function ChangeDrawer({ id, onClose }) {
               <span className="msg">{S.sprints.filter((sp) => sp.dateCrId === cr.id).map((sp) => sp.name + ' (' + fdate(sp.start) + ' – ' + fdate(sp.end) + ')').join(', ')}. The new baseline will record these dates.</span>
             </div>
           )}
+          {S.sprints.some((sp) => sp.hoursCrId === cr.id) && (
+            <div className="fld" style={{ gridColumn: '1 / -1' }}>Sprint hours changed by this request
+              <span className="msg">{S.sprints.filter((sp) => sp.hoursCrId === cr.id).map((sp) => sp.name + ' (' + nz(sp.plannedHours) + ' h planned)').join(', ')}. The new baseline will record these hours.</span>
+            </div>
+          )}
           {S.sprints.some((sp) => sp.crId === cr.id) && (
             <div className="fld" style={{ gridColumn: '1 / -1' }}>Sprints added by this request
               <span className="msg">{S.sprints.filter((sp) => sp.crId === cr.id).map((sp) => sp.name + ' (' + (sp.plannedHours != null ? sp.plannedHours + ' h planned' : 'no planned hours') + ')').join(', ')}. Their work items are listed above automatically.</span>
