@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { seedWorkspace } from '../lib/seed';
-import { normalize } from '../lib/calc';
+import { normalize, staleDates } from '../lib/calc';
 import { fixNav, isV3, toWorkspace } from '../lib/migrate';
 import { stampDone } from '../lib/tasks';
 import { addActivity, autoEvents, diffProject, statusSnapshot } from '../lib/activity';
@@ -68,6 +68,8 @@ export function StoreProvider({ children, cloud }) {
       const w = workspaceFromRows(rows, navRow);
       if (!w) throw new Error('The cloud data is not in the expected format.');
       markSynced(sync.current, w, rows);
+      // a project whose stored dates are stale (derived by the app now) is written back cleaned, even before it is edited
+      rows.forEach((r) => { if (staleDates(r.data) && sync.current.projects[r.id]) sync.current.projects[r.id].json = ''; });
       setW(w);
       setSaved('Loaded from cloud');
       setStatus('ready');

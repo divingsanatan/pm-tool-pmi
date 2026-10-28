@@ -686,6 +686,21 @@ export function ifAligned(S) {
 }
 
 /* ---------- keep state valid after any edit ---------- */
+// True when a stored project still holds dates the app now derives itself (fixed end settings, a start that differs from the
+// earliest sprint, baseline dates that differ from their frozen sprints), so the cleaned version should be saved back.
+export function staleDates(P) {
+  if (!P || !P.meta) return false;
+  const m = P.meta;
+  if ('end' in m || 'endMode' in m || 'workDays' in m) return true;
+  const first = scheduleStart(P);
+  if (first && m.start !== first) return true;
+  return (P.baselines || []).some((b) => {
+    const sp = (b.sprints || []).filter((x) => x && x.start && x.end);
+    if (!sp.length) return false;
+    return b.start !== sp.map((x) => x.start).sort()[0] || b.end !== sp.map((x) => x.end).sort().pop();
+  });
+}
+
 export function normalize(S) {
   const m = S.meta;
   if (!Array.isArray(S.sprints)) S.sprints = [];
@@ -715,14 +730,15 @@ export function normalize(S) {
       b.incl = true;
     }
   });
-  // A baseline's finish used to be worked out as the previous finish plus the approved days. It is the latest sprint end of the
-  // plan as baselined, so rebuild it once from the sprint dates the baseline froze (b.endFromSprints marks it as done).
+  // A baseline's start, finish and length always come from the sprint dates it froze (never typed or carried over):
+  // start = earliest sprint start, finish = latest sprint end. A baseline that holds no sprint list (made by a very old version)
+  // keeps the dates it has, because there is nothing to derive them from.
   S.baselines.forEach((b) => {
-    if (b.endFromSprints) return;
-    const ends = (b.sprints || []).map((x) => x.end).filter(Boolean).sort();
-    if (ends.length) {
-      b.end = ends[ends.length - 1];
-      b.weeks = Math.max(1, Math.ceil(((pd(b.end) - pd(b.start || m.start)) / DAY + 1) / 7));
+    const sp = (b.sprints || []).filter((x) => x && x.start && x.end);
+    if (sp.length) {
+      b.start = sp.map((x) => x.start).sort()[0];
+      b.end = sp.map((x) => x.end).sort().pop();
+      b.weeks = Math.max(1, Math.ceil(((pd(b.end) - pd(b.start)) / DAY + 1) / 7));
     }
     b.endFromSprints = true;
   });
@@ -962,6 +978,11 @@ export function normalize(S) {
   // project start: always from the sprints (the earliest sprint start), so no sprint can ever start before the project
   const first = scheduleStart(S);
   if (first) m.start = first;
+  // The project end is never stored: it is always worked out from the data (see lastDay). A fixed end date (meta.end / endMode)
+  // and a separate working-days pattern (meta.workDays) belonged to a retired day-by-day budget model, so they are removed.
+  delete m.end;
+  delete m.endMode;
+  delete m.workDays;
   // number of weeks: always from the data (latest dated task, sprint, completion or cost)
   m.weeks = autoWeeks(S);
   // labour budget rows hold total hours and off hours; rows from earlier versions start at the hours they used to imply
