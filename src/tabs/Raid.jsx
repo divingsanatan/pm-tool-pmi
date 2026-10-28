@@ -4,6 +4,7 @@ import { Cell, Fld, SelectCell } from '../components/Field';
 import RichText from '../components/RichText';
 import Kpi from '../components/Kpi';
 import { emv, expo, newRaidId, overdue, rating, score } from '../lib/calc';
+import { FLAGS, PLURAL, flagsOf, raidInsights } from '../lib/raidInsights';
 import { fdate, today } from '../lib/dates';
 import { uid } from '../lib/tasks';
 import { hrsf, money, nz } from '../lib/format';
@@ -175,24 +176,45 @@ function RaidDrawer({ k, fresh, onClose }) {
   );
 }
 
+const SORTS = [['log', 'Log order'], ['rating', 'Rating, highest first'], ['due', 'Due date, soonest first'], ['status', 'Status']];
+const STAT_ORDER = { Open: 0, Mitigating: 1, Closed: 2 };
+const Flag = ({ k }) => <span className={'pill ' + FLAGS[k].cls}>{FLAGS[k].label}</span>;
+
 export default function Raid() {
   const { S, update } = useStore();
   const [fType, setFType] = useState('All');
   const [fStat, setFStat] = useState('All');
+  const [fOwner, setFOwner] = useState('all');
+  const [fAtt, setFAtt] = useState(false);
+  const [q, setQ] = useState('');
+  const [sort, setSort] = useState('log');
   const [newType, setNewType] = useState('Risk');
   const [open, setOpen] = useState(null); // key of the item shown in the drawer
   const [fresh, setFresh] = useState(false);
 
-  const count = (type, status) => S.raid.filter((r) => (type === 'All' || r.type === type) && (status === 'All' || r.status === status)).length;
-  const rows = S.raid.filter((r) => (fType === 'All' || r.type === fType) && (fStat === 'All' || r.status === fStat));
+  const I = raidInsights(S);
+  const attKeys = new Set(I.attention.map((x) => x.r.key));
   const nameOf = (id) => {
     const p = S.people.find((x) => x.id === id);
     return p ? p.name : id || '';
   };
-  const risks = S.raid.filter((r) => r.type === 'Risk' && r.status !== 'Closed');
-  const tE = risks.reduce((s, r) => s + nz(emv(r)), 0);
-  const tX = risks.reduce((s, r) => s + nz(expo(r)), 0);
-  const od = S.raid.filter(overdue).length;
+  const ql = q.trim().toLowerCase();
+  const rows = S.raid
+    .filter((r) => (fType === 'All' || r.type === fType) && (fStat === 'All' || r.status === fStat))
+    .filter((r) => fOwner === 'all' || (fOwner === 'none' ? !r.owner : r.owner === fOwner))
+    .filter((r) => !fAtt || attKeys.has(r.key))
+    .filter((r) => !ql || [r.id, r.desc, r.resp, r.type, nameOf(r.owner)].some((x) => (x || '').toLowerCase().includes(ql)));
+  const sorted = rows.slice().sort((a, b) => {
+    if (sort === 'rating') return (score(b) || 0) - (score(a) || 0);
+    if (sort === 'due') return (a.due || '9999').localeCompare(b.due || '9999');
+    if (sort === 'status') return (STAT_ORDER[a.status] ?? 9) - (STAT_ORDER[b.status] ?? 9);
+    return 0;
+  });
+  const statCount = (st) => S.raid.filter((r) => (fType === 'All' || r.type === fType) && (st === 'All' || r.status === st)).length;
+  const filtered = fType !== 'All' || fStat !== 'All' || fOwner !== 'all' || fAtt || ql;
+  const clear = () => { setFType('All'); setFStat('All'); setFOwner('all'); setFAtt(false); setQ(''); };
+  const people = S.people.filter((p) => p.name);
+  const mix = I.types.filter((t) => t.open).map((t) => t.open + ' ' + (t.open === 1 ? t.type : PLURAL[t.type]).toLowerCase()).join(' · ');
 
   // a new item opens straight away, with the cursor in its description
   const addRaid = () => {
@@ -209,76 +231,116 @@ export default function Raid() {
   return (
     <>
       <section className="kpis">
-        <Kpi l="Open risks" v={risks.length} s={'of ' + S.raid.filter((r) => r.type === 'Risk').length + ' total'} />
-        <Kpi l="Open risk EMV" v={money(tE)} s="Probability × cost impact" />
-        <Kpi l="Schedule exposure" v={hrsf(tX) + ' days'} s="Probability × days" />
-        <Kpi l="Past due" v={od} s={od ? <span className="pill bad">Needs action</span> : <span className="pill good">None</span>} />
+        <Kpi l="Open items" v={I.open} s={mix || (I.total ? 'Everything is closed' : 'Nothing logged yet')} />
+        <Kpi l="Need attention" v={I.attention.length} s={I.attention.length ? <button className="linkbtn" onClick={() => { setFAtt(true); setFType('All'); }}>Show them in the log</button> : <span className="pill good">All clear</span>} />
+        <Kpi l="Past due" v={I.overdue} s={I.overdue ? <span className="pill bad">Needs action</span> : I.dueSoon ? I.dueSoon + ' more due in 7 days' : <span className="pill good">None</span>} />
+        <Kpi l="High-rated risks" v={I.highRisks} s={'of ' + I.openRisks + ' open risk' + (I.openRisks === 1 ? '' : 's')} />
+        <Kpi l="Risk exposure" v={money(I.emv)} s={hrsf(I.exposure) + ' days of schedule exposure'} />
       </section>
 
-      <div className="grid2">
+      <section className="rd-types" aria-label="Filter the log by type">
+        {[{ type: 'All', open: I.open, closed: I.closed, overdue: I.overdue }].concat(I.types).map((t) => (
+          <button key={t.type} type="button" className="rd-type" aria-pressed={fType === t.type} onClick={() => setFType(fType === t.type ? 'All' : t.type)}>
+            <span className="rd-type-n">{t.open}</span>
+            <span className="rd-type-l">{t.type === 'All' ? 'All open items' : 'Open ' + PLURAL[t.type].toLowerCase()}</span>
+            <span className="rd-type-s">{t.overdue ? <b className="lateTxt">{t.overdue} overdue</b> : 'None overdue'} · {t.closed} closed</span>
+          </button>
+        ))}
+      </section>
+
+      <div className="grid2e">
         <div className="card">
-          <div className="rd-head">
-            <div>
-              <h2>RAID log</h2>
-              <p className="hint" style={{ margin: 0 }}>Risks, assumptions, issues and dependencies. Click an item to open and edit it. Score is likelihood × impact: High is 15 or more, Medium 8 to 14, Low below 8.</p>
-            </div>
-            <div className="rd-add">
-              <select className="c" value={newType} onChange={(e) => setNewType(e.target.value)} aria-label="New item type">
-                {TYPES.map((t) => (<option key={t}>{t}</option>))}
-              </select>
-              <button className="btn primary" onClick={addRaid}>+ Add {newType.toLowerCase()}</button>
-            </div>
-          </div>
-          <div className="filters">
-            <div className="fgroup">
-              <span className="flabel">Type</span>
-              <div className="chips" role="group" aria-label="Filter by type">
-                {['All', ...TYPES].map((t) => (
-                  <button key={t} className="chip" aria-pressed={fType === t} onClick={() => setFType(t)}>{t === 'All' ? 'All types' : t}<span className="cnt">{count(t, fStat)}</span></button>
-                ))}
-              </div>
-            </div>
-            <div className="fgroup">
-              <span className="flabel">Status</span>
-              <div className="chips" role="group" aria-label="Filter by status">
-                {['All', ...STAT].map((t) => (
-                  <button key={t} className="chip" aria-pressed={fStat === t} onClick={() => setFStat(t)}>{t === 'All' ? 'All statuses' : t}<span className="cnt">{count(fType, t)}</span></button>
-                ))}
-              </div>
-            </div>
-            {(fType !== 'All' || fStat !== 'All') && (
-              <button className="linkbtn" onClick={() => { setFType('All'); setFStat('All'); }}>Clear filters</button>
-            )}
-          </div>
-          <div className="scroll">
-            <table className="tbl rwd rd-tbl">
-              <thead>
-                <tr><th>ID</th><th>Type</th><th>Description</th><th>Owner</th><th>Rating</th><th>Status</th><th>Due</th></tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => {
-                  const sc = score(r), rt = rating(sc);
-                  return (
-                    <tr key={r.key} className="rd-row" onClick={() => show(r.key)}>
-                      <td data-l="ID"><button type="button" className="linkbtn mono" onClick={(e) => { e.stopPropagation(); show(r.key); }}>{r.id || '(no ID)'}</button></td>
-                      <td data-l="Type"><span className="cell">{r.type}</span></td>
-                      <td data-l="Description"><div className="rd-prev">{r.desc ? r.desc : <span className="msg">No description yet</span>}</div></td>
-                      <td data-l="Owner"><span className="cell">{nameOf(r.owner) || <span className="msg">–</span>}</span></td>
-                      <td data-l="Rating"><span className="cell">{r.type === 'Risk' && rt ? <span className={'pill ' + ratingCls(rt)} title={'Likelihood ' + r.p + ' × impact ' + r.i}>{rt} · {sc}</span> : <span className="msg">–</span>}</span></td>
-                      <td data-l="Status"><span className="cell"><span className={'pill ' + (statCls[r.status] || 'neutral')}>{r.status}</span></span></td>
-                      <td data-l="Due"><span className={'cell' + (overdue(r) ? ' lateTxt' : '')}>{r.due ? fdate(r.due) : <span className="msg">–</span>}{overdue(r) ? ' · overdue' : ''}</span></td>
-                    </tr>
-                  );
-                })}
-                {!rows.length && (<tr className="empty-row"><td colSpan="7"><span className="cell msg">{S.raid.length ? 'No items match these filters.' : 'Nothing logged yet. Use “Add” to log the first risk, assumption, issue or dependency.'}</span></td></tr>)}
-              </tbody>
-            </table>
-          </div>
+          <h2>Needs attention</h2>
+          <p className="hint">Open items that are overdue, due within 7 days, high-rated, without an owner or response, or not reviewed for 30 days.</p>
+          {I.attention.length === 0 ? (
+            <p className="msg" style={{ margin: 0 }}>Nothing flagged. Every open item has an owner, a response where needed, and a recent review.</p>
+          ) : (
+            <ul className="rd-att">
+              {I.attention.slice(0, 6).map(({ r, flags }) => (
+                <li key={r.key}>
+                  <button type="button" className="rd-att-b" onClick={() => show(r.key)}>
+                    <span className="rd-att-top"><b className="mono">{r.id}</b><span className="msg">{r.type}</span><span className="rd-att-d">{r.desc || 'No description yet'}</span></span>
+                    <span className="rd-flags">{flags.slice(0, 3).map((k) => <Flag key={k} k={k} />)}{flags.length > 3 && <span className="msg">+{flags.length - 3}</span>}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {I.attention.length > 6 && <button className="linkbtn" style={{ marginTop: 8 }} onClick={() => { setFAtt(true); setFType('All'); }}>Show all {I.attention.length} in the log</button>}
         </div>
         <div className="card">
           <h2>Risk matrix</h2>
           <p className="hint">Open risks by likelihood and impact.</p>
           <Matrix S={S} onOpen={show} />
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="rd-head">
+          <div>
+            <h2>RAID log</h2>
+            <p className="hint" style={{ margin: 0 }}>Click an item to open and edit it. Risk score is likelihood × impact: High is 15 or more, Medium 8 to 14, Low below 8.</p>
+          </div>
+          <div className="rd-add">
+            <select className="c" value={newType} onChange={(e) => setNewType(e.target.value)} aria-label="New item type">
+              {TYPES.map((t) => (<option key={t}>{t}</option>))}
+            </select>
+            <button className="btn primary" onClick={addRaid}>+ Add {newType.toLowerCase()}</button>
+          </div>
+        </div>
+
+        <div className="rd-tools">
+          <input className="c rd-search" type="search" placeholder="Search ID, description, owner" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search the RAID log" />
+          <label className="fld rd-sel">Owner
+            <select className="c" value={fOwner} onChange={(e) => setFOwner(e.target.value)}>
+              <option value="all">Everyone</option><option value="none">No owner</option>
+              {people.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
+            </select>
+          </label>
+          <label className="fld rd-sel">Sort by
+            <select className="c" value={sort} onChange={(e) => setSort(e.target.value)}>
+              {SORTS.map(([v, l]) => (<option key={v} value={v}>{l}</option>))}
+            </select>
+          </label>
+        </div>
+        <div className="filters">
+          <div className="fgroup">
+            <span className="flabel">Status</span>
+            <div className="chips" role="group" aria-label="Filter by status">
+              {['All', ...STAT].map((t) => (
+                <button key={t} className="chip" aria-pressed={fStat === t} onClick={() => setFStat(t)}>{t === 'All' ? 'All statuses' : t}<span className="cnt">{statCount(t)}</span></button>
+              ))}
+              <button className="chip" aria-pressed={fAtt} onClick={() => setFAtt(!fAtt)}>Needs attention<span className="cnt">{I.attention.length}</span></button>
+            </div>
+          </div>
+          {filtered && <button className="linkbtn" onClick={clear}>Clear filters</button>}
+          <span className="msg rd-count">{sorted.length} of {S.raid.length} item{S.raid.length === 1 ? '' : 's'}</span>
+        </div>
+
+        <div className="scroll">
+          <table className="tbl rwd rd-tbl">
+            <thead>
+              <tr><th>ID</th><th>Type</th><th>Description</th><th>Owner</th><th>Rating</th><th>Status</th><th>Due</th><th>Flags</th></tr>
+            </thead>
+            <tbody>
+              {sorted.map((r) => {
+                const sc = score(r), rt = rating(sc), fl = flagsOf(r);
+                return (
+                  <tr key={r.key} className="rd-row" onClick={() => show(r.key)}>
+                    <td data-l="ID" className="rd-c-id"><button type="button" className="linkbtn mono" onClick={(e) => { e.stopPropagation(); show(r.key); }}>{r.id || '(no ID)'}</button></td>
+                    <td data-l="Type" className="rd-c-nw"><span className={'cell rd-ty ty-' + r.type}>{r.type}</span></td>
+                    <td data-l="Description"><div className="rd-prev">{r.desc ? r.desc : <span className="msg">No description yet</span>}</div></td>
+                    <td data-l="Owner" className="rd-c-nw"><span className="cell">{nameOf(r.owner) || <span className="msg">–</span>}</span></td>
+                    <td data-l="Rating" className="rd-c-nw"><span className="cell">{r.type === 'Risk' && rt ? <span className={'pill ' + ratingCls(rt)} title={'Likelihood ' + r.p + ' × impact ' + r.i}>{rt} · {sc}</span> : <span className="msg">–</span>}</span></td>
+                    <td data-l="Status" className="rd-c-nw"><span className="cell"><span className={'pill ' + (statCls[r.status] || 'neutral')}>{r.status}</span></span></td>
+                    <td data-l="Due" className="rd-c-nw"><span className={'cell' + (overdue(r) ? ' lateTxt' : '')}>{r.due ? fdate(r.due) : <span className="msg">–</span>}</span></td>
+                    <td data-l="Flags"><span className="cell rd-flags">{fl.length ? fl.slice(0, 2).map((k) => <Flag key={k} k={k} />) : <span className="msg">–</span>}{fl.length > 2 && <span className="msg">+{fl.length - 2}</span>}</span></td>
+                  </tr>
+                );
+              })}
+              {!sorted.length && (<tr className="empty-row"><td colSpan="8"><span className="cell msg">{S.raid.length ? 'No items match these filters.' : 'Nothing logged yet. Use “Add” to log the first risk, assumption, issue or dependency.'}</span></td></tr>)}
+            </tbody>
+          </table>
         </div>
       </div>
 

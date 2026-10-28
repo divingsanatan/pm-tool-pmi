@@ -4,7 +4,10 @@
 .rd-add{display:flex;gap:8px;align-items:center;flex:none}
 .rd-add .c{width:auto;border-color:var(--line)}
 .rd-tbl .rd-row{cursor:pointer}
-.rd-tbl td{padding:8px 6px;vertical-align:top}
+.rd-tbl td{padding:8px 8px;vertical-align:top}
+.rd-tbl th{padding:8px 8px}
+.rd-c-id,.rd-c-nw{white-space:nowrap}
+.rd-tbl .rd-c-id .linkbtn{font-weight:600}
 .rd-prev{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;min-width:200px;line-height:1.45;padding:2px 4px}
 .rd-id{font-weight:600}
 .rd-sec{margin-top:4px}
@@ -15,3 +18,27 @@
 .hc-id{appearance:none;border:0;background:transparent;color:inherit;font:inherit;padding:0 2px;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
 .hc-id:hover{filter:brightness(.85)}
 @media (max-width:720px){.rd-tbl .rd-prev{min-width:0}.rd-add{width:100%}.rd-add .btn{flex:1}}
+
+/* RAID overview: type cards that filter the log, attention list, toolbar */
+.rd-types{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.rd-type{appearance:none;text-align:left;font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px;cursor:pointer;display:flex;flex-direction:column;gap:2px;min-width:0}
+.rd-type:hover{border-color:var(--accent)}
+.rd-type[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.rd-type-n{font:500 24px/1.2 var(--f-mono)}
+.rd-type-l{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.rd-type-s{font-size:12.5px;color:var(--muted)}
+.rd-att{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.rd-att li+li{border-top:1px solid var(--line)}
+.rd-att-b{appearance:none;width:100%;text-align:left;font:inherit;color:inherit;background:none;border:0;padding:9px 4px;cursor:pointer;display:flex;flex-direction:column;gap:5px;border-radius:6px}
+.rd-att-b:hover{background:var(--row)}
+.rd-att-top{display:flex;gap:8px;align-items:baseline;min-width:0}
+.rd-att-d{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rd-flags{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.rd-flags .pill{font-size:11.5px;padding:1px 8px}
+.rd-tools{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:12px}
+.rd-search{flex:1 1 240px;max-width:360px;border-color:var(--line)!important}
+.rd-sel .c{width:auto;min-width:160px;border-color:var(--line)}
+.rd-count{margin-left:auto}
+.rd-ty::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;background:var(--muted)}
+.ty-Risk::before{background:var(--s5)}.ty-Assumption::before{background:var(--s2)}.ty-Issue::before{background:var(--s4)}.ty-Dependency::before{background:var(--s1)}
+@media (max-width:720px){.rd-search{max-width:none}.rd-count{margin-left:0}.rd-tbl .rd-c-id,.rd-tbl .rd-c-nw{white-space:normal}}

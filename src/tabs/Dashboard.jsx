@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { useStore } from '../store/StoreContext';
 import Kpi from '../components/Kpi';
 import { Gauge, Donut, SCurve, Legend3 } from '../components/Charts';
-import { alerts, emv, evmSeries, inPlan, labourTotal, projectEvm, sprintHours, rating, reserves, score, stCls, worst, wps, wstat } from '../lib/calc';
+import { alerts, evmSeries, inPlan, labourTotal, projectEvm, sprintHours, rating, reserves, score, stCls, worst, wps, wstat } from '../lib/calc';
 import { fdate, today } from '../lib/dates';
 import { money, nz, pc } from '../lib/format';
 import { changeAlerts, signedMoney } from '../lib/change';
+import { FLAGS, PLURAL, raidInsights } from '../lib/raidInsights';
 import BaselinePanel from '../components/BaselinePanel';
 import { planLineTotal } from '../lib/lineChange';
 
@@ -14,7 +15,7 @@ const r2 = (n) => (n == null ? null : Math.round(n * 100) / 100);
 // The Dashboard is real time: every figure is worked out from the live plan as of today, on every change,
 // every minute, and when the tab is shown again. There are no week, sprint or custom ranges to pick.
 export default function Dashboard() {
-  const { S } = useStore();
+  const { S, setNav } = useStore();
   const [, setTick] = useState(0);
   useEffect(() => {
     const bump = () => setTick((n) => n + 1);
@@ -69,7 +70,7 @@ export default function Dashboard() {
     const t = rating(score(r));
     if (t) rc[t]++;
   });
-  const top = op.filter((r) => emv(r) != null).sort((x, y) => emv(y) - emv(x)).slice(0, 3);
+  const RI = raidInsights(S);
 
   // schedule and cost checks plus change-control checks, with one "nothing flagged" line only when both are clean
   const needs = alerts(S).filter((x) => x.cls !== 'good').concat(changeAlerts(S));
@@ -204,35 +205,43 @@ export default function Dashboard() {
           </ul>
         </div>
         <div className="card">
-          <h2>Open risks</h2>
-          <p className="hint">{op.length} open · total EMV {money(op.reduce((x, r) => x + nz(emv(r)), 0))}</p>
-          <div className="stack" role="img" aria-label="Open risks by rating">
-            {[['High', 'var(--bad)'], ['Medium', 'var(--warn)'], ['Low', 'var(--good)']].map(([k, c]) => (rc[k] ? <i key={k} style={{ flex: rc[k], background: c }} title={k + ': ' + rc[k]} /> : null))}
-          </div>
-          <div className="legend">
-            <span><i style={{ background: 'var(--bad)' }} />High {rc.High}</span>
-            <span><i style={{ background: 'var(--warn)' }} />Medium {rc.Medium}</span>
-            <span><i style={{ background: 'var(--good)' }} />Low {rc.Low}</span>
-          </div>
-          <div className="scroll" style={{ marginTop: 10 }}>
+          <h2>RAID log</h2>
+          <p className="hint">{RI.open} open item{RI.open === 1 ? '' : 's'} · {RI.attention.length} need{RI.attention.length === 1 ? 's' : ''} attention · open risk EMV {money(RI.emv)}</p>
+          <div className="scroll">
             <table className="tbl">
-              <thead><tr><th>ID</th><th>Rating</th><th className="r">EMV</th><th>Due</th></tr></thead>
+              <thead><tr><th>Type</th><th className="r">Open</th><th className="r">Overdue</th><th className="r">Closed</th></tr></thead>
               <tbody>
-                {top.map((r) => {
-                  const rt = rating(score(r));
-                  return (
-                    <tr key={r.id}>
-                      <td className="mono"><span className="cell">{r.id}</span></td>
-                      <td><span className="cell"><span className={'pill ' + (rt === 'High' ? 'bad' : rt === 'Medium' ? 'warn' : 'good')}>{rt}</span></span></td>
-                      <td className="r mono"><span className="cell">{money(emv(r))}</span></td>
-                      <td><span className="cell">{fdate(r.due)}</span></td>
-                    </tr>
-                  );
-                })}
-                {!top.length && <tr><td colSpan="4"><span className="cell msg">No open risks.</span></td></tr>}
+                {RI.types.map((t) => (
+                  <tr key={t.type}>
+                    <td><span className="cell">{PLURAL[t.type]}</span></td>
+                    <td className="r mono"><span className="cell">{t.open}</span></td>
+                    <td className="r mono"><span className={'cell' + (t.overdue ? ' lateTxt' : '')}>{t.overdue}</span></td>
+                    <td className="r mono"><span className="cell">{t.closed}</span></td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
+          {op.length > 0 && (
+            <>
+              <div className="stack" role="img" aria-label="Open risks by rating" style={{ marginTop: 12 }}>
+                {[['High', 'var(--bad)'], ['Medium', 'var(--warn)'], ['Low', 'var(--good)']].map(([k, c]) => (rc[k] ? <i key={k} style={{ flex: rc[k], background: c }} title={k + ': ' + rc[k]} /> : null))}
+              </div>
+              <div className="legend">
+                <span><i style={{ background: 'var(--bad)' }} />High {rc.High}</span>
+                <span><i style={{ background: 'var(--warn)' }} />Medium {rc.Medium}</span>
+                <span><i style={{ background: 'var(--good)' }} />Low {rc.Low}</span>
+                <span>open risks by rating</span>
+              </div>
+            </>
+          )}
+          <ul className="list" style={{ marginTop: 12 }}>
+            {RI.attention.slice(0, 3).map(({ r, flags }) => (
+              <li key={r.key} className="alert"><span className={'dot ' + FLAGS[flags[0]].cls} /><span><b className="mono">{r.id}</b> {r.type.toLowerCase()}: {flags.slice(0, 2).map((k) => FLAGS[k].label.toLowerCase()).join(', ')}{r.desc ? ' · ' + (r.desc.length > 60 ? r.desc.slice(0, 60) + '…' : r.desc) : ''}</span></li>
+            ))}
+            {!RI.attention.length && <li className="msg">No RAID items need attention.</li>}
+          </ul>
+          <button className="linkbtn" style={{ marginTop: 8 }} onClick={() => setNav({ tab: 'raid' })}>Open the RAID log</button>
         </div>
       </div>
 
