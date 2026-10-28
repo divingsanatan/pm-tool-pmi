@@ -8,7 +8,7 @@ import WeeksControl from '../components/WeeksControl';
 import { ITER_UNIT, baseLine, baseOf, costBy, labourOf, labourTotal, ledgerTotal, lineOnce, lineRecurring, lineState, lineTotal, maxIter, personOf, planBAC, projectBAC, reserves, suggestIter } from '../lib/calc';
 import LineCrDialog from './LineCrDialog';
 import { addLineViaCr, changeLineViaCr, dropPendingLine, lineEditable, revertLine, syncClaim } from '../lib/lineChange';
-import { fdate, today } from '../lib/dates';
+import { fdate, fsh, today } from '../lib/dates';
 import { hrsf, money, nz, pc } from '../lib/format';
 import { parseCosts } from '../lib/parse';
 import { claimLabour, crCls, labourControl, labourCrs, recordBaselineTeam } from '../lib/change';
@@ -383,10 +383,10 @@ export default function Budget() {
     <>
       <div className="card">
         <h2>Project length</h2>
-        <p className="hint">The weekly budget is multiplied by the number of weeks, and the number of weeks follows your dated work items, sprints and costs.</p>
+        <p className="hint">The project start and end are never typed in: they come from your sprints (the earliest sprint start and the latest date in the plan). The number of weeks follows them.</p>
         <div className="fields">
-          <label className="fld">Start date (Monday of week 1)<Cell sec="meta" f="start" value={S.meta.start} type="date" cls="w-date" disabled={baselined} /></label>
-          {baselined && <p className="msg" style={{ margin: 0 }}>The start date is part of baseline {baseOf(S).version}. A change goes through a change request.</p>}
+          <div className="fld">Project start<span className="cell mono"><b>{fdate(S.meta.start)}</b></span><span className="msg">First sprint's start</span></div>
+          <div className="fld">Project end<span className="cell mono"><b>{fsh(lastDay(S))}</b></span><span className="msg">Latest sprint, work item or cost date</span></div>
           <WeeksControl />
           <label className="fld">Sprint length (weeks)<Cell sec="meta" f="sprintWeeks" value={S.meta.sprintWeeks} type="int" cls="w-sm n" /></label>
         </div>

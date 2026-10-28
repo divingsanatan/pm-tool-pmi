@@ -180,8 +180,17 @@ export const projectEnd = (S) => pd(S.meta.start) + (nW(S) * 7 - 1) * DAY;
 /* ---------- actual cost ledger ---------- */
 export const ledgerTotal = (S) => S.ledger.reduce((a, e) => a + nz(e.amount), 0);
 
-// Number of weeks needed to cover every dated sprint, task and cost entry
-export function autoWeeks(S) {
+// The project start is never typed in: it is the start of the earliest dated sprint (kept in meta.start by normalize,
+// so every week-based figure counts from it). With no dated sprint yet, the stored date stays as it is.
+export function scheduleStart(S) {
+  let lo = '';
+  (S.sprints || []).forEach((sp) => {
+    if (typeof sp.start === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sp.start) && !isNaN(pd(sp.start)) && (!lo || sp.start < lo)) lo = sp.start;
+  });
+  return lo;
+}
+// The last day the project reaches: the latest date among its sprints, work items, completions and cost entries (never before day 7)
+export function lastDay(S) {
   const start = pd(S.meta.start);
   let end = start + 6 * DAY;
   const take = (d) => {
@@ -199,7 +208,12 @@ export function autoWeeks(S) {
     });
   });
   S.ledger.forEach((e) => take(e.date));
-  return Math.max(1, Math.min(104, Math.ceil(((end - start) / DAY + 1) / 7)));
+  return end;
+}
+// Number of weeks needed to cover every dated sprint, task and cost entry, counted from the project start
+export function autoWeeks(S) {
+  const start = pd(S.meta.start);
+  return Math.max(1, Math.min(104, Math.ceil(((lastDay(S) - start) / DAY + 1) / 7)));
 }
 
 const mStart = (ms) => Date.UTC(new Date(ms).getUTCFullYear(), new Date(ms).getUTCMonth(), 1);
@@ -581,11 +595,6 @@ export function alerts(S) {
     dated.forEach((x, i) => dated.slice(i + 1).forEach((y) => x.start <= y.end && x.end >= y.start && over.push(x.name + ' and ' + y.name)));
     if (over.length) a.push({ cls: 'bad', text: 'Sprint dates overlap: ' + over.join('; ') + '. Sprints in the same project cannot overlap. Open the sprint and change its start or end date.' });
   }
-  {
-    const before = S.sprints.filter((sp) => sp.start && sp.start < S.meta.start);
-    if (before.length)
-      a.push({ cls: 'warn', text: before.map((sp) => sp.name).join(', ') + (before.length > 1 ? ' start' : ' starts') + ' before the project start date (' + fsh(pd(S.meta.start)) + '). Move the project start date or the sprint start so the plan and the budget cover the same days.' });
-  }
   const od = S.raid.filter(overdue);
   if (od.length)
     a.push({
@@ -939,6 +948,9 @@ export function normalize(S) {
     t.assignees = t.assignees.filter((id, i) => ids.has(id) && t.assignees.indexOf(id) === i);
   });
 
+  // project start: always from the sprints (the earliest sprint start), so no sprint can ever start before the project
+  const first = scheduleStart(S);
+  if (first) m.start = first;
   // number of weeks: always from the data (latest dated task, sprint, completion or cost)
   m.weeks = autoWeeks(S);
   // labour budget rows hold total hours and off hours; rows from earlier versions start at the hours they used to imply

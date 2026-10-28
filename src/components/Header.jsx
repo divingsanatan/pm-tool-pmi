@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useStore } from '../store/StoreContext';
-import { curWeek, nW, started, planBAC, wkE, wkS } from '../lib/calc';
-import { fdate, fsh } from '../lib/dates';
+import { curWeek, lastDay, nW, started, planBAC } from '../lib/calc';
+import { fdate, fsh, pd } from '../lib/dates';
 import { money } from '../lib/format';
 
 export const TABS = [
@@ -26,7 +26,7 @@ export default function Header() {
 
   const sub =
     (started(S) ? 'Week ' + curWeek(S) + ' of ' + nW(S) + ' · ' : 'Starts ' + fdate(S.meta.start) + ' · ') +
-    fsh(wkS(S, 1)) + ' – ' + fsh(wkE(S, nW(S))) + ' · BAC ' + money(planBAC(S));
+    fsh(pd(S.meta.start)) + ' – ' + fsh(lastDay(S)) + ' · BAC ' + money(planBAC(S));
 
   return (
     <header className="top">

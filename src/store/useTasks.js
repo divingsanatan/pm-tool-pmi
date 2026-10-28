@@ -227,10 +227,6 @@ export function useTasks() {
       if (!c || cid === 'backlog') return false;
       const next = { start: 'start' in patch ? patch.start || '' : c.start || '', end: 'end' in patch ? patch.end || '' : c.end || '' };
       if ((next.start && !sane(next.start)) || (next.end && !sane(next.end))) return true;
-      if (next.start && S0.meta.start && next.start < S0.meta.start) {
-        say({ id: 'guard', tone: 'bad', text: 'A sprint cannot start before the project does (' + fdate(S0.meta.start) + '). Pick a start date on or after it.', ttl: 7000 });
-        return true;
-      }
       if ('plannedHours' in patch && !(patch.plannedHours > 0)) {
         say({ id: 'guard', tone: 'bad', text: 'Every sprint needs planned hours above 0, because its share of the budget comes from them.', ttl: 7000 });
         return true;
