@@ -28,7 +28,7 @@ const LABELS = {
   iResources: 'Resource impact', iRisk: 'Risk impact', alt: 'Alternatives', noop: 'If not done', decidedBy: 'Decided by',
   rationale: 'Rationale', apCost: 'Approved cost', apDays: 'Approved days', target: 'Target date', conditions: 'Conditions',
   chk: 'Checklist', reconcile: 'Reconciliation', verified: 'Verification', planPct: 'Planned %', earnPct: 'Earned %', note: 'Note',
-  weeks: 'Duration (weeks)', sprintWeeks: 'Sprint length (weeks)', hoursPerDay: 'Hours per day', sprintDays: 'Working days per sprint', hours: 'Total hours', plannedHours: 'Planned hours', offDays: 'Off days', off: 'Off hours', iterations: 'Iterations',
+  weeks: 'Duration (weeks)', sprintWeeks: 'Sprint length (weeks)', hoursPerDay: 'Hours per day', sprintDays: 'Working days per sprint', hours: 'Total hours', plannedHours: 'Planned hours', offDays: 'Off days', weeklyOff: 'Weekly off days', from: 'From', off: 'Off hours', iterations: 'Iterations',
   label: 'Name', color: 'Colour', done: 'Counts as done', pct: 'Progress weight', icon: 'Icon', milestone: 'Milestone', effort: 'Effort (h)',
 };
 const humanize = (k) => {
@@ -61,6 +61,7 @@ function val(ctx, key, v) {
   if (v == null || v === '') return '(empty)';
   if (typeof v === 'boolean') return v ? 'Yes' : 'No';
   if (typeof v === 'number') return MONEY.has(key) ? money(v) : PCT.has(key) ? pc(v, 0) : String(Math.round(v * 100) / 100);
+  if (key === 'weeklyOff' && Array.isArray(v)) return v.length ? v.map((d) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d] || d).join(', ') : '(none)';
   if (Array.isArray(v)) return v.length ? v.map((x) => (typeof x === 'string' && ISO.test(x) ? fdate(x) : resolve(ctx, x))).join(', ') : '(none)';
   if (typeof v === 'object') return 'changed';
   const s = String(v);
@@ -224,6 +225,7 @@ export function diffProject(before, after) {
   m.forEach((x) => { if (x.f === 'Name') x.f = 'Project name'; if (x.f === 'Start') x.f = 'Project start date'; });
   if (m.length === 1) ev.push({ cat: 'project', act: 'updated', text: 'Project setting “' + m[0].f + '”: ' + m[0].a + ' → ' + m[0].b });
   else if (m.length) ev.push({ cat: 'project', act: 'updated', text: 'Updated project settings', d: m });
+  q({ cat: 'project', noun: 'holiday', a: before.holidays || [], b: after.holidays || [], label: (x) => '“' + (x.label || 'Holiday') + '”' });
   q({ cat: 'people', noun: 'stakeholder', a: before.people, b: after.people, label: (x) => x.name || '(unnamed)' });
   q({ cat: 'budget', noun: 'team member', a: before.team, b: after.team, id: (x) => x.person, label: (x) => resolve(ctx, x.person),
     made: (x) => 'Added ' + resolve(ctx, x.person) + ' to the budget team', gone: (x) => 'Removed ' + resolve(ctx, x.person) + ' from the budget team' });

@@ -14,7 +14,7 @@ import { outsideSprint, sprintEvm, stCls } from '../lib/calc';
 import { hrsf, money, nz, pc } from '../lib/format';
 import { crCls, signedMoney } from '../lib/change';
 import { kidsMap, leafTasks, rootTasks, withAncestors } from '../lib/hier';
-import { WEEKDAYS_SHORT, datesOnWeekdays, sprintDayList } from '../lib/offdays';
+import { WEEKDAYS_SHORT, calendarOf, sprintDayList } from '../lib/offdays';
 import BulkBar from '../components/BulkBar';
 import WbsTree from '../components/WbsTree';
 import TaskDrawer from './TaskDrawer';
@@ -121,49 +121,57 @@ function Tile({ l, s, cls = '', vcls = '', title, children, bar }) {
 const Bar = ({ f, tone, label }) => <div className={'bar ' + (tone || '')} role="img" aria-label={label}><i style={{ width: Math.max(0, Math.min(100, f * 100)) + '%' }} /></div>;
 const ratio = (v) => (v == null ? '–' : v.toFixed(2) + ' (' + Math.round(v * 100) + '%)');
 
-// Off days of one sprint: click a day to mark it off (or working again). Planned %, planned value, SPI and the Dashboard
-// count working days only, so a Sunday or a holiday inside the sprint must be marked here.
+// Off days of one sprint. Weekly off days and holidays come from the project's Working calendar (Budget tab) and are locked here;
+// click any other day to mark it off for this sprint only (team leave, an event), or click it again to make it a working day.
 function OffDays({ c, E, tk }) {
+  const { S, setNav } = useStore();
   const ui = useUI();
-  const list = sprintDayList(c);
+  const list = sprintDayList(c, calendarOf(S));
   if (!list.length) return null;
-  const off = list.filter((d) => d.off).map((d) => d.date);
+  const own = list.filter((d) => d.kind === 'sprint').map((d) => d.date);
   const save = (next) => {
     const set = Array.from(new Set(next)).sort();
-    if (set.length >= list.length) {
+    const working = list.filter((d) => !d.locked && !set.includes(d.date)).length;
+    if (working === 0) {
       ui.toast({ id: 'offdays', tone: 'bad', ttl: 6000, text: 'Every day of the sprint would be off. Leave at least one working day, because the sprint\u2019s planned % is counted over its working days.' });
       return;
     }
     tk.patchContainer(c.id, { offDays: set });
   };
-  const toggle = (date) => save(off.includes(date) ? off.filter((x) => x !== date) : off.concat(date));
-  const mark = (weekdays) => save(off.concat(datesOnWeekdays(c, weekdays)));
-  const has = (weekdays) => datesOnWeekdays(c, weekdays).length > 0;
+  const click = (d) => {
+    if (d.locked) {
+      ui.toast({
+        id: 'offdays', tone: 'info', ttl: 9000,
+        text: d.kind === 'holiday' ? '\u201c' + d.label + '\u201d is a project holiday, so it is off in every sprint. Edit it in the Working calendar on the Budget tab.' : WEEKDAYS_SHORT[d.dow] + ' is a weekly off day for the whole project. Change it in the Working calendar on the Budget tab.',
+        actions: [{ label: 'Open Working calendar', primary: true, onClick: () => setNav({ view: 'project', tab: 'budget' }) }],
+      });
+      return;
+    }
+    save(d.kind === 'sprint' ? own.filter((x) => x !== d.date) : own.concat(d.date));
+  };
   const now = today();
+  const parts = [E.offWeekly && E.offWeekly + ' weekly off', E.offHoliday && E.offHoliday + ' holiday' + (E.offHoliday === 1 ? '' : 's'), E.offOwn && E.offOwn + ' this sprint only'].filter(Boolean);
   return (
     <div className="card od-card">
       <div className="row sp" style={{ alignItems: 'flex-start' }}>
         <div>
-          <h3 className="sp-h" style={{ margin: 0 }}>Off days · {E.offN} of {E.calDays}</h3>
+          <h3 className="sp-h" style={{ margin: 0 }}>Off days · {E.offN} of {E.calDays}{parts.length ? ' (' + parts.join(', ') + ')' : ''}</h3>
           <p className="hint" style={{ margin: '4px 0 0' }}>
-            Click a day to mark it off (Sunday, holiday, shutdown). Off days are skipped, so planned % counts the <b>{E.days}</b> working day{E.days === 1 ? '' : 's'} only: {E.calDays} calendar day{E.calDays === 1 ? '' : 's'} − {E.offN} off.
+            Planned % counts the <b>{E.days}</b> working day{E.days === 1 ? '' : 's'} only: {E.calDays} calendar − {E.offN} off. Weekly off days and holidays come from the project&apos;s Working calendar (Budget tab).
+            Click any other day to mark it off for this sprint only.
           </p>
         </div>
-        <div className="row" style={{ gap: 6 }}>
-          {has([0]) && <button className="btn" onClick={() => mark([0])}>Mark Sundays off</button>}
-          {has([0, 6]) && <button className="btn" onClick={() => mark([0, 6])}>Mark Sat + Sun off</button>}
-          {off.length > 0 && <button className="btn" onClick={() => save([])}>Clear</button>}
-        </div>
+        {own.length > 0 && <button className="btn" onClick={() => save([])}>Clear this sprint&apos;s own</button>}
       </div>
       <div className="od-strip" role="group" aria-label="Days of the sprint">
         {list.map((d) => (
           <button
             key={d.date}
             type="button"
-            className={'od' + (d.off ? ' off' : '') + (d.date === now ? ' today' : '') + (d.dow === 0 || d.dow === 6 ? ' we' : '')}
+            className={'od' + (d.off ? ' off' : '') + (d.locked ? ' lock' : '') + (d.date === now ? ' today' : '') + (d.dow === 0 || d.dow === 6 ? ' we' : '')}
             aria-pressed={d.off}
-            title={fdate(d.date) + (d.off ? ' · off day (click to make it a working day)' : ' · working day (click to mark it off)')}
-            onClick={() => toggle(d.date)}
+            title={fdate(d.date) + (d.kind === 'holiday' ? ' \u00b7 holiday: ' + d.label : d.kind === 'weekly' ? ' \u00b7 weekly off day' : d.kind === 'sprint' ? ' \u00b7 off for this sprint (click to make it a working day)' : ' \u00b7 working day (click to mark it off for this sprint)')}
+            onClick={() => click(d)}
           >
             <span>{WEEKDAYS_SHORT[d.dow]}</span>
             <b>{d.day}</b>

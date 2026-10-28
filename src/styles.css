@@ -659,6 +659,7 @@ label.fld{max-width:100%;min-width:0}
 .od b{font-size:15px;font-variant-numeric:tabular-nums}
 .od span{color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em;font-size:10.5px}
 .od.we{background:var(--row)}
+.od.lock{cursor:help;opacity:.85;background:var(--row);border:1px dashed var(--muted)}
 .od.today{outline:2px solid var(--accent);outline-offset:1px}
 .od[aria-pressed="true"]{background:var(--warn-bg);border-color:transparent;color:var(--warn)}
 .od[aria-pressed="true"] b{text-decoration:line-through}

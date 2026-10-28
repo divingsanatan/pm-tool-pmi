@@ -3,7 +3,7 @@ import { nz, cl, cleanEffort, money as money0 } from './format';
 import { DEFAULT_STATUSES, DEFAULT_TYPES, allContainers, firstOpenStatus, isDoneStatus, makeTask, statusPct, typeOf, uid } from './tasks';
 import { flatTree, leafTasks, rollupContainer, rootTasks } from './hier';
 import { ACTIVITY_MAX } from './activity';
-import { offDaysOf, sprintCalendar } from './offdays';
+import { calendarOf, offDaysOf, sprintCalendar } from './offdays';
 
 /* ---------- timeline helpers ---------- */
 export const nW = (S) => S.meta.weeks;
@@ -349,7 +349,7 @@ export function sprintEvm(S, sp, asOf = today()) {
   const hasDates = !!(sp.start && sp.end && pd(sp.end) >= pd(sp.start));
   // Off days (Sundays, holidays...) are not working days: they are left out of both the days in the sprint and the days gone,
   // so planned % moves only on working days and reaches 100% on the last working day.
-  const cal = hasDates ? sprintCalendar(sp, asOf) : null;
+  const cal = hasDates ? sprintCalendar(sp, asOf, calendarOf(S)) : null;
   const calDays = cal ? cal.cal : 0; // calendar days in the sprint
   const offN = cal ? cal.off : 0; // off days in the sprint
   const days = cal ? cal.work : 0; // working days in the sprint
@@ -393,7 +393,7 @@ export function sprintEvm(S, sp, asOf = today()) {
   }
   const costStatus = cpi == null ? 'No cost entries yet' : cpi >= 1 ? 'Under budget' : cpi >= 0.9 ? 'Slightly over budget' : 'Over budget';
   return {
-    bac, planned, total, share, typed: !!(row && row.typed), budget, hasDates, days, calDays, offN, offToday, elapsed, left, started, ended,
+    bac, planned, total, share, typed: !!(row && row.typed), budget, hasDates, days, calDays, offN, offWeekly: cal ? cal.offWeekly : 0, offHoliday: cal ? cal.offHoliday : 0, offOwn: cal ? cal.offOwn : 0, offToday, elapsed, left, started, ended,
     plannedPct, earnedPct, doneH: h.done, itemsH: h.items, openH: open, nItems: h.n,
     pv, ev, ac, entries, spi, cpi, sv: ev - pv, cv: ac > 0 ? ev - ac : null, status, cls, why, costStatus,
     costCls: cpi == null ? 'neutral' : cpi >= 1 ? 'good' : cpi >= 0.9 ? 'warn' : 'bad',
@@ -463,7 +463,7 @@ export function evmSeries(S, asOf = today()) {
     rows.forEach((r) => {
       if (!(r.planned > 0)) return;
       const sp = r.sp, budget = bac * r.share;
-      const cal = sprintCalendar(sp); // working days only: the line stays flat over an off day
+      const cal = sprintCalendar(sp, null, calendarOf(S)); // working days only: the line stays flat over an off day
       if (cal && cal.work > 0) {
         const a = pd(sp.start);
         for (let i = 0; i < n; i++) {
@@ -538,9 +538,9 @@ export function alerts(S) {
       a.push({ cls: 'warn', text: sp.name + ': work items add up to ' + r(h.items) + ' h, which is ' + r(h.items - h.planned) + ' h over the ' + r(h.planned) + ' h planned.' });
   });
   S.sprints.forEach((sp) => {
-    const cal = sprintCalendar(sp);
+    const cal = sprintCalendar(sp, null, calendarOf(S));
     if (cal && cal.work === 0)
-      a.push({ cls: 'bad', text: sp.name + ' has every day marked off, so it has no working days and no planned value. Open the sprint and unmark at least one day.' });
+      a.push({ cls: 'bad', text: sp.name + ' has every day off (weekly off days, holidays and its own off days), so it has no working days and no planned value. Check the Working calendar on the Budget tab and the off days marked on the sprint.' });
   });
   S.sprints.forEach((sp) => {
     const c = sp.crId && S.cr.find((x) => x.id === sp.crId);
@@ -709,6 +709,14 @@ export function normalize(S) {
     }
     b.endFromSprints = true;
   });
+  // working calendar: weekly off weekdays (0 = Sunday) and holiday ranges; only tidied when present, so projects without them are untouched
+  if (Array.isArray(S.meta.weeklyOff)) S.meta.weeklyOff = Array.from(new Set(S.meta.weeklyOff.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))).sort((a, b) => a - b);
+  if (Array.isArray(S.holidays)) {
+    S.holidays = S.holidays.filter((h) => h && typeof h === 'object');
+    S.holidays.forEach((h) => {
+      if (!h.id) h.id = uid();
+    });
+  }
   // off days only make sense inside their sprint: when the sprint dates move, off days left outside them are dropped
   S.sprints.forEach((sp) => {
     if (!Array.isArray(sp.offDays) || !sp.start || !sp.end || pd(sp.end) < pd(sp.start)) return;
