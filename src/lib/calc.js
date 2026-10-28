@@ -756,11 +756,12 @@ export function normalize(S) {
     const keep = offDaysOf(sp);
     if (keep.length !== sp.offDays.length || keep.some((d, i) => d !== sp.offDays[i])) sp.offDays = keep;
   });
-  // a sprint whose dates were moved outside its baseline through a request keeps that link until the baseline takes the dates
+  // a sprint whose dates were opened for change through a request keeps that link while the request is still open
+  // (it ends when the request is implemented, closed, rejected or deleted: the next baseline has taken the dates)
   S.sprints.forEach((sp) => {
     if (!sp.dateCrId) return;
-    const w = (S.baselines.length && S.baselines[S.baselines.length - 1].sprints || []).find((x) => x.id === sp.id);
-    if (!S.cr.find((c) => c.id === sp.dateCrId) || (w && sp.start >= w.start && sp.end <= w.end)) delete sp.dateCrId;
+    const cr = S.cr.find((c) => c.id === sp.dateCrId);
+    if (!cr || !['Draft', 'Submitted', 'Under review', 'Approved'].includes(cr.status)) delete sp.dateCrId;
   });
   S.sprints.forEach((sp) => {
     if (sp.hoursCrId && !S.cr.find((c) => c.id === sp.hoursCrId)) delete sp.hoursCrId;

@@ -18,6 +18,8 @@ import { WEEKDAYS_SHORT, calendarOf, sprintDayList } from '../lib/offdays';
 import BulkBar from '../components/BulkBar';
 import WbsTree from '../components/WbsTree';
 import TaskDrawer from './TaskDrawer';
+import ChangeDrawer from './ChangeDrawer';
+import DateChangeDialog from '../components/DateChangeDialog';
 import Board from './Board';
 import '../offdays.css';
 
@@ -165,6 +167,8 @@ function OffDays({ c, E }) {
 // Sprint plan, live progress and earned value for one sprint, with the working shown underneath.
 function SprintPanel({ S, c, E, cr, tk, setNav }) {
   const hasPlan = E.typed && E.planned > 0;
+  const [askDates, setAskDates] = useState(false);
+  const [crOpen, setCrOpen] = useState(null);
   const datesLocked = inBaseline(S, c.id) && !dateCrOf(S, c); // after the first baseline the sprint dates are read-only (unless a date change request is already open on it)
   const over = E.planned > 0 && E.itemsH > E.planned;
   const tone = (cls) => (cls === 'good' || cls === 'warn' || cls === 'bad' ? cls : '');
@@ -207,10 +211,31 @@ function SprintPanel({ S, c, E, cr, tk, setNav }) {
         </div>
         <OffDays c={c} E={E} />
         {datesLocked && (
+          <div className="row" style={{ margin: '10px 0 0', gap: 12, alignItems: 'center' }}>
+            <p className="hint" style={{ margin: 0, flex: '1 1 260px' }}>
+              The start and end dates of this sprint are fixed by baseline {currentBaseline(S).version}. To move them, raise a change request: the dates unlock while it is open, and the next baseline records them.
+            </p>
+            <button className="btn" onClick={() => setAskDates(true)}>Request a date change</button>
+          </div>
+        )}
+        {!datesLocked && dateCrOf(S, c) && (
           <p className="hint" style={{ margin: '10px 0 0' }}>
-            The start and end dates of this sprint are fixed by baseline {currentBaseline(S).version} and cannot be edited here.
+            The dates of this sprint are open for change under <button className="linkbtn" onClick={() => setCrOpen(dateCrOf(S, c).id)}>{dateCrOf(S, c).code}{dateCrOf(S, c).title ? ' · ' + dateCrOf(S, c).title : ''}</button>. The next baseline will record them.
           </p>
         )}
+        {askDates && (
+          <DateChangeDialog
+            S={S}
+            c={c}
+            onClose={() => setAskDates(false)}
+            onPick={({ crId, reason }) => {
+              const id = tk.unlockDates(c.id, { crId, reason });
+              setAskDates(false);
+              if (!crId) setCrOpen(id); // a new request opens right away so its details can be filled in
+            }}
+          />
+        )}
+        {crOpen && <ChangeDrawer id={crOpen} onClose={() => setCrOpen(null)} />}
         {(hoursCrOf(S, c) || hoursLocked(S, c)) && (
           <p className="hint" style={{ margin: '10px 0 0' }}>
             {hoursCrOf(S, c)

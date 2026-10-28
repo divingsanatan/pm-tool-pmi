@@ -784,8 +784,33 @@ export function useTasks() {
         if (('start' in patch || 'end' in patch || 'plannedHours' in patch) && guardSprint(cid, patch)) return;
         update((p) => {
           const c = containerById(p, cid);
-          if (c) Object.assign(c, patch);
+          if (!c) return;
+          Object.assign(c, patch);
+          // dates moved under an open change request: leave the trail in that request
+          if (('start' in patch || 'end' in patch) && c.dateCrId) {
+            const cr = p.cr.find((x) => x.id === c.dateCrId), bw = baselinedDates(p, cid);
+            if (cr && bw) cr.log.push({ on: new Date().toISOString().slice(0, 10), text: c.name + ' dates set to ' + fdate(c.start) + ' \u2013 ' + fdate(c.end) + ' (baselined ' + fdate(bw.start) + ' \u2013 ' + fdate(bw.end) + ')' });
+          }
         });
+      },
+      // After a baseline the sprint dates are read-only. This opens them through a change request: a new one (crId empty) or an open one.
+      // The request carries the reason; the next baseline records the new dates. Returns the id of the request.
+      unlockDates(cid, { crId = '', reason = '' } = {}) {
+        const id = crId || uid();
+        update((p) => {
+          const sp = containerById(p, cid);
+          if (!sp) return;
+          const bw = baselinedDates(p, cid);
+          const was = bw ? fdate(bw.start) + ' \u2013 ' + fdate(bw.end) : fdate(sp.start) + ' \u2013 ' + fdate(sp.end);
+          if (!crId) {
+            p.cr.push(blankCr(p, id, { title: 'Change ' + sp.name + ' dates', kind: 'Corrective action', affects: ['Schedule'], cost: 0, days: 0, why: reason, desc: sp.name + ' is fixed at ' + was + ' by the baseline. This request moves its dates to: (enter the new dates).' }));
+          }
+          const cr = p.cr.find((x) => x.id === id);
+          if (!cr) return;
+          sp.dateCrId = id;
+          cr.log.push({ on: new Date().toISOString().slice(0, 10), text: sp.name + ' dates unlocked for change (baselined ' + was + ')' + (reason && crId ? ': ' + reason : '') });
+        });
+        return id;
       },
       // unfinished top-level items (with everything below them) move to another sprint or the Backlog
       moveOpen(from, to) {
