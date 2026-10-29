@@ -1,6 +1,15 @@
-/* The list scrolls inside its own frame so the column headings stay in view while you scroll down */
-.sp-scroll{overflow:auto;max-height:calc(100vh - 230px);max-height:calc(100dvh - 230px);min-height:320px;border:1px solid var(--line);border-radius:8px}
-.tg.sp .tg-h{position:sticky;top:0;z-index:5;background:var(--row);box-shadow:inset 0 -1px 0 var(--line);border-bottom:0;padding:8px 4px}
+/* The list flows with the page: no inner scroll box, so it is as long as its rows. The column headings sit in a bar that sticks to the top of the screen
+   while you scroll down; the rows scroll sideways only when the columns need more room than the screen has, and the bar follows them. */
+.sp-list{min-width:0}
+.sp-hbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;overflow:hidden;background:var(--row);border:1px solid var(--line);border-radius:8px 8px 0 0;box-shadow:0 1px 0 var(--line)}
+.sp-body{overflow-x:auto;border:1px solid var(--line);border-top:0;border-radius:0 0 8px 8px}
+.tg.sp .tg-h{background:var(--row);border-bottom:0;padding:8px 4px}
+/* every cell stays inside its own column: nothing may be wider than the column it sits in */
+.tg.sp .tg-row>*{min-width:0}
+.tg.sp .c-start .c,.tg.sp .c-due .c,.tg.sp .c-eff .c{width:100%;min-width:0;padding:4px 3px;font-size:13px}
+.tg.sp .c-start .cell,.tg.sp .c-due .cell,.tg.sp .c-eff .cell{display:block;min-width:0;padding:5px 3px;overflow:hidden;text-overflow:ellipsis}
+.tg.sp .c-start .c::-webkit-calendar-picker-indicator,.tg.sp .c-due .c::-webkit-calendar-picker-indicator{margin:0 0 0 2px;padding:0}
+.tg.sp .c-ass,.tg.sp .c-pri{overflow:hidden}
 /* Sprint list: the full work breakdown row (WBS number, name, assignee, start, due, priority, effort, progress, status) */
 .tg.sp .tg-row{grid-template-columns:var(--tg-cols)}
 .tg.sp .tg-row.sub{grid-template-columns:minmax(0,1fr)}
@@ -21,18 +30,6 @@
 .tg.sp .tg-row.drop-before{box-shadow:inset 0 2px 0 var(--accent)}
 .tg.sp .tg-row.drop-after{box-shadow:inset 0 -2px 0 var(--accent)}
 .tg.sp .tg-row.drop-inside{background:var(--accent-soft);outline:1px dashed var(--accent);outline-offset:-2px}
-@media (max-width:860px){
-  .tg.sp{min-width:0}
-  .sp-scroll{max-height:none;overflow:visible;border:0;min-height:0}
-  .tg.sp .tg-row{grid-template-columns:auto auto auto minmax(0,1fr) auto;grid-template-areas:"name name name name name" "ass start due pri eff" "pct pct st st open"}
-  .tg.sp .tg-row.sub{grid-template-columns:minmax(0,1fr);grid-template-areas:"name"}
-  .tg.sp .c-wbs{display:none}
-  .tg.sp .c-start{grid-area:start}.tg.sp .c-pct{grid-area:pct}.tg.sp .c-st{grid-area:st}
-  .tg.sp .c-start .c{width:100%;min-width:110px}
-  .tg.sp .tg-tot>div:empty{display:none}
-  .tg.sp .w-grip{display:none}
-  .tg.sp .w-add{opacity:1}
-}
 
 /* Status column: a clickable coloured pill (like ClickUp), and the status group a row is dragged into */
 .st-pill{display:inline-flex;align-items:center;gap:6px;max-width:100%;border:1px solid var(--line);background:var(--card,transparent);color:inherit;border-radius:999px;padding:2px 10px 2px 6px;font:inherit;font-size:13px;cursor:pointer;white-space:nowrap}
@@ -56,11 +53,6 @@
 .tg.sp.no-due .c-due,.tg.sp.no-due .h-due,.tg.sp.no-priority .c-pri,.tg.sp.no-priority .h-priority,.tg.sp.no-effort .c-eff,.tg.sp.no-effort .h-effort,
 .tg.sp.no-progress .c-pct,.tg.sp.no-progress .h-progress,.tg.sp.no-status .c-st,.tg.sp.no-status .h-status,.tg.sp.no-code .c-code,.tg.sp.no-code .h-code,
 .tg.sp.no-type .c-type,.tg.sp.no-type .h-type,.tg.sp.no-doneOn .c-doneon,.tg.sp.no-doneOn .h-doneOn,.tg.sp.no-parent .c-parent,.tg.sp.no-parent .h-parent{display:none!important}
-@media (max-width:860px){
-  .tg.sp{min-width:0}
-  .tg.sp .c-code,.tg.sp .c-type,.tg.sp .c-doneon,.tg.sp .c-parent{display:none}
-  .tg.sp .h-open{display:none}
-}
 
 /* column order: cells keep their place in the markup and are positioned with CSS order (see lib/listCols.js) */
 .tg.sp .c-wbs,.tg.sp .h-wbs{order:0}
@@ -82,3 +74,24 @@
 .tg.sp .th.dragging{opacity:.4}
 .tg.sp .th.ins-before{box-shadow:inset 3px 0 0 var(--accent)}
 .tg.sp .th.ins-after{box-shadow:inset -3px 0 0 var(--accent)}
+
+/* Tablets and phones: each work item is a card. The cells wrap onto as many lines as they need instead of sharing fixed columns, so they can never sit on top of each other. */
+@media (max-width:900px){
+  .sp-hbar{display:none}
+  .sp-body{overflow:visible;border:0;border-radius:0}
+  .tg.sp{min-width:0}
+  .tg.sp .tg-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px 4px 10px}
+  .tg.sp .tg-row>.tg-name{order:-1;flex:1 1 100%}
+  .tg.sp .tg-row.sub{display:grid;grid-template-columns:minmax(0,1fr)}
+  .tg.sp .c-wbs,.tg.sp .c-code,.tg.sp .c-type,.tg.sp .c-doneon,.tg.sp .c-parent,.tg.sp .h-open{display:none}
+  .tg.sp .c-ass,.tg.sp .c-pri{flex:0 0 auto;overflow:visible}
+  .tg.sp .c-start,.tg.sp .c-due{flex:0 1 156px;min-width:136px}
+  .tg.sp .c-eff{flex:0 0 88px}
+  .tg.sp .c-pct{flex:1 1 150px}
+  .tg.sp .c-st{flex:0 1 auto;max-width:100%}
+  .tg.sp .c-open{flex:0 0 auto;margin-left:auto}
+  .tg.sp .c-start .c,.tg.sp .c-due .c,.tg.sp .c-eff .c{font-size:16px}
+  .tg.sp .tg-tot>div:empty{display:none}
+  .tg.sp .w-grip{display:none}
+  .tg.sp .w-add{opacity:1}
+}

@@ -429,6 +429,8 @@ export default function SprintView() {
   const [shut, setShut] = useState({});
   const [sel, setSel] = useState(() => new Set()); // ids of selected work items (list view)
   const last = useRef(null); // last clicked id, for shift-click range selection
+  const hbar = useRef(null); // the sticky column-heading bar of the list
+  const lbody = useRef(null); // the rows of the list (scrolls sideways when the columns need more room than the screen has)
 
   const ui = useUI();
   const lc = useListCols();
@@ -476,6 +478,7 @@ export default function SprintView() {
     } else tk.place(drag.id, { parent: target.parent || '', ref: target.id, pos: zone });
   };
   const sum = summarize(S, c);
+  const spCls = 'tg sp' + LIST_COLS.filter((x) => !lc.has(x.id)).map((x) => ' no-' + x.id).join('');
   const boardTasks = leaves.filter((t) => matched.has(t.id));
 
   // an item is expanded when you opened it, or when it has children and you did not close it
@@ -621,8 +624,13 @@ export default function SprintView() {
       ) : view === 'list' ? (
         <>
         <p className="msg wbs-help">Click a name to edit it · Enter adds an item below · Tab / Shift+Tab indent and outdent · Alt+↑ / ↓ reorder · drag ⋮⋮ to reorder or drop onto an item to nest, or (grouped by Status) drop into another status group to change its status · click a Status to change it · Σ values add up from the child items.</p>
-        <div className="scroll sp-scroll">
-          <div className={'tg sp' + LIST_COLS.filter((c) => !lc.has(c.id)).map((c) => ' no-' + c.id).join('')} style={lc.vars}>
+        <div className="sp-list" style={lc.vars}>
+          <div
+            className="sp-hbar"
+            ref={hbar}
+            onWheel={(e) => { if (lbody.current && Math.abs(e.deltaX) > Math.abs(e.deltaY)) lbody.current.scrollLeft += e.deltaX; }}
+          >
+          <div className={spCls}>
             <div className="tg-row tg-h">
               {LIST_COLS.slice(0, 1).map((c) => (<div key={c.id} className="h-wbs">WBS</div>))}
               <div className="tg-name"><TriBox all={tasks.length > 0 && chosen.length === tasks.length} some={chosen.length > 0} onChange={(e) => setMany(tasks.map((t) => t.id), e.target.checked)} label="Select all tasks" />Name</div>
@@ -655,6 +663,10 @@ export default function SprintView() {
               ))}
               <div className="h-open"><Menu className="x th-plus" label="＋" title="Add or remove columns" items={lc.items()} /></div>
             </div>
+          </div>
+          </div>
+          <div className="sp-body" ref={lbody} onScroll={(e) => { if (hbar.current) hbar.current.scrollLeft = e.currentTarget.scrollLeft; }}>
+          <div className={spCls}>
             {groups.map((g) => {
               const hide = shut[g.key];
               return (
@@ -705,6 +717,7 @@ export default function SprintView() {
               </div>
             )}
             {!groups.length && <div className="empty">{filtering ? 'No tasks match your search or filter.' : 'No tasks yet. Use + Task to add the first one.'}</div>}
+          </div>
           </div>
         </div>
         </>

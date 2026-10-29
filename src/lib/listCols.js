@@ -5,13 +5,13 @@ import { useCallback, useState } from 'react';
 // The order here is the order on screen. `cls` is the class of the cells in each row (used to hide a column).
 export const LIST_COLS = [
   { id: 'wbs', label: 'WBS', w: 52, cls: 'c-wbs', def: true },
-  { id: 'assignee', label: 'Assignee', w: 96, cls: 'c-ass', def: true },
-  { id: 'start', label: 'Start', w: 118, cls: 'c-start', def: true },
-  { id: 'due', label: 'Due', w: 118, cls: 'c-due', def: true },
-  { id: 'priority', label: 'Priority', w: 90, cls: 'c-pri', def: true },
-  { id: 'effort', label: 'Effort (h)', w: 84, cls: 'c-eff', def: true },
-  { id: 'progress', label: 'Progress', w: 150, cls: 'c-pct', def: true },
-  { id: 'status', label: 'Status', w: 140, cls: 'c-st', def: true },
+  { id: 'assignee', label: 'Assignee', w: 88, cls: 'c-ass', def: true },
+  { id: 'start', label: 'Start', w: 122, cls: 'c-start', def: true },
+  { id: 'due', label: 'Due', w: 122, cls: 'c-due', def: true },
+  { id: 'priority', label: 'Priority', w: 88, cls: 'c-pri', def: true },
+  { id: 'effort', label: 'Effort (h)', w: 96, cls: 'c-eff', def: true },
+  { id: 'progress', label: 'Progress', w: 128, cls: 'c-pct', def: true },
+  { id: 'status', label: 'Status', w: 132, cls: 'c-st', def: true },
   { id: 'code', label: 'ID', w: 80, cls: 'c-code', def: false },
   { id: 'type', label: 'Type', w: 100, cls: 'c-type', def: false },
   { id: 'doneOn', label: 'Completed on', w: 124, cls: 'c-doneon', def: false },
@@ -50,11 +50,11 @@ export function useListCols() {
   const colOf = (id) => LIST_COLS.find((c) => c.id === id);
   // grid: wbs (if shown), name, the other shown columns in order, actions. Cells are placed with CSS `order` (--o-<id>).
   const parts = [];
-  let min = 72 + 40;
+  let min = 64 + 40;
   if (ids.includes('wbs')) { parts.push('52px'); min += 56; }
-  parts.push('minmax(340px,1fr)'); min += 344;
+  parts.push('minmax(240px,1fr)'); min += 244;
   moving.forEach((id) => { parts.push(colOf(id).w + 'px'); min += colOf(id).w + 4; });
-  parts.push('72px');
+  parts.push('64px');
   const vars = { '--tg-cols': parts.join(' '), '--tg-min': min + 'px' };
   LIST_COLS.forEach((c) => { vars['--o-' + c.id] = moving.includes(c.id) ? moving.indexOf(c.id) + 2 : 900; });
   return {
