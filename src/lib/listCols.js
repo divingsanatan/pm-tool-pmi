@@ -32,31 +32,38 @@ function load() {
 }
 
 export function useListCols() {
-  const [ids, setIds] = useState(load);
+  const [ids, setIds] = useState(load); // the shown columns, in the order they appear (WBS always stays first, then Name)
   const save = useCallback((next) => {
     setIds(next);
     try { localStorage.setItem(KEY, JSON.stringify(next)); } catch (e) { /* not saved */ }
   }, []);
-  const shown = LIST_COLS.filter((c) => ids.includes(c.id));
-  const toggle = (id) => save(ids.includes(id) ? ids.filter((x) => x !== id) : ids.concat(id));
-  // wbs (if shown) + name + the other shown columns + the actions column
+  const toggle = (id) => save(ids.includes(id) ? ids.filter((x) => x !== id) : ids.concat(id)); // a column added back goes to the end
+  // drag a column header onto another one: it lands before it, or after it when dropped on its right half
+  const move = (id, target, after) => {
+    if (id === target || id === 'wbs' || target === 'wbs' || !ids.includes(id) || !ids.includes(target)) return;
+    const rest = ids.filter((x) => x !== id);
+    const i = rest.indexOf(target);
+    rest.splice(after ? i + 1 : i, 0, id);
+    save(rest);
+  };
+  const moving = ids.filter((id) => id !== 'wbs');
+  const colOf = (id) => LIST_COLS.find((c) => c.id === id);
+  // grid: wbs (if shown), name, the other shown columns in order, actions. Cells are placed with CSS `order` (--o-<id>).
   const parts = [];
   let min = 72 + 40;
-  shown.forEach((c) => {
-    if (c.id === 'wbs') { parts.push('52px'); min += 52 + 4; }
-  });
-  parts.push('minmax(340px,1fr)'); min += 340 + 4;
-  shown.filter((c) => c.id !== 'wbs').forEach((c) => { parts.push(c.w + 'px'); min += c.w + 4; });
+  if (ids.includes('wbs')) { parts.push('52px'); min += 56; }
+  parts.push('minmax(340px,1fr)'); min += 344;
+  moving.forEach((id) => { parts.push(colOf(id).w + 'px'); min += colOf(id).w + 4; });
   parts.push('72px');
+  const vars = { '--tg-cols': parts.join(' '), '--tg-min': min + 'px' };
+  LIST_COLS.forEach((c) => { vars['--o-' + c.id] = moving.includes(c.id) ? moving.indexOf(c.id) + 2 : 900; });
   return {
     ids,
-    shown,
     has: (id) => ids.includes(id),
     toggle,
+    move,
     reset: () => save(DEFAULTS),
-    template: parts.join(' '),
-    minWidth: min,
-    // items for a Menu: tick = shown
+    vars,
     items: () => LIST_COLS.map((c) => ({ label: c.label, active: ids.includes(c.id), keepOpen: true, onClick: () => toggle(c.id) })).concat([{ sep: true }, { label: 'Reset to default columns', onClick: () => save(DEFAULTS) }]),
   };
 }

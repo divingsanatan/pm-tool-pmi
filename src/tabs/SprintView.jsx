@@ -421,6 +421,8 @@ export default function SprintView() {
   const [focus, setFocus] = useState(null); // name box to focus after an item is added or moved
   const [drag, setDrag] = useState(null); // { id, sub } while a row is dragged
   const [over, setOver] = useState(null); // { id, zone } the row it is over
+  const [colDrag, setColDrag] = useState(null); // header being dragged
+  const [colOver, setColOver] = useState(null); // { id, after } where it would land
   const [gover, setGover] = useState(null); // status group a row is being dragged over
   const [open, setOpen] = useState(null); // task shown in the drawer
   const [exp, setExp] = useState({});
@@ -620,12 +622,33 @@ export default function SprintView() {
         <>
         <p className="msg wbs-help">Click a name to edit it · Enter adds an item below · Tab / Shift+Tab indent and outdent · Alt+↑ / ↓ reorder · drag ⋮⋮ to reorder or drop onto an item to nest, or (grouped by Status) drop into another status group to change its status · click a Status to change it · Σ values add up from the child items.</p>
         <div className="scroll sp-scroll">
-          <div className={'tg sp' + LIST_COLS.filter((c) => !lc.has(c.id)).map((c) => ' no-' + c.id).join('')} style={{ '--tg-cols': lc.template, '--tg-min': lc.minWidth + 'px' }}>
+          <div className={'tg sp' + LIST_COLS.filter((c) => !lc.has(c.id)).map((c) => ' no-' + c.id).join('')} style={lc.vars}>
             <div className="tg-row tg-h">
               {LIST_COLS.slice(0, 1).map((c) => (<div key={c.id} className="h-wbs">WBS</div>))}
               <div className="tg-name"><TriBox all={tasks.length > 0 && chosen.length === tasks.length} some={chosen.length > 0} onChange={(e) => setMany(tasks.map((t) => t.id), e.target.checked)} label="Select all tasks" />Name</div>
               {LIST_COLS.slice(1).map((c) => (
-                <div key={c.id} className={'th h-' + c.id}>
+                <div
+                  key={c.id}
+                  className={'th h-' + c.id + (colDrag === c.id ? ' dragging' : '') + (colOver && colOver.id === c.id ? (colOver.after ? ' ins-after' : ' ins-before') : '')}
+                  draggable
+                  title="Drag to move this column"
+                  onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', 'col:' + c.id); setColDrag(c.id); }}
+                  onDragEnd={() => { setColDrag(null); setColOver(null); }}
+                  onDragOver={(e) => {
+                    if (!colDrag || colDrag === c.id) return;
+                    e.preventDefault();
+                    const b = e.currentTarget.getBoundingClientRect();
+                    const after = e.clientX > b.left + b.width / 2;
+                    if (!colOver || colOver.id !== c.id || colOver.after !== after) setColOver({ id: c.id, after });
+                  }}
+                  onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setColOver(null); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (colDrag && colOver && colOver.id === c.id) lc.move(colDrag, c.id, colOver.after);
+                    setColDrag(null);
+                    setColOver(null);
+                  }}
+                >
                   <span>{c.label}</span>
                   <Menu className="x th-x" label="▾" title={'Column options: ' + c.label} items={[{ label: 'Hide column', onClick: () => lc.toggle(c.id) }]} />
                 </div>
@@ -678,7 +701,7 @@ export default function SprintView() {
                 <div className="h-assignee" /><div className="c-start msg">{sum.start ? fdate(sum.start) : ''}</div><div className="c-due msg">{sum.end ? fdate(sum.end) : ''}</div><div className="h-priority" />
                 <div className="c-eff mono">{hrsf(sum.hrs)}</div>
                 <div className="c-pct w-pct">{sum.pct == null ? null : (<><div className="bar"><i style={{ width: Math.min(100, sum.pct * 100) + '%' }} /></div><span className="mono">{pc(sum.pct, 0)}</span></>)}</div>
-                <div className="h-status" /><div className="h-code" /><div className="h-type" /><div className="h-doneOn" /><div className="h-parent" /><div />
+                <div className="h-status" /><div className="h-code" /><div className="h-type" /><div className="h-doneOn" /><div className="h-parent" /><div className="c-open" />
               </div>
             )}
             {!groups.length && <div className="empty">{filtering ? 'No tasks match your search or filter.' : 'No tasks yet. Use + Task to add the first one.'}</div>}

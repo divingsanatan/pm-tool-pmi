@@ -61,3 +61,24 @@
   .tg.sp .c-code,.tg.sp .c-type,.tg.sp .c-doneon,.tg.sp .c-parent{display:none}
   .tg.sp .h-open{display:none}
 }
+
+/* column order: cells keep their place in the markup and are positioned with CSS order (see lib/listCols.js) */
+.tg.sp .c-wbs,.tg.sp .h-wbs{order:0}
+.tg.sp .tg-name{order:1}
+.tg.sp .c-ass,.tg.sp .h-assignee{order:var(--o-assignee,2)}
+.tg.sp .c-start,.tg.sp .h-start{order:var(--o-start,3)}
+.tg.sp .c-due,.tg.sp .h-due{order:var(--o-due,4)}
+.tg.sp .c-pri,.tg.sp .h-priority{order:var(--o-priority,5)}
+.tg.sp .c-eff,.tg.sp .h-effort{order:var(--o-effort,6)}
+.tg.sp .c-pct,.tg.sp .h-progress{order:var(--o-progress,7)}
+.tg.sp .c-st,.tg.sp .h-status{order:var(--o-status,8)}
+.tg.sp .c-code,.tg.sp .h-code{order:var(--o-code,9)}
+.tg.sp .c-type,.tg.sp .h-type{order:var(--o-type,10)}
+.tg.sp .c-doneon,.tg.sp .h-doneOn{order:var(--o-doneOn,11)}
+.tg.sp .c-parent,.tg.sp .h-parent{order:var(--o-parent,12)}
+.tg.sp .c-open,.tg.sp .h-open{order:1000}
+/* header drag: grab cursor, faded while dragging, a bar where it will land */
+.tg.sp .th{cursor:grab;position:relative}
+.tg.sp .th.dragging{opacity:.4}
+.tg.sp .th.ins-before{box-shadow:inset 3px 0 0 var(--accent)}
+.tg.sp .th.ins-after{box-shadow:inset -3px 0 0 var(--accent)}
