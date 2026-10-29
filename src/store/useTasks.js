@@ -565,7 +565,9 @@ export function useTasks() {
           const f = findTask(p, parentId);
           if (!f) return;
           const type = fields.type || childTypeFor(p, f.t.type);
-          f.c.tasks.push(makeTask(p, { ...fields, type, id, parent: parentId, ...(f.c.id === 'backlog' ? { status: '' } : {}) }));
+          // a new sub-item starts in its parent's status, so adding one never changes the status the parent already has
+          const status = f.c.id === 'backlog' ? '' : fields.status || f.t.status || undefined;
+          f.c.tasks.push(makeTask(p, { ...fields, type, id, parent: parentId, ...(status !== undefined ? { status } : {}) }));
         };
         if (nz(fields.effort) > 0 && guardHours(run, { cause: [id] })) return id;
         update(run);

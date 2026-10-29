@@ -149,7 +149,9 @@ export function rollupContainer(S, c) {
     const p = ws ? e / ws : 0;
     pct.set(t.id, p);
     t.pct = Math.round(p * 1000) / 1000;
-    t.status = derivedStatus(S, p);
+    // children that all share one status give it to the parent as it is (a Blocked or In review item stays so); otherwise the progress decides
+    const same = ks.every((k) => k.status === ks[0].status) && statusesOf(S).some((x) => x.id === ks[0].status);
+    t.status = same ? ks[0].status : derivedStatus(S, p);
     const fin = statusesOf(S).find((x) => x.id === t.status);
     if (fin && fin.done) {
       const d = ks.reduce((a, k) => (k.doneOn && k.doneOn > a ? k.doneOn : a), '');
