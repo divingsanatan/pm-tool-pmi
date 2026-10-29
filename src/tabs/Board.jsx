@@ -52,7 +52,7 @@ function Column({ s, tasks, onOpen, onAdd }) {
         e.preventDefault();
         setOver(false);
         const id = e.dataTransfer.getData('text/plain');
-        if (id) tk.patch(id, { status: s.id });
+        if (id) tk.setStatus(id, s.id);
       }}
     >
       <div className="k-hd"><StatusIcon status={s} size={16} /><b>{s.label}</b><span className="msg">{tasks.length}</span></div>

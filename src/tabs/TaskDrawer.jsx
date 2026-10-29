@@ -79,11 +79,8 @@ export default function TaskDrawer({ taskId, onClose, onOpen }) {
           </label>
           {!back && (
             <label className="fld">Status
-              {parent ? (
-                <span className="c ro-field"><StatusIcon status={statusOf(S, t.status)} size={16} /> {statusOf(S, t.status).label} · {pc(t.pct, 0)}</span>
-              ) : (
-                <SelectCell value={t.status} options={statusesOf(S).map((s) => [s.id, s.label])} onCommit={(v) => tk.patch(t.id, { status: v })} />
-              )}
+              <SelectCell value={t.status} options={statusesOf(S).map((s) => [s.id, s.label])} onCommit={(v) => tk.setStatus(t.id, v)} />
+              {parent && <span className="msg">{t.statusSet ? 'Set by hand' : 'Calculated from child items'} · {pc(t.pct, 0)} done{t.statusSet && <> · <button className="linkbtn" onClick={() => tk.autoStatus(t.id)}>Make it automatic</button></>}</span>}
             </label>
           )}
           <div className="fld">Assignees

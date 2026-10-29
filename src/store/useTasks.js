@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react';
 import { useStore } from './StoreContext';
 import { useUI } from '../components/UI';
 import { alignSprintDates, normalize, sprintHours } from '../lib/calc';
-import { PRIORITIES, childTypeFor, containerById, findTask, firstOpenStatus, isDoneStatus, makeTask, statusPct, uid } from '../lib/tasks';
+import { PRIORITIES, childTypeFor, containerById, findTask, firstOpenStatus, isDoneStatus, makeTask, statusPct, statusesOf, uid } from '../lib/tasks';
 import { leafTasks, rootTasks, subtreeIds } from '../lib/hier';
 import { cleanEffort, nz } from '../lib/format';
 import { DAY, fdate, pd } from '../lib/dates';
@@ -594,11 +594,60 @@ export function useTasks() {
         if (('start' in patch || 'due' in patch) && guardDates([id], patch)) return;
         const run = (p) => {
           const f = findTask(p, id);
-          if (f) Object.assign(f.t, patch);
+          if (f) {
+            Object.assign(f.t, patch);
+            if ('status' in patch && f.c.tasks.some((k) => k.parent === f.t.id)) f.t.statusSet = true; // a status chosen by hand on a parent stays
+          }
         };
         if ('effort' in patch && guardHours(run, { cause: [id], lockDown: true })) return;
         update(run);
         warnOffDays([id], patch);
+      },
+      // Change the status of one or several work items. This is the one call the List, Board, drawer and bulk bar use.
+      // Every item can carry its own status, parents included. A parent's status is automatic (from its child items) until it
+      // is set here; autoStatus() hands it back to the roll-up. Closing items that still have open child items asks first,
+      // like ClickUp: close the child items too, or only the chosen ones.
+      setStatus(ids, statusId) {
+        const list = [].concat(ids);
+        const S0 = sRef.current;
+        const target = statusesOf(S0).find((x) => x.id === statusId);
+        if (!target) return;
+        const apply = (set) =>
+          update((p) =>
+            set.forEach((id) => {
+              const f = findTask(p, id);
+              if (!f || f.c.id === 'backlog') return; // the Backlog has no statuses
+              f.t.status = statusId;
+              if (f.c.tasks.some((k) => k.parent === f.t.id)) f.t.statusSet = true;
+            })
+          );
+        if (!target.done) return void apply(list);
+        const chosen = new Set(list);
+        const open = new Set();
+        list.forEach((id) => {
+          const f = findTask(S0, id);
+          if (!f || f.c.id === 'backlog') return;
+          subtreeIds(f.c.tasks, id).slice(1).forEach((x) => {
+            const k = f.c.tasks.find((t) => t.id === x);
+            if (k && !chosen.has(x) && !isDoneStatus(S0, k.status)) open.add(x);
+          });
+        });
+        if (!open.size) return void apply(list);
+        const n = open.size;
+        withDecision({
+          text: n + ' child item' + (n === 1 ? ' is' : 's are') + ' not ' + target.label.toLowerCase() + ' yet. Set ' + (n === 1 ? 'it' : 'them') + ' to ' + target.label + ' as well?',
+          actions: [
+            { label: 'Yes, ' + target.label + ' too', primary: true, onClick: () => { clear(); apply(list.concat([...open])); } },
+            { label: 'Only the selected', onClick: () => { clear(); apply(list); } },
+          ],
+        });
+      },
+      // a parent goes back to showing the status calculated from its child items
+      autoStatus(id) {
+        update((p) => {
+          const f = findTask(p, id);
+          if (f) delete f.t.statusSet;
+        });
       },
       // pull every work item's start and due date of one sprint back inside that sprint
       alignDates(sprintId) {
@@ -647,7 +696,10 @@ export function useTasks() {
         const run = (p) => {
           ids.forEach((id) => {
             const f = findTask(p, id);
-            if (f) Object.assign(f.t, patch);
+            if (f) {
+              Object.assign(f.t, patch);
+              if ('status' in patch && f.c.tasks.some((k) => k.parent === f.t.id)) f.t.statusSet = true;
+            }
           });
         };
         if ('effort' in patch && guardHours(run, { cause: ids, lockDown: true })) return;

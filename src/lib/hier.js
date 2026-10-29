@@ -125,6 +125,7 @@ export function rollupContainer(S, c) {
     const ks = kids.get(t.id) || [];
     if (!ks.length) {
       delete t.pct;
+      delete t.statusSet; // only a parent can carry its own status
       pct.set(t.id, back ? 0 : statusPct(S, t.status));
       return;
     }
@@ -149,13 +150,21 @@ export function rollupContainer(S, c) {
     const p = ws ? e / ws : 0;
     pct.set(t.id, p);
     t.pct = Math.round(p * 1000) / 1000;
-    // children that all share one status give it to the parent as it is (a Blocked or In review item stays so); otherwise the progress decides
-    const same = ks.every((k) => k.status === ks[0].status) && statusesOf(S).some((x) => x.id === ks[0].status);
-    t.status = same ? ks[0].status : derivedStatus(S, p);
+    // A parent's status is automatic until someone sets it by hand (t.statusSet, like ClickUp: every item can carry its own status).
+    // Automatic: children that all share one status give it to the parent as it is (a Blocked or In review item stays so); otherwise the progress decides.
+    // Progress (pct) and earned value always come from the child items, whatever status the parent shows.
+    const manual = t.statusSet && statusesOf(S).some((x) => x.id === t.status);
+    if (!manual) {
+      delete t.statusSet;
+      const same = ks.every((k) => k.status === ks[0].status) && statusesOf(S).some((x) => x.id === ks[0].status);
+      t.status = same ? ks[0].status : derivedStatus(S, p);
+    }
     const fin = statusesOf(S).find((x) => x.id === t.status);
     if (fin && fin.done) {
-      const d = ks.reduce((a, k) => (k.doneOn && k.doneOn > a ? k.doneOn : a), '');
-      if (d) t.doneOn = d;
+      if (!manual) {
+        const d = ks.reduce((a, k) => (k.doneOn && k.doneOn > a ? k.doneOn : a), '');
+        if (d) t.doneOn = d;
+      }
     } else delete t.doneOn;
   };
   c.tasks.filter((t) => !t.parent).forEach(visit);

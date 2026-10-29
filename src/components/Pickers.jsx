@@ -3,7 +3,7 @@ import { useTasks } from '../store/useTasks';
 import { useUI } from './UI';
 import Menu from './Menu';
 import { AvatarStack, Flag, StatusIcon, TypeBadge } from './Bits';
-import { PRIORITIES, nameOf, statusOf, statusesOf, typeOf, typesOf } from '../lib/tasks';
+import { PRIORITIES, findTask, nameOf, statusOf, statusesOf, typeOf, typesOf } from '../lib/tasks';
 
 // Several stakeholders can be assigned to one work item
 export function AssigneeMenu({ task, className = 'x ass-btn', label, size = 24 }) {
@@ -28,17 +28,31 @@ export function PriorityMenu({ task, className = 'x ass-btn' }) {
   return <Menu className={className} label={<Flag priority={task.priority} />} title="Priority" items={items} />;
 }
 
-export function StatusMenu({ task, className = 'x st-btn' }) {
+// Status of a work item. Every item can be changed, parents included (a parent is automatic, from its child items, until you pick one).
+// pill: the coloured label for the List's Status column; otherwise just the round icon.
+export function StatusMenu({ task, className = 'x st-btn', pill = false }) {
   const { S } = useStore();
   const tk = useTasks();
   const ui = useUI();
+  const f = findTask(S, task.id);
+  const parent = !!f && f.c.tasks.some((k) => k.parent === task.id);
   const items = statusesOf(S).map((s) => ({
     label: (<span className="sm-item"><StatusIcon status={s} size={14} />{s.label}</span>),
     active: s.id === task.status,
-    onClick: () => tk.patch(task.id, { status: s.id }),
+    onClick: () => tk.setStatus(task.id, s.id),
   }));
+  if (parent) items.push({ sep: true }, { label: 'Automatic (from child items)', active: !task.statusSet, disabled: !task.statusSet, onClick: () => tk.autoStatus(task.id) });
   items.push({ sep: true }, { label: 'Edit statuses…', onClick: ui.openStatuses });
-  return <Menu className={className} label={<StatusIcon status={statusOf(S, task.status)} />} title="Change status" items={items} />;
+  const st = statusOf(S, task.status);
+  const title = 'Change status' + (parent ? (task.statusSet ? ' (set by hand)' : ' (calculated from child items until you set it)') : '');
+  return (
+    <Menu
+      className={pill ? 'st-pill' : className}
+      label={pill ? (<><StatusIcon status={st} size={13} /><span>{st.label}</span>{parent && !task.statusSet && <i className="st-auto" aria-hidden="true">auto</i>}</>) : (<StatusIcon status={st} />)}
+      title={title}
+      items={items}
+    />
+  );
 }
 
 // the type of a work item (Epic, Story, Task, Bug, or your own); the badge is the button

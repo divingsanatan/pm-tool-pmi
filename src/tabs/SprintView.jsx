@@ -89,12 +89,16 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
         const b = e.currentTarget.getBoundingClientRect();
         const y = (e.clientY - b.top) / b.height;
         const zone = y < 0.28 ? 'before' : y > 0.72 ? 'after' : 'inside';
+        // grouped by status, a row dragged over another status group is a status change: the group handles it, no reorder line
+        if (ctx.by === 'status' && drag.status !== ctx.grp && zone !== 'inside') { if (over) setOver(null); return; }
         if (!over || over.id !== t.id || over.zone !== zone) setOver({ id: t.id, zone });
       }}
       onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(null); }}
       onDrop={(e) => {
+        if (!over || over.id !== t.id) return; // not a reorder / nest drop: the status group (if any) takes it
         e.preventDefault();
-        if (over && over.id === t.id) drop(t, over.zone);
+        e.stopPropagation();
+        drop(t, over.zone);
         setDrag(null);
         setOver(null);
       }}
@@ -110,9 +114,9 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
             e.dataTransfer.setData('text/plain', t.id);
             const row = e.currentTarget.closest('.tg-row');
             if (row) e.dataTransfer.setDragImage(row, 12, 12);
-            setDrag({ id: t.id, sub: new Set(subtreeIds(tasks, t.id)) });
+            setDrag({ id: t.id, status: t.status, sub: new Set(subtreeIds(tasks, t.id)) });
           }}
-          onDragEnd={() => { setDrag(null); setOver(null); }}
+          onDragEnd={() => { setDrag(null); setOver(null); ctx.setGover && ctx.setGover(null); }}
         >⋮⋮</span>
         <input type="checkbox" className="tg-sel" checked={selected} onChange={() => {}} onClick={(e) => onSelect(t.id, e.shiftKey)} aria-label={'Select ' + t.name} />
         {parent ? (
@@ -121,11 +125,7 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
           <span className="w-exp sp" aria-hidden="true" />
         )}
         <TypeMenu task={t} size={16} />
-        {parent ? (
-          <span className="x st-btn ro" title="Status is calculated from its child items"><StatusIcon status={st} /></span>
-        ) : (
-          <StatusMenu task={t} />
-        )}
+        <StatusMenu task={t} />
         <NameInput t={t} focus={focus} bold={parent} done={done} keys={keys} />
         {parent && <span className="subc" title="Direct child items done">⑂ {kidsDone}/{kidList.length}</span>}
         <AddChildMenu parent={t} onAdded={(id) => { expand(t.id); ask({ id, select: true }); }} />
@@ -156,7 +156,7 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
       <div className="c-pct w-pct">
         {pct == null ? <span className="msg">–</span> : (<><div className="bar"><i style={{ width: Math.min(100, pct * 100) + '%' }} /></div><span className="mono">{pc(pct, 0)}</span></>)}
       </div>
-      <div className="c-st msg" title={parent ? 'Status is calculated from its child items' : undefined}>{st.label}</div>
+      <div className="c-st"><StatusMenu task={t} pill /></div>
       <div className="c-open">
         <button className="x" onClick={() => onOpen(t.id)} aria-label="Open details" title="Open details">⤢</button>
         <Menu className="x" label="⋯" title="More actions" items={actions} />
@@ -415,6 +415,7 @@ export default function SprintView() {
   const [focus, setFocus] = useState(null); // name box to focus after an item is added or moved
   const [drag, setDrag] = useState(null); // { id, sub } while a row is dragged
   const [over, setOver] = useState(null); // { id, zone } the row it is over
+  const [gover, setGover] = useState(null); // status group a row is being dragged over
   const [open, setOpen] = useState(null); // task shown in the drawer
   const [exp, setExp] = useState({});
   const [shut, setShut] = useState({});
@@ -607,14 +608,32 @@ export default function SprintView() {
         <SprintPanel S={S} c={c} E={E} cr={cr} tk={tk} setNav={setNav} />
       ) : view === 'list' ? (
         <>
-        <p className="msg wbs-help">Click a name to edit it · Enter adds an item below · Tab / Shift+Tab indent and outdent · Alt+↑ / ↓ reorder · drag ⋮⋮ to reorder or drop onto an item to nest · Σ values add up from the child items. Dragging to reorder is clearest with Group by: None.</p>
+        <p className="msg wbs-help">Click a name to edit it · Enter adds an item below · Tab / Shift+Tab indent and outdent · Alt+↑ / ↓ reorder · drag ⋮⋮ to reorder or drop onto an item to nest, or (grouped by Status) drop into another status group to change its status · click a Status to change it · Σ values add up from the child items.</p>
         <div className="scroll sp-scroll">
           <div className="tg sp">
             <div className="tg-row tg-h"><div>WBS</div><div className="tg-name"><TriBox all={tasks.length > 0 && chosen.length === tasks.length} some={chosen.length > 0} onChange={(e) => setMany(tasks.map((t) => t.id), e.target.checked)} label="Select all tasks" />Name</div><div>Assignee</div><div>Start</div><div>Due</div><div>Priority</div><div>Effort (h)</div><div>Progress</div><div>Status</div><div /></div>
             {groups.map((g) => {
               const hide = shut[g.key];
               return (
-                <div key={g.key} className="tg-group">
+                <div
+                  key={g.key}
+                  className={'tg-group' + (gover === g.key ? ' drop-group' : '')}
+                  onDragOver={(e) => {
+                    if (by !== 'status' || !drag || drag.status === g.key) return;
+                    e.preventDefault(); // drop here to set the status of the dragged work item
+                    if (gover !== g.key) setGover(g.key);
+                  }}
+                  onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setGover(null); }}
+                  onDrop={(e) => {
+                    if (by === 'status' && drag && drag.status !== g.key) {
+                      e.preventDefault();
+                      tk.setStatus(drag.id, g.key);
+                    }
+                    setDrag(null);
+                    setOver(null);
+                    setGover(null);
+                  }}
+                >
                   <div className="g-hd">
                     <TriBox
                       all={g.tasks.length > 0 && g.tasks.flatMap(allBranchIds).every((id) => sel.has(id))}
@@ -627,7 +646,7 @@ export default function SprintView() {
                     <span className="msg">{g.tasks.length}</span>
                   </div>
                   {!hide && g.tasks.map((t) => (
-                    <Branch key={t.id} t={t} depth={0} ctx={{ kids, visible: shown, isExp, toggle, onOpen: setOpen, sel, onSelect: toggleOne, filtering, tk, maxDepth, wbsOf, drag, over, setDrag, setOver, drop, focus, ask, expand, tasks: c.tasks }} />
+                    <Branch key={t.id} t={t} depth={0} ctx={{ kids, visible: shown, isExp, toggle, onOpen: setOpen, sel, onSelect: toggleOne, filtering, tk, maxDepth, wbsOf, drag, over, setDrag, setOver, drop, focus, ask, expand, tasks: c.tasks, by, grp: g.key, setGover }} />
                   ))}
                   {!hide && <div className="tg-add"><AddRow onAdd={addTo(g.defaults)} /></div>}
                 </div>
