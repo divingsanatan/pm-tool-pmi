@@ -115,7 +115,11 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
           onDragEnd={() => { setDrag(null); setOver(null); }}
         >⋮⋮</span>
         <input type="checkbox" className="tg-sel" checked={selected} onChange={() => {}} onClick={(e) => onSelect(t.id, e.shiftKey)} aria-label={'Select ' + t.name} />
-        <button className="x tg-exp" onClick={onToggle} aria-label={expanded ? 'Hide child items' : 'Show child items'} title={parent ? (expanded ? 'Collapse' : 'Expand') : 'Add a subtask'}>{expanded ? '▾' : '▸'}</button>
+        {parent ? (
+          <button className="x tg-exp" onClick={onToggle} aria-label={expanded ? 'Hide child items' : 'Show child items'} title={expanded ? 'Collapse' : 'Expand'}>{expanded ? '▾' : '▸'}</button>
+        ) : (
+          <span className="w-exp sp" aria-hidden="true" />
+        )}
         <TypeMenu task={t} size={16} />
         {parent ? (
           <span className="x st-btn ro" title="Status is calculated from its child items"><StatusIcon status={st} /></span>
@@ -172,11 +176,6 @@ function Branch({ t, depth, ctx }) {
       {expanded && (
         <>
           {list.map((k) => (<Branch key={k.id} t={k} depth={depth + 1} ctx={ctx} />))}
-          {!ctx.filtering && (
-            <div className="tg-row sub" style={{ paddingLeft: 40 + depth * 18 }}>
-              <div className="tg-name"><AddRow label="Add subtask" onAdd={(n) => ctx.tk.addChild(t.id, { name: n })} /></div>
-            </div>
-          )}
         </>
       )}
     </>
