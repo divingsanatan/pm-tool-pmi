@@ -480,20 +480,22 @@ export default function SprintView() {
   groups.forEach((g) => !shut[g.key] && g.tasks.forEach((t) => branchIds(t).forEach((id) => !order.includes(id) && order.push(id))));
   const visible = new Set(tasks.map((t) => t.id));
   const chosen = [...sel].filter((id) => visible.has(id));
+  // selecting a parent selects every work item below it (collapsed or not); clearing it clears them too
+  const withKids = (id) => subtreeIds(c.tasks, id).filter((x) => shown.has(x));
   const toggleOne = (id, range) => {
     const n = new Set(sel);
+    const on = !sel.has(id);
+    const mark = (x) => withKids(x).forEach((k) => (on ? n.add(k) : n.delete(k)));
     if (range && last.current && order.includes(last.current) && order.includes(id)) {
       const a = order.indexOf(last.current), b = order.indexOf(id);
-      const on = !sel.has(id);
-      order.slice(Math.min(a, b), Math.max(a, b) + 1).forEach((x) => (on ? n.add(x) : n.delete(x)));
-    } else if (n.has(id)) n.delete(id);
-    else n.add(id);
+      order.slice(Math.min(a, b), Math.max(a, b) + 1).forEach(mark);
+    } else mark(id);
     last.current = id;
     setSel(n);
   };
   const setMany = (ids, on) => {
     const n = new Set(sel);
-    ids.forEach((x) => (on ? n.add(x) : n.delete(x)));
+    ids.forEach((x) => withKids(x).forEach((k) => (on ? n.add(k) : n.delete(k))));
     setSel(n);
   };
   const addTo = (defaults) => (name) => tk.add(c.id, { name, ...defaults });
