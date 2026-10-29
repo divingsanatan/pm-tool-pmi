@@ -18,6 +18,7 @@ import '../sprintlist.css';
 import { WEEKDAYS_SHORT, calendarOf, sprintDayList } from '../lib/offdays';
 import BulkBar from '../components/BulkBar';
 import NameInput from '../components/NameInput';
+import { LIST_COLS, useListCols } from '../lib/listCols';
 import TaskDrawer from './TaskDrawer';
 import ChangeDrawer from './ChangeDrawer';
 import DateChangeDialog from '../components/DateChangeDialog';
@@ -45,6 +46,7 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
   const milestone = ty.milestone;
   const pct = parent ? nz(t.pct) : statusPct(S, t.status);
   const st = statusOf(S, t.status);
+  const upName = t.parent ? ((tasks.find((x) => x.id === t.parent) || {}).name || '') : '';
   const keys = {
     enter: () => ask({ id: tk.addSibling(t.id, { name: 'New ' + ty.label.toLowerCase() }), select: true }),
     indent: () => { tk.indent(t.id); ask({ id: t.id }); },
@@ -157,6 +159,10 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
         {pct == null ? <span className="msg">–</span> : (<><div className="bar"><i style={{ width: Math.min(100, pct * 100) + '%' }} /></div><span className="mono">{pc(pct, 0)}</span></>)}
       </div>
       <div className="c-st"><StatusMenu task={t} pill /></div>
+      <div className="c-code mono msg" title="Work item ID">{t.code || '–'}</div>
+      <div className="c-type msg">{ty.label}</div>
+      <div className="c-doneon msg">{t.doneOn ? fdate(t.doneOn) : '–'}</div>
+      <div className="c-parent msg" title={upName}>{upName || '–'}</div>
       <div className="c-open">
         <button className="x" onClick={() => onOpen(t.id)} aria-label="Open details" title="Open details">⤢</button>
         <Menu className="x" label="⋯" title="More actions" items={actions} />
@@ -423,6 +429,7 @@ export default function SprintView() {
   const last = useRef(null); // last clicked id, for shift-click range selection
 
   const ui = useUI();
+  const lc = useListCols();
   const people = S.people.filter((p) => p.name);
   const kids = useMemo(() => kidsMap(c ? c.tasks : []), [c]);
   // items that match the search and assignee filter; their parents stay visible so you can see where they live
@@ -569,6 +576,7 @@ export default function SprintView() {
           </>
         )}
         <span style={{ flex: 1 }} />
+        {view === 'list' && <Menu className="btn" label="Columns ▾" title="Choose which columns the list shows" items={lc.items()} />}
         {view === 'list' && <button className="btn" onClick={ui.openTypes} title="Add or edit work item types">Types</button>}
         <button className="btn" onClick={ui.openStatuses} title="Add or edit task statuses">Statuses</button>
         <button className="btn primary" onClick={quickAdd}>+ Task</button>
@@ -612,8 +620,18 @@ export default function SprintView() {
         <>
         <p className="msg wbs-help">Click a name to edit it · Enter adds an item below · Tab / Shift+Tab indent and outdent · Alt+↑ / ↓ reorder · drag ⋮⋮ to reorder or drop onto an item to nest, or (grouped by Status) drop into another status group to change its status · click a Status to change it · Σ values add up from the child items.</p>
         <div className="scroll sp-scroll">
-          <div className="tg sp">
-            <div className="tg-row tg-h"><div>WBS</div><div className="tg-name"><TriBox all={tasks.length > 0 && chosen.length === tasks.length} some={chosen.length > 0} onChange={(e) => setMany(tasks.map((t) => t.id), e.target.checked)} label="Select all tasks" />Name</div><div>Assignee</div><div>Start</div><div>Due</div><div>Priority</div><div>Effort (h)</div><div>Progress</div><div>Status</div><div /></div>
+          <div className={'tg sp' + LIST_COLS.filter((c) => !lc.has(c.id)).map((c) => ' no-' + c.id).join('')} style={{ '--tg-cols': lc.template, '--tg-min': lc.minWidth + 'px' }}>
+            <div className="tg-row tg-h">
+              {LIST_COLS.slice(0, 1).map((c) => (<div key={c.id} className="h-wbs">WBS</div>))}
+              <div className="tg-name"><TriBox all={tasks.length > 0 && chosen.length === tasks.length} some={chosen.length > 0} onChange={(e) => setMany(tasks.map((t) => t.id), e.target.checked)} label="Select all tasks" />Name</div>
+              {LIST_COLS.slice(1).map((c) => (
+                <div key={c.id} className={'th h-' + c.id}>
+                  <span>{c.label}</span>
+                  <Menu className="x th-x" label="▾" title={'Column options: ' + c.label} items={[{ label: 'Hide column', onClick: () => lc.toggle(c.id) }]} />
+                </div>
+              ))}
+              <div className="h-open"><Menu className="x th-plus" label="＋" title="Add or remove columns" items={lc.items()} /></div>
+            </div>
             {groups.map((g) => {
               const hide = shut[g.key];
               return (
@@ -656,11 +674,11 @@ export default function SprintView() {
             })}
             {c.tasks.length > 0 && (
               <div className="tg-row tg-tot">
-                <div /><div className="tg-name"><b>Total</b> <span className="msg">{sum.items} work item{sum.items === 1 ? '' : 's'} · {sum.leaves} at the lowest level</span></div>
-                <div /><div className="c-start msg">{sum.start ? fdate(sum.start) : ''}</div><div className="c-due msg">{sum.end ? fdate(sum.end) : ''}</div><div />
+                <div className="h-wbs" /><div className="tg-name"><b>Total</b> <span className="msg">{sum.items} work item{sum.items === 1 ? '' : 's'} · {sum.leaves} at the lowest level</span></div>
+                <div className="h-assignee" /><div className="c-start msg">{sum.start ? fdate(sum.start) : ''}</div><div className="c-due msg">{sum.end ? fdate(sum.end) : ''}</div><div className="h-priority" />
                 <div className="c-eff mono">{hrsf(sum.hrs)}</div>
                 <div className="c-pct w-pct">{sum.pct == null ? null : (<><div className="bar"><i style={{ width: Math.min(100, sum.pct * 100) + '%' }} /></div><span className="mono">{pc(sum.pct, 0)}</span></>)}</div>
-                <div /><div />
+                <div className="h-status" /><div className="h-code" /><div className="h-type" /><div className="h-doneOn" /><div className="h-parent" /><div />
               </div>
             )}
             {!groups.length && <div className="empty">{filtering ? 'No tasks match your search or filter.' : 'No tasks yet. Use + Task to add the first one.'}</div>}
