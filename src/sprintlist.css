@@ -52,7 +52,7 @@
 .tg.sp.no-wbs .c-wbs,.tg.sp.no-wbs .h-wbs,.tg.sp.no-assignee .c-ass,.tg.sp.no-assignee .h-assignee,.tg.sp.no-start .c-start,.tg.sp.no-start .h-start,
 .tg.sp.no-due .c-due,.tg.sp.no-due .h-due,.tg.sp.no-priority .c-pri,.tg.sp.no-priority .h-priority,.tg.sp.no-effort .c-eff,.tg.sp.no-effort .h-effort,
 .tg.sp.no-progress .c-pct,.tg.sp.no-progress .h-progress,.tg.sp.no-status .c-st,.tg.sp.no-status .h-status,.tg.sp.no-code .c-code,.tg.sp.no-code .h-code,
-.tg.sp.no-type .c-type,.tg.sp.no-type .h-type,.tg.sp.no-doneOn .c-doneon,.tg.sp.no-doneOn .h-doneOn,.tg.sp.no-parent .c-parent,.tg.sp.no-parent .h-parent{display:none!important}
+.tg.sp.no-tags .c-tags,.tg.sp.no-tags .h-tags,.tg.sp.no-type .c-type,.tg.sp.no-type .h-type,.tg.sp.no-doneOn .c-doneon,.tg.sp.no-doneOn .h-doneOn,.tg.sp.no-parent .c-parent,.tg.sp.no-parent .h-parent{display:none!important}
 
 /* column order: cells keep their place in the markup and are positioned with CSS order (see lib/listCols.js) */
 .tg.sp .c-wbs,.tg.sp .h-wbs{order:0}
@@ -64,6 +64,7 @@
 .tg.sp .c-eff,.tg.sp .h-effort{order:var(--o-effort,6)}
 .tg.sp .c-pct,.tg.sp .h-progress{order:var(--o-progress,7)}
 .tg.sp .c-st,.tg.sp .h-status{order:var(--o-status,8)}
+.tg.sp .c-tags,.tg.sp .h-tags{order:var(--o-tags,8)}
 .tg.sp .c-code,.tg.sp .h-code{order:var(--o-code,9)}
 .tg.sp .c-type,.tg.sp .h-type{order:var(--o-type,10)}
 .tg.sp .c-doneon,.tg.sp .h-doneOn{order:var(--o-doneOn,11)}
@@ -74,6 +75,49 @@
 .tg.sp .th.dragging{opacity:.4}
 .tg.sp .th.ins-before{box-shadow:inset 3px 0 0 var(--accent)}
 .tg.sp .th.ins-after{box-shadow:inset -3px 0 0 var(--accent)}
+
+/* One alignment for every column: left, starting at the same inset as the heading above it (ClickUp does the same). Numbers, dates, avatars,
+   flags, status pills, progress bars and tags all begin on the heading's left edge. */
+.tg.sp .th{padding-left:7px;justify-content:flex-start;text-align:left}
+.tg.sp .h-wbs{padding-left:4px}
+.tg.sp .c-ass,.tg.sp .c-pri{display:flex;align-items:center;justify-content:flex-start;padding-left:4px}
+.tg.sp .c-st,.tg.sp .c-tags,.tg.sp .c-pct,.tg.sp .c-code,.tg.sp .c-type,.tg.sp .c-doneon,.tg.sp .c-parent{padding-left:7px}
+.tg.sp .c-pct .mono{text-align:left;min-width:34px}
+.tg.sp .c-eff .c.n,.tg.sp .c-eff .cell.n{text-align:left}
+.tg.sp .c-start .c,.tg.sp .c-due .c,.tg.sp .c-eff .c{padding:4px 6px}
+.tg.sp .c-start .cell,.tg.sp .c-due .cell,.tg.sp .c-eff .cell{padding:5px 7px}
+.tg.sp .tg-tot>div:not(.tg-name):not(.c-open){padding-left:7px}
+
+/* tags */
+.tags{display:inline-flex;align-items:center;gap:4px;min-width:0;overflow:hidden}
+.tagc{display:inline-flex;align-items:center;gap:3px;min-width:0;max-width:130px;padding:0 8px;border-radius:999px;font-size:12px;line-height:18px;white-space:nowrap;border:1px solid hsl(var(--h) 45% 50% / .55);background:hsl(var(--h) 60% 50% / .16);color:var(--ink,inherit)}
+.tagc-t{overflow:hidden;text-overflow:ellipsis}
+.tagc-x{border:0;background:none;color:inherit;cursor:pointer;padding:0 0 0 2px;font-size:10px;line-height:1;opacity:.7}
+.tag-more{font-size:12px;color:var(--muted);white-space:nowrap}
+.tag-btn{display:inline-flex;align-items:center;max-width:100%;min-width:0;background:none;border:0;padding:0 2px;cursor:pointer;color:var(--muted);font:inherit;font-size:12px}
+.tag-empty{opacity:.65}
+.tag-btn.inl.none{opacity:0;padding:0 5px}
+.tg-row:hover .tag-btn.inl.none,.tag-btn.inl.none:focus-visible{opacity:.8}
+.tags-inline{display:inline-flex;flex:0 1 auto;min-width:0;max-width:45%}
+.tg.sp:not(.no-tags) .tags-inline{display:none}
+.tag-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:hsl(var(--h) 60% 50%)}
+.tag-add{display:flex;gap:6px;padding:4px 2px 2px}
+.tag-add .c{flex:1;min-width:0}
+.mfoot{padding:2px}
+.mfoot:not(:first-child){border-top:1px solid var(--line);margin-top:4px;padding-top:6px}
+.menu.wide{min-width:290px}
+@media (hover:none){.tag-btn.inl.none{opacity:.7}}
+
+/* a parent's own hours and dates (the box behind the Σ cells) */
+.own-btn{border:0;background:none;cursor:pointer;font:inherit}
+.own-btn:hover{background:var(--hover,rgba(127,127,127,.12));border-radius:6px}
+.own-dot{margin-left:5px;padding:0 5px;border-radius:999px;font-style:normal;font-size:10.5px;line-height:15px;background:var(--accent);color:#fff;vertical-align:middle}
+.own-pop{padding:6px 8px 4px;display:grid;gap:8px;font-size:13px}
+.own-h{font-weight:600}
+.own-r{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.own-r .c{width:150px}
+.own-t{border-top:1px solid var(--line);padding-top:6px}
+.own-n{margin:0;font-size:12px;color:var(--muted)}
 
 /* Tablets and phones: each work item is a card. The cells wrap onto as many lines as they need instead of sharing fixed columns, so they can never sit on top of each other. */
 @media (max-width:900px){
@@ -90,6 +134,9 @@
   .tg.sp .c-pct{flex:1 1 150px}
   .tg.sp .c-st{flex:0 1 auto;max-width:100%}
   .tg.sp .c-open{flex:0 0 auto;margin-left:auto}
+  .tg.sp .tags-inline{display:inline-flex}
+  .tg.sp .c-tags{flex:1 1 100%;padding-left:4px}
+  .tg.sp .c-ass,.tg.sp .c-pri,.tg.sp .c-st,.tg.sp .c-pct,.tg.sp .c-tags{padding-left:0}
   .tg.sp .c-start .c,.tg.sp .c-due .c,.tg.sp .c-eff .c{font-size:16px}
   .tg.sp .tg-tot>div:empty{display:none}
   .tg.sp .w-grip{display:none}

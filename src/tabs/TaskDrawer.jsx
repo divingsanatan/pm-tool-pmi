@@ -4,9 +4,9 @@ import { useTasks } from '../store/useTasks';
 import { useUI } from '../components/UI';
 import { Area, Cell, SelectCell } from '../components/Field';
 import { Avatar, StatusIcon, TypeBadge } from '../components/Bits';
-import { AssigneeMenu } from '../components/Pickers';
+import { AssigneeMenu, TagChip, TagMenu } from '../components/Pickers';
 import { PRIORITIES, allContainers, childTypeFor, findTask, isDoneStatus, nameOf, statusOf, statusesOf, typeOf, typesOf } from '../lib/tasks';
-import { ancestorsOf, flatTree, subtreeIds } from '../lib/hier';
+import { ancestorsOf, flatTree, rollParts, subtreeIds } from '../lib/hier';
 import { fdate } from '../lib/dates';
 import { clock, dayLabel } from '../lib/activity';
 import { hrsf, nz, pc } from '../lib/format';
@@ -36,6 +36,7 @@ export default function TaskDrawer({ taskId, onClose, onOpen }) {
   const parent = kids.length > 0;
   const effortRolled = parent && kids.some((k) => nz(k.effort) > 0);
   const datesRolled = parent && !back && kids.some((k) => k.start || k.due);
+  const P = parent ? rollParts(S, f.c, t) : null;
   const up = ancestorsOf(f.c.tasks, t.id);
   const below = subtreeIds(f.c.tasks, t.id);
   const milestone = typeOf(S, t.type).milestone;
@@ -97,17 +98,38 @@ export default function TaskDrawer({ taskId, onClose, onOpen }) {
           <label className="fld">Priority
             <SelectCell value={t.priority} options={[['', 'None']].concat(PRIORITIES.map((p) => [p.id, p.label]))} onCommit={(v) => tk.patch(t.id, { priority: v })} />
           </label>
-          <label className="fld">Effort (hours){effortRolled && <span className="msg"> · Σ from children</span>}
-            {effortRolled ? <span className="c ro-field n">{hrsf(t.effort)}</span> : <Cell value={t.effort} type="num" min={0} cls="n" placeholder={milestone ? 'Milestones carry no effort' : '–'} disabled={milestone} onCommit={(v) => tk.patch(t.id, { effort: v })} />}
+          <div className="fld" style={{ gridColumn: '1 / -1' }}>Tags
+            <div className="chips-a">
+              {(t.tags || []).map((g) => (<TagChip key={g} tag={g} onRemove={() => tk.patch(t.id, { tags: t.tags.filter((x) => x !== g) })} />))}
+              <TagMenu task={t} className="btn tag-add-btn" label="+ Tag" />
+            </div>
+          </div>
+          <label className="fld">{parent ? 'Effort total (hours)' : 'Effort (hours)'}{effortRolled && <span className="msg"> · Σ from children{P.ownEffort > 0 ? ' + own' : ''}</span>}
+            {effortRolled ? <span className="c ro-field n">{hrsf(t.effort)}</span> : <Cell value={t.effort} type="num" min={0} cls="n" placeholder={milestone ? 'Milestones carry no effort' : '–'} disabled={milestone} onCommit={(v) => (parent ? tk.patchOwn(t.id, { effort: v }) : tk.patch(t.id, { effort: v }))} />}
           </label>
+          {effortRolled && !milestone && (
+            <label className="fld">Its own estimate (hours)<span className="msg"> · added to the {hrsf(P.kidsEffort)} h from children</span>
+              <Cell value={t.ownEffort == null ? null : t.ownEffort} type="num" min={0} cls="n" placeholder="0" onCommit={(v) => tk.patchOwn(t.id, { effort: v })} />
+            </label>
+          )}
           {!back && (
             <>
               <label className="fld">Start date{datesRolled && <span className="msg"> · Σ from children</span>}
-                {datesRolled ? <span className="c ro-field">{t.start ? fdate(t.start) : '–'}</span> : <Cell value={t.start} type="date" onCommit={(v) => tk.patch(t.id, { start: v })} />}
+                {datesRolled ? <span className="c ro-field">{t.start ? fdate(t.start) : '–'}</span> : parent ? <Cell value={t.ownStart !== undefined ? t.ownStart : t.start} type="date" onCommit={(v) => tk.patchOwn(t.id, { start: v })} /> : <Cell value={t.start} type="date" onCommit={(v) => tk.patch(t.id, { start: v })} />}
               </label>
               <label className="fld">{milestone ? 'Date' : 'Due date'}{datesRolled && <span className="msg"> · Σ from children</span>}
-                {datesRolled ? <span className="c ro-field">{t.due ? fdate(t.due) : '–'}</span> : <Cell value={t.due} type="date" onCommit={(v) => tk.patch(t.id, { due: v })} />}
+                {datesRolled ? <span className="c ro-field">{t.due ? fdate(t.due) : '–'}</span> : parent ? <Cell value={t.ownDue !== undefined ? t.ownDue : t.due} type="date" onCommit={(v) => tk.patchOwn(t.id, { due: v })} /> : <Cell value={t.due} type="date" onCommit={(v) => tk.patch(t.id, { due: v })} />}
               </label>
+              {datesRolled && (
+                <>
+                  <label className="fld">Its own start<span className="msg"> · the earlier of this and the children</span>
+                    <Cell value={t.ownStart || ''} type="date" onCommit={(v) => tk.patchOwn(t.id, { start: v })} />
+                  </label>
+                  <label className="fld">Its own {milestone ? 'date' : 'due date'}<span className="msg"> · the later of this and the children</span>
+                    <Cell value={t.ownDue || ''} type="date" onCommit={(v) => tk.patchOwn(t.id, { due: v })} />
+                  </label>
+                </>
+              )}
               {isDoneStatus(S, t.status) && !parent && (
                 <label className="fld" title="Earned value counts this work in the week it was completed. If empty, the due date is used.">Completed on
                   <Cell value={t.doneOn || ''} type="date" onCommit={(v) => tk.patch(t.id, { doneOn: v || '' })} />
@@ -116,7 +138,7 @@ export default function TaskDrawer({ taskId, onClose, onOpen }) {
             </>
           )}
           {back && <p className="msg" style={{ gridColumn: '1 / -1', margin: 0 }}>Backlog items have no status or dates. Move this item to a sprint to schedule it.</p>}
-          {parent && <p className="msg" style={{ gridColumn: '1 / -1', margin: 0 }}>Hours, dates and status are calculated from its {kids.length} child item{kids.length === 1 ? '' : 's'}. Change them on the children.</p>}
+          {parent && <p className="msg" style={{ gridColumn: '1 / -1', margin: 0 }}>Shown hours add up its {kids.length} child item{kids.length === 1 ? '' : 's'} and its own estimate; dates run from the earliest start to the latest due date of the children and its own dates. Status is calculated from the children. Change the children's values on the children.</p>}
           <label className="fld" style={{ gridColumn: '1 / -1' }}>Location
             <SelectCell value={f.c.id} options={place} onCommit={(v) => tk.move(t.id, v)} />
           </label>

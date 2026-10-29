@@ -6,10 +6,11 @@ import { useUI } from '../components/UI';
 import { Cell } from '../components/Field';
 import Menu from '../components/Menu';
 import { SprintIcon, StatusIcon } from '../components/Bits';
-import { AddChildMenu, AssigneeMenu, PriorityMenu, StatusMenu, TypeMenu } from '../components/Pickers';
+import { AddChildMenu, AssigneeMenu, PriorityMenu, StatusMenu, TagMenu, TypeMenu } from '../components/Pickers';
+import { RollCell } from '../components/OwnValues';
 import { AddRow, TriBox } from '../components/ListBits';
-import { PRIORITIES, SPRINT_STATUSES, containerById, isDoneStatus, isOpen, priorityOf, statusOf, statusPct, statusesOf, typeOf, typesOf } from '../lib/tasks';
-import { fdate, today } from '../lib/dates';
+import { PRIORITIES, SPRINT_STATUSES, allTags, containerById, hasTag, tagHue, isDoneStatus, isOpen, priorityOf, statusOf, statusPct, statusesOf, typeOf, typesOf } from '../lib/tasks';
+import { addDays, fdate, pd, today } from '../lib/dates';
 import { outsideSprint, sprintEvm, stCls } from '../lib/calc';
 import { hrsf, money, nz, pc } from '../lib/format';
 import { crCls, currentBaseline, signedMoney } from '../lib/change';
@@ -40,8 +41,11 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
   const done = isDoneStatus(S, t.status);
   const late = !done && t.due && t.due < today();
   const parent = kidList.length > 0;
+  // A parent shows what its child items add up to (Σ); when it has values of its own they are added on top (click the Σ to enter them).
+  // With nothing rolling up from below, its own estimate and dates are plain editable cells.
   const effortRolled = parent && kidList.some((k) => nz(k.effort) > 0);
   const datesRolled = parent && kidList.some((k) => k.start || k.due);
+  const cc = { tasks };
   const kidsDone = kidList.filter((k) => isDoneStatus(S, k.status)).length;
   const milestone = ty.milestone;
   const pct = parent ? nz(t.pct) : statusPct(S, t.status);
@@ -129,20 +133,25 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
         <TypeMenu task={t} size={16} />
         <StatusMenu task={t} />
         <NameInput t={t} focus={focus} bold={parent} done={done} keys={keys} />
+        <span className="tags-inline"><TagMenu task={t} inline /></span>
         {parent && <span className="subc" title="Direct child items done">⑂ {kidsDone}/{kidList.length}</span>}
         <AddChildMenu parent={t} onAdded={(id) => { expand(t.id); ask({ id, select: true }); }} />
       </div>
       <div className="c-ass"><AssigneeMenu task={t} /></div>
       <div className="c-start">
         {datesRolled ? (
-          <span className="cell roll" title="Rolled up from child items">Σ {t.start ? fdate(t.start) : '–'}</span>
+          <RollCell task={t} c={cc} kind="start" />
+        ) : parent ? (
+          <Cell value={t.ownStart !== undefined ? t.ownStart : t.start} type="date" cls="w-date" label="Start date" disabled={milestone} onCommit={(v) => tk.patchOwn(t.id, { start: v })} />
         ) : (
           <Cell value={t.start} type="date" cls="w-date" label="Start date" disabled={milestone} onCommit={(v) => tk.patch(t.id, { start: v })} />
         )}
       </div>
       <div className="c-due">
         {datesRolled ? (
-          <span className={'cell roll' + (late ? ' od' : '')} title="Rolled up from child items">Σ {t.due ? fdate(t.due) : '–'}</span>
+          <RollCell task={t} c={cc} kind="due" late={late} />
+        ) : parent ? (
+          <Cell value={t.ownDue !== undefined ? t.ownDue : t.due} type="date" cls={'w-date' + (late ? ' od' : '')} label={milestone ? 'Date' : 'Due date'} onCommit={(v) => tk.patchOwn(t.id, { due: v })} />
         ) : (
           <Cell value={t.due} type="date" cls={'w-date' + (late ? ' od' : '')} label={milestone ? 'Date' : 'Due date'} onCommit={(v) => tk.patch(t.id, { due: v })} />
         )}
@@ -150,7 +159,9 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
       <div className="c-pri"><PriorityMenu task={t} /></div>
       <div className="c-eff">
         {effortRolled ? (
-          <span className="cell roll n w-sm" title="Rolled up from child items">Σ {hrsf(t.effort)}</span>
+          <RollCell task={t} c={cc} kind="effort" />
+        ) : parent ? (
+          <Cell value={t.effort} type="num" cls="n w-sm" label="Effort in hours" min={0} placeholder={milestone ? '' : '–'} disabled={milestone} onCommit={(v) => tk.patchOwn(t.id, { effort: v })} />
         ) : (
           <Cell value={t.effort} type="num" cls="n w-sm" label="Effort in hours" min={0} placeholder={milestone ? '' : '–'} disabled={milestone} onCommit={(v) => tk.patch(t.id, { effort: v })} />
         )}
@@ -159,6 +170,7 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
         {pct == null ? <span className="msg">–</span> : (<><div className="bar"><i style={{ width: Math.min(100, pct * 100) + '%' }} /></div><span className="mono">{pc(pct, 0)}</span></>)}
       </div>
       <div className="c-st"><StatusMenu task={t} pill /></div>
+      <div className="c-tags"><TagMenu task={t} /></div>
       <div className="c-code mono msg" title="Work item ID">{t.code || '–'}</div>
       <div className="c-type msg">{ty.label}</div>
       <div className="c-doneon msg">{t.doneOn ? fdate(t.doneOn) : '–'}</div>
@@ -188,6 +200,28 @@ function Branch({ t, depth, ctx }) {
   );
 }
 
+// Due date buckets for "Group by Due date": relative to today, in the order they are listed
+const DUE_GROUPS = [
+  ['overdue', 'Overdue', 'var(--bad)'], ['today', 'Today', 'var(--warn)'], ['tomorrow', 'Tomorrow', 'var(--accent)'],
+  ['week', 'This week', 'var(--accent)'], ['next', 'Next week', 'var(--accent)'], ['later', 'Later', 'var(--muted)'],
+  ['earlier', 'Earlier (done)', 'var(--muted)'], ['none', 'No due date', 'var(--muted)'],
+];
+function dueBucket(S, t) {
+  if (!t.due) return 'none';
+  const now = today();
+  if (t.due < now) return isDoneStatus(S, t.status) ? 'earlier' : 'overdue';
+  if (t.due === now) return 'today';
+  if (t.due === addDays(now, 1)) return 'tomorrow';
+  const sinceMon = (new Date(pd(now)).getUTCDay() + 6) % 7;
+  const weekEnd = addDays(now, 6 - sinceMon);
+  if (t.due <= weekEnd) return 'week';
+  if (t.due <= addDays(weekEnd, 7)) return 'next';
+  return 'later';
+}
+
+// What the List can be grouped by (ClickUp's list): the Backlog offers the ones that do not need a status or dates
+export const GROUP_BYS = [['status', 'Status'], ['assignee', 'Assignee'], ['priority', 'Priority'], ['type', 'Type'], ['tag', 'Tags'], ['due', 'Due date'], ['none', 'None']];
+
 export function groupsOf(tasks, by, S, showEmpty) {
   const who = (t) => t.assignees || [];
   let g;
@@ -201,6 +235,15 @@ export function groupsOf(tasks, by, S, showEmpty) {
     g = S.people.map((p) => ({ key: p.id, label: p.name || '(unnamed)', color: 'var(--accent)', tasks: tasks.filter((t) => who(t).includes(p.id)), defaults: { assignees: [p.id] } })).concat([
       { key: 'un', label: 'Unassigned', color: 'var(--muted)', tasks: tasks.filter((t) => !who(t).length), defaults: { assignees: [] } },
     ]);
+  else if (by === 'type')
+    g = typesOf(S).map((ty) => ({ key: ty.id, label: ty.label, color: ty.color, tasks: tasks.filter((t) => t.type === ty.id), defaults: { type: ty.id } }));
+  else if (by === 'tag')
+    // a work item with several tags shows up under each of them
+    g = allTags(S).map((tag) => ({ key: 'tag:' + tag.toLowerCase(), label: tag, color: 'hsl(' + tagHue(tag) + ' 50% 42%)', tasks: tasks.filter((t) => hasTag(t, tag)), defaults: { tags: [tag] } })).concat([
+      { key: 'notag', label: 'No tags', color: 'var(--muted)', tasks: tasks.filter((t) => !(t.tags || []).length), defaults: {} },
+    ]);
+  else if (by === 'due')
+    g = DUE_GROUPS.map(([k, label, color]) => ({ key: 'due:' + k, label, color, tasks: tasks.filter((t) => dueBucket(S, t) === k), defaults: {} }));
   else g = [{ key: 'all', label: 'All tasks', color: 'var(--accent)', tasks, defaults: {} }];
   return g.filter((x) => x.tasks.length || (showEmpty && by === 'status'));
 }
@@ -417,6 +460,7 @@ export default function SprintView() {
   const [by, setBy] = useState('status');
   const [who, setWho] = useState('all');
   const [ft, setFt] = useState('all'); // work item type filter
+  const [fg, setFg] = useState('all'); // tag filter
   const [lvl, setLvl] = useState(0); // levels shown in the list (0 = all)
   const [focus, setFocus] = useState(null); // name box to focus after an item is added or moved
   const [drag, setDrag] = useState(null); // { id, sub } while a row is dragged
@@ -440,9 +484,9 @@ export default function SprintView() {
   const matched = useMemo(() => {
     if (!c) return new Set();
     const ql = q.trim().toLowerCase();
-    return new Set(c.tasks.filter((t) => (!ql || t.name.toLowerCase().includes(ql) || (t.code || '').toLowerCase().includes(ql)) && (ft === 'all' || t.type === ft) && (who === 'all' || (who === 'none' ? !(t.assignees || []).length : (t.assignees || []).includes(who)))).map((t) => t.id));
-  }, [c, q, who, ft]);
-  const filtering = !!q.trim() || who !== 'all' || ft !== 'all';
+    return new Set(c.tasks.filter((t) => (!ql || t.name.toLowerCase().includes(ql) || (t.code || '').toLowerCase().includes(ql) || (t.tags || []).some((g) => g.toLowerCase().includes(ql.replace(/^#/, '')))) && (ft === 'all' || t.type === ft) && (fg === 'all' || (fg === 'none' ? !(t.tags || []).length : hasTag(t, fg))) && (who === 'all' || (who === 'none' ? !(t.assignees || []).length : (t.assignees || []).includes(who)))).map((t) => t.id));
+  }, [c, q, who, ft, fg]);
+  const filtering = !!q.trim() || who !== 'all' || ft !== 'all' || fg !== 'all';
   const shown = useMemo(() => (!c ? new Set() : filtering ? withAncestors(c.tasks, matched) : new Set(c.tasks.map((t) => t.id))), [c, matched, filtering]);
   const tasks = useMemo(() => (c ? c.tasks.filter((t) => shown.has(t.id)) : []), [c, shown]);
   // a selection belongs to one sprint and one view
@@ -545,12 +589,12 @@ export default function SprintView() {
 
       {view !== 'dash' && (
       <div className="tools">
-        <input className="c" style={{ maxWidth: 240 }} type="search" placeholder="Search tasks" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search tasks" />
+        <input className="c" style={{ maxWidth: 240 }} type="search" placeholder="Search tasks or tags" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search tasks or tags" />
         {view === 'list' && (
           <label className="fld" style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             Group by
             <select className="c" value={by} onChange={(e) => setBy(e.target.value)} style={{ width: 'auto' }}>
-              <option value="status">Status</option><option value="assignee">Assignee</option><option value="priority">Priority</option><option value="none">None</option>
+              {GROUP_BYS.map(([id, l]) => (<option key={id} value={id}>{l}</option>))}
             </select>
           </label>
         )}
@@ -574,6 +618,13 @@ export default function SprintView() {
               Show
               <select className="c" value={lvl} onChange={(e) => setLvl(parseInt(e.target.value, 10))} style={{ width: 'auto' }} aria-label="Levels to show">
                 <option value={0}>All levels</option><option value={1}>Level 1</option><option value={2}>Down to level 2</option><option value={3}>Down to level 3</option><option value={4}>Down to level 4</option>
+              </select>
+            </label>
+            <label className="fld" style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              Tag
+              <select className="c" value={fg} onChange={(e) => setFg(e.target.value)} style={{ width: 'auto' }} aria-label="Filter by tag">
+                <option value="all">All tags</option><option value="none">No tags</option>
+                {allTags(S).map((g) => (<option key={g} value={g}>{g}</option>))}
               </select>
             </label>
             <button className="btn" onClick={() => setExp(Object.fromEntries(parentIds.map((id) => [id, true])))}>Expand all</button>
@@ -713,7 +764,7 @@ export default function SprintView() {
                 <div className="h-assignee" /><div className="c-start msg">{sum.start ? fdate(sum.start) : ''}</div><div className="c-due msg">{sum.end ? fdate(sum.end) : ''}</div><div className="h-priority" />
                 <div className="c-eff mono">{hrsf(sum.hrs)}</div>
                 <div className="c-pct w-pct">{sum.pct == null ? null : (<><div className="bar"><i style={{ width: Math.min(100, sum.pct * 100) + '%' }} /></div><span className="mono">{pc(sum.pct, 0)}</span></>)}</div>
-                <div className="h-status" /><div className="h-code" /><div className="h-type" /><div className="h-doneOn" /><div className="h-parent" /><div className="c-open" />
+                <div className="h-status" /><div className="h-tags" /><div className="h-code" /><div className="h-type" /><div className="h-doneOn" /><div className="h-parent" /><div className="c-open" />
               </div>
             )}
             {!groups.length && <div className="empty">{filtering ? 'No tasks match your search or filter.' : 'No tasks yet. Use + Task to add the first one.'}</div>}

@@ -138,6 +138,10 @@ function taskEvents(before, after, ctx) {
     ['start', 'Start', (p, t) => dt(t.start)],
     ['due', 'Due date', (p, t) => dt(t.due)],
     ['effort', 'Effort (h)', (p, t) => (t.effort == null ? '(none)' : t.effort + ' h')],
+    ['ownEffort', 'Own estimate (h)', (p, t) => (t.ownEffort == null ? '(none)' : t.ownEffort + ' h')],
+    ['ownStart', 'Own start', (p, t) => dt(t.ownStart)],
+    ['ownDue', 'Own due date', (p, t) => dt(t.ownDue)],
+    ['tags', 'Tags', (p, t) => ((t.tags || []).length ? t.tags.join(', ') : '(none)')],
   ];
   A.forEach(({ t, c }, id) => {
     const b = B.get(id);

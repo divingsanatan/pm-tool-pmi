@@ -12,6 +12,7 @@ export const LIST_COLS = [
   { id: 'effort', label: 'Effort (h)', w: 96, cls: 'c-eff', def: true },
   { id: 'progress', label: 'Progress', w: 128, cls: 'c-pct', def: true },
   { id: 'status', label: 'Status', w: 132, cls: 'c-st', def: true },
+  { id: 'tags', label: 'Tags', w: 150, cls: 'c-tags', def: false },
   { id: 'code', label: 'ID', w: 80, cls: 'c-code', def: false },
   { id: 'type', label: 'Type', w: 100, cls: 'c-type', def: false },
   { id: 'doneOn', label: 'Completed on', w: 124, cls: 'c-doneon', def: false },

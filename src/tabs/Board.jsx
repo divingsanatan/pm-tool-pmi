@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useStore } from '../store/StoreContext';
 import { useTasks } from '../store/useTasks';
 import { AvatarStack, Flag, StatusIcon, TypeBadge } from '../components/Bits';
+import { TagChip } from '../components/Pickers';
 import { findTask, isDoneStatus, nameOf, statusesOf, typeOf } from '../lib/tasks';
 import { fdate, today } from '../lib/dates';
 
@@ -25,6 +26,7 @@ function Card({ t, onOpen }) {
     >
       {up && <div className="msg k-up" title="Parent work item">↳ {up.t.name}</div>}
       <div className={'k-title' + (done ? ' done' : '')}><TypeBadge type={typeOf(S, t.type)} size={15} /> {t.name}</div>
+      {(t.tags || []).length > 0 && <div className="tags" style={{ flexWrap: 'wrap', margin: '4px 0' }}>{t.tags.map((g) => (<TagChip key={g} tag={g} />))}</div>}
       <div className="row k-meta">
         <AvatarStack names={(t.assignees || []).map((id) => nameOf(S, id))} size={20} />
         <Flag priority={t.priority} size={14} />

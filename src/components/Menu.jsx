@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
  * Button + dropdown rendered in a portal (so table scroll areas never clip it).
  * items: [{ label, onClick, danger, active, disabled, hint }]  or  { sep: true }
  */
-export default function Menu({ label, className = '', items, title, align = 'left' }) {
+export default function Menu({ label, className = '', items, title, align = 'left', footer, wide }) {
   const [pos, setPos] = useState(null);
   const btn = useRef(null);
   const menu = useRef(null);
@@ -56,7 +56,7 @@ export default function Menu({ label, className = '', items, title, align = 'lef
       </button>
       {pos &&
         createPortal(
-          <div ref={menu} className="menu" role="menu" style={{ position: 'fixed', top: pos.top, ...(align === 'right' ? { right: pos.right } : { left: pos.left }) }}>
+          <div ref={menu} className={'menu' + (wide ? ' wide' : '')} role="menu" style={{ position: 'fixed', top: pos.top, ...(align === 'right' ? { right: pos.right } : { left: pos.left }) }}>
             {items.map((it, i) =>
               it.sep ? (
                 <div key={i} className="msep" />
@@ -79,6 +79,7 @@ export default function Menu({ label, className = '', items, title, align = 'lef
                 </button>
               )
             )}
+            {footer && <div className="mfoot">{typeof footer === 'function' ? footer({ close }) : footer}</div>}
           </div>,
           document.body
         )}

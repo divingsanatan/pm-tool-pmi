@@ -1,5 +1,5 @@
 import { nz } from './format';
-import { firstOpenStatus, statusPct, statusesOf } from './tasks';
+import { firstOpenStatus, isDoneStatus, statusPct, statusesOf, typeOf } from './tasks';
 
 /* Work item hierarchy.
    Work items stay in one flat list per sprint (or the Backlog). Each item has a `parent` (id of another item in the
@@ -126,20 +126,39 @@ export function rollupContainer(S, c) {
     if (!ks.length) {
       delete t.pct;
       delete t.statusSet; // only a parent can carry its own status
+      // an item that lost its last child keeps what was its own estimate and dates (they are no longer \"on top of\" anything)
+      if (t.ownEffort !== undefined) { t.effort = t.ownEffort; delete t.ownEffort; }
+      if (t.ownStart !== undefined || t.ownDue !== undefined) {
+        if (!back) { t.start = t.ownStart || ''; t.due = t.ownDue || ''; }
+        delete t.ownStart;
+        delete t.ownDue;
+      }
       pct.set(t.id, back ? 0 : statusPct(S, t.status));
       return;
     }
     ks.forEach(visit);
-    if (ks.some((k) => nz(k.effort) > 0)) t.effort = r2(ks.reduce((a, k) => a + nz(k.effort), 0));
+    // Hours: the child items' hours plus the item's own estimate (ownEffort). With no own estimate it is just what rolls up.
+    const kidsE = r2(ks.reduce((a, k) => a + nz(k.effort), 0));
+    if (t.ownEffort !== undefined) {
+      const tot = r2(nz(t.ownEffort) + kidsE);
+      t.effort = tot > 0 ? tot : null;
+    } else if (ks.some((k) => nz(k.effort) > 0)) t.effort = kidsE;
     if (back) return;
+    // Dates: the earliest start and the latest due date of the child items and of the item's own dates (ownStart, ownDue).
     let s = '', f = '';
     ks.forEach((k) => {
       const a = k.start || k.due, b = k.due || k.start;
       if (a && (!s || a < s)) s = a;
       if (b && (!f || b > f)) f = b;
     });
-    if (s) t.start = s;
-    if (f) t.due = f;
+    const ownDates = t.ownStart !== undefined || t.ownDue !== undefined;
+    if (ownDates) {
+      const a = t.ownStart || t.ownDue, b = t.ownDue || t.ownStart;
+      if (a && (!s || a < s)) s = a;
+      if (b && (!f || b > f)) f = b;
+    }
+    if (s || ownDates) t.start = s;
+    if (f || ownDates) t.due = f;
     const weighted = ks.some((k) => nz(k.effort) > 0);
     let ws = 0, e = 0;
     ks.forEach((k) => {
@@ -196,4 +215,31 @@ export function summarize(S, c) {
   o.hrs = r2(o.hrs);
   o.pct = !back && ws ? e / ws : null;
   return o;
+}
+
+/* What a parent's own values add to what rolls up from below. The List and the drawer use this to show "8 h from children + 4 h own". */
+export function rollParts(S, c, t) {
+  const ks = (c.tasks || []).filter((k) => k.parent === t.id);
+  let s = '', f = '';
+  ks.forEach((k) => {
+    const a = k.start || k.due, b = k.due || k.start;
+    if (a && (!s || a < s)) s = a;
+    if (b && (!f || b > f)) f = b;
+  });
+  const ownE = t.ownEffort != null && nz(t.ownEffort) > 0 ? nz(t.ownEffort) : t.ownEffort === undefined && !ks.some((k) => nz(k.effort) > 0) && nz(t.effort) > 0 ? nz(t.effort) : 0;
+  return {
+    kids: ks.length,
+    kidsEffort: r2(ks.reduce((a, k) => a + nz(k.effort), 0)),
+    ownEffort: ownE,
+    kidsStart: s,
+    kidsDue: f,
+    ownStart: t.ownStart || '',
+    ownDue: t.ownDue || '',
+  };
+}
+
+// Parents whose own hours count as earned: the item itself is done (the hours of its children are counted on the children)
+export function ownDoneItems(S, tasks) {
+  const parents = new Set(tasks.map((t) => t.parent).filter(Boolean));
+  return tasks.filter((t) => parents.has(t.id) && nz(t.ownEffort) > 0 && t.status && isDoneStatus(S, t.status) && !typeOf(S, t.type).milestone);
 }

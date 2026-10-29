@@ -83,6 +83,7 @@ export function makeTask(p, fields) {
     status: firstOpenStatus(p),
     assignees: [],
     priority: 'normal',
+    tags: [],
     start: '',
     due: '',
     effort: null,
@@ -135,4 +136,34 @@ export function blankProject(name, id) {
     backlog: { id: 'backlog', name: 'Backlog', tasks: [] },
     counter: 1,
   };
+}
+
+/* Tags: free labels on work items (a work item can carry several). They are kept as plain text on the item, so there is no separate list to maintain:
+   the project's tag list is whatever the work items use. */
+export const cleanTag = (x) => String(x == null ? '' : x).trim().replace(/^#+/, '').trim().replace(/\s+/g, ' ').slice(0, 30);
+export function cleanTags(a) {
+  const seen = new Set();
+  const out = [];
+  (Array.isArray(a) ? a : []).forEach((x) => {
+    const t = cleanTag(x);
+    const k = t.toLowerCase();
+    if (t && !seen.has(k)) {
+      seen.add(k);
+      out.push(t);
+    }
+  });
+  return out;
+}
+export const hasTag = (t, tag) => (t.tags || []).some((g) => g.toLowerCase() === String(tag).toLowerCase());
+// every tag used anywhere in the project, A to Z (the first spelling found wins when only the capitals differ)
+export function allTags(p) {
+  const m = new Map();
+  allContainers(p).forEach((c) => c.tasks.forEach((t) => (t.tags || []).forEach((g) => !m.has(g.toLowerCase()) && m.set(g.toLowerCase(), g))));
+  return [...m.values()].sort((a, b) => a.localeCompare(b));
+}
+// a steady colour for each tag name
+export function tagHue(tag) {
+  let h = 7;
+  for (const ch of String(tag).toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return h;
 }

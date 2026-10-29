@@ -1,7 +1,7 @@
 import { DAY, pd, today, fsh } from './dates';
 import { nz, cl, cleanEffort, money as money0 } from './format';
-import { DEFAULT_STATUSES, DEFAULT_TYPES, allContainers, firstOpenStatus, isDoneStatus, makeTask, statusPct, typeOf, uid } from './tasks';
-import { flatTree, leafTasks, rollupContainer, rootTasks } from './hier';
+import { DEFAULT_STATUSES, DEFAULT_TYPES, allContainers, cleanTags, firstOpenStatus, isDoneStatus, makeTask, statusPct, typeOf, uid } from './tasks';
+import { flatTree, leafTasks, ownDoneItems, rollupContainer, rootTasks } from './hier';
 import { ACTIVITY_MAX } from './activity';
 import { calendarOf, offDaysOf, sprintCalendar } from './offdays';
 
@@ -500,6 +500,11 @@ export function evmSeries(S, asOf = today()) {
         const on = Math.min(now, pd(t.doneOn || t.due || sp.end || t.start || sp.start || asOf));
         done[at(on)] += nz(t.effort);
       });
+      // a done parent's own hours (its children's hours are already counted on the children)
+      ownDoneItems(S, sp.tasks).forEach((t) => {
+        const on = Math.min(now, pd(t.doneOn || t.due || sp.end || t.start || sp.start || asOf));
+        done[at(on)] += nz(t.ownEffort);
+      });
       let cum = 0;
       for (let i = 0; i < n; i++) {
         cum += done[i];
@@ -544,7 +549,7 @@ export function reserves(S) {
 export function sprintHours(S, sp) {
   const items = rootTasks(sp.tasks).reduce((a, t) => a + nz(t.effort), 0); // top-level items already hold their children's hours
   const leaves = leafTasks(sp.tasks).filter((t) => !typeOf(S, t.type).milestone);
-  const done = leaves.filter((t) => t.status && isDoneStatus(S, t.status)).reduce((a, t) => a + nz(t.effort), 0);
+  const done = leaves.filter((t) => t.status && isDoneStatus(S, t.status)).reduce((a, t) => a + nz(t.effort), 0) + ownDoneItems(S, sp.tasks).reduce((a, t) => a + nz(t.ownEffort), 0);
   const planned = sp.plannedHours == null || isNaN(sp.plannedHours) ? null : nz(sp.plannedHours);
   return { planned, items, done, n: leaves.length };
 }
@@ -673,6 +678,9 @@ export function alignSprintDates(S, sprintId) {
         t.due = d;
         n++;
       }
+      // a parent's own dates stay inside the sprint too
+      if (t.ownStart) t.ownStart = clampDate(t.ownStart, sp.start, sp.end);
+      if (t.ownDue) t.ownDue = clampDate(t.ownDue, sp.start, sp.end);
     });
   });
   return n;
@@ -897,6 +905,8 @@ export function normalize(S) {
   allContainers(S).forEach((c) => {
     c.tasks.forEach((t) => {
       t.effort = cleanEffort(t.effort); // hours are never negative
+      if (t.ownEffort !== undefined) t.ownEffort = cleanEffort(t.ownEffort);
+      t.tags = cleanTags(t.tags);
     });
     // earlier versions kept subtasks as a small checklist inside a task; they are real child work items now
     const born = [];

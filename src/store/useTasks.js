@@ -603,6 +603,50 @@ export function useTasks() {
         update(run);
         warnOffDays([id], patch);
       },
+      // A parent's own estimate and dates, kept apart from what rolls up from its child items (ClickUp style: the parent shows
+      // the child items plus its own). `o` holds effort / start / due; they are stored as ownEffort / ownStart / ownDue.
+      // The same rules as any work item apply: dates stay inside the sprint, hours respect the planned hours and the baseline lock.
+      patchOwn(id, o) {
+        o = safe(o);
+        const own = {};
+        if ('effort' in o) own.ownEffort = o.effort;
+        if ('start' in o) own.ownStart = o.start || '';
+        if ('due' in o) own.ownDue = o.due || '';
+        const dates = ['start', 'due'].map((k) => o[k]).filter(Boolean);
+        if (dates.some((d) => !sane(d))) return; // half-typed date: ignore until it is complete
+        const S0 = sRef.current;
+        const f0 = findTask(S0, id);
+        if (!f0) return;
+        const w = windowOf(f0.c);
+        if (dates.length && w && datePatchViolations(S0, [id], { start: o.start, due: o.due }).length) {
+          const fix = clampDates(w, { start: o.start || '', due: o.due || '' });
+          const got = { ...own };
+          if ('start' in o && fix.start) got.ownStart = fix.start;
+          if ('due' in o && fix.due) got.ownDue = fix.due;
+          const sorted = dates.slice().sort();
+          withDecision({
+            text: '\u201c' + f0.t.name + '\u201d cannot have its own date ' + (dates.length === 1 ? fdate(dates[0]) : fdate(sorted[0]) + ' \u2013 ' + fdate(sorted[sorted.length - 1])) + ' because ' + f0.c.name + ' runs ' + span(f0.c) + '. Work items must stay inside their sprint.',
+            actions: [{
+              label: 'Set it inside the sprint',
+              primary: true,
+              onClick: () => {
+                clear();
+                update((p) => { const g = findTask(p, id); if (g) Object.assign(g.t, got); });
+                warnOffDays([id], { start: got.ownStart, due: got.ownDue });
+              },
+            }],
+          });
+          return;
+        }
+        if (dates.length) clear();
+        const run = (p) => {
+          const f = findTask(p, id);
+          if (f) Object.assign(f.t, own);
+        };
+        if ('effort' in o && guardHours(run, { cause: [id], lockDown: true })) return;
+        update(run);
+        warnOffDays([id], { start: o.start, due: o.due });
+      },
       // Change the status of one or several work items. This is the one call the List, Board, drawer and bulk bar use.
       // Every item can carry its own status, parents included. A parent's status is automatic (from its child items) until it
       // is set here; autoStatus() hands it back to the roll-up. Closing items that still have open child items asks first,

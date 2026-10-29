@@ -94,7 +94,7 @@ export default function BacklogView() {
   const shown = useMemo(() => {
     if (!filtering) return new Set(c.tasks.map((t) => t.id));
     const ql = q.trim().toLowerCase();
-    const hit = c.tasks.filter((t) => (!ql || t.name.toLowerCase().includes(ql)) && (who === 'all' || (who === 'none' ? !(t.assignees || []).length : (t.assignees || []).includes(who)))).map((t) => t.id);
+    const hit = c.tasks.filter((t) => (!ql || t.name.toLowerCase().includes(ql) || (t.tags || []).some((g) => g.toLowerCase().includes(ql.replace(/^#/, '')))) && (who === 'all' || (who === 'none' ? !(t.assignees || []).length : (t.assignees || []).includes(who)))).map((t) => t.id);
     return withAncestors(c.tasks, hit);
   }, [c, q, who, filtering]);
   const tasks = useMemo(() => c.tasks.filter((t) => shown.has(t.id)), [c, shown]);
