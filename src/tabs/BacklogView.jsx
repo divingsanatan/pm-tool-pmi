@@ -10,7 +10,6 @@ import { hrsf, nz } from '../lib/format';
 import { kidsMap, leafTasks, rootTasks, withAncestors } from '../lib/hier';
 import TaskDrawer from './TaskDrawer';
 import BulkBar from '../components/BulkBar';
-import WbsTree from '../components/WbsTree';
 import { useSelect } from '../lib/useSelect';
 import { AddRow, TriBox } from '../components/ListBits';
 import { groupsOf } from './SprintView';

@@ -6,17 +6,18 @@ import { useUI } from '../components/UI';
 import { Cell } from '../components/Field';
 import Menu from '../components/Menu';
 import { SprintIcon, StatusIcon } from '../components/Bits';
-import { AssigneeMenu, PriorityMenu, StatusMenu, TypeMenu } from '../components/Pickers';
+import { AddChildMenu, AssigneeMenu, PriorityMenu, StatusMenu, TypeMenu } from '../components/Pickers';
 import { AddRow, TriBox } from '../components/ListBits';
-import { PRIORITIES, SPRINT_STATUSES, containerById, isDoneStatus, isOpen, priorityOf, statusOf, statusesOf, typeOf } from '../lib/tasks';
+import { PRIORITIES, SPRINT_STATUSES, containerById, isDoneStatus, isOpen, priorityOf, statusOf, statusPct, statusesOf, typeOf, typesOf } from '../lib/tasks';
 import { fdate, today } from '../lib/dates';
 import { outsideSprint, sprintEvm, stCls } from '../lib/calc';
 import { hrsf, money, nz, pc } from '../lib/format';
 import { crCls, currentBaseline, signedMoney } from '../lib/change';
-import { kidsMap, leafTasks, rootTasks, withAncestors } from '../lib/hier';
+import { flatTree, kidsMap, leafTasks, rootTasks, subtreeIds, summarize, withAncestors } from '../lib/hier';
+import '../sprintlist.css';
 import { WEEKDAYS_SHORT, calendarOf, sprintDayList } from '../lib/offdays';
 import BulkBar from '../components/BulkBar';
-import WbsTree from '../components/WbsTree';
+import NameInput from '../components/NameInput';
 import TaskDrawer from './TaskDrawer';
 import ChangeDrawer from './ChangeDrawer';
 import DateChangeDialog from '../components/DateChangeDialog';
@@ -25,37 +26,119 @@ import '../offdays.css';
 
 export { AddRow, TriBox };
 
-// One work item in the list. Items with children are parents: their hours, dates and status are roll-ups, so they are read-only.
-function Row({ t, depth, kidList, expanded, onToggle, onOpen, selected, onSelect }) {
+// One work item in the list: the full work breakdown row. Items with children are parents: their hours, dates, progress and status are roll-ups.
+// The name is edited in place (Enter adds an item below, Tab / Shift+Tab indent and outdent, Alt+Up / Down reorder);
+// drag the grip to reorder, or drop onto an item to nest under it.
+function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
   const tk = useTasks();
+  const ui = useUI();
   const { S } = useStore();
+  const { onOpen, sel, onSelect, drag, over, setDrag, setOver, drop, focus, ask, expand, tasks } = ctx;
+  const selected = sel.has(t.id);
+  const ty = typeOf(S, t.type);
   const done = isDoneStatus(S, t.status);
   const late = !done && t.due && t.due < today();
   const parent = kidList.length > 0;
   const effortRolled = parent && kidList.some((k) => nz(k.effort) > 0);
   const datesRolled = parent && kidList.some((k) => k.start || k.due);
   const kidsDone = kidList.filter((k) => isDoneStatus(S, k.status)).length;
-  const milestone = typeOf(S, t.type).milestone;
+  const milestone = ty.milestone;
+  const pct = parent ? nz(t.pct) : statusPct(S, t.status);
+  const st = statusOf(S, t.status);
+  const keys = {
+    enter: () => ask({ id: tk.addSibling(t.id, { name: 'New ' + ty.label.toLowerCase() }), select: true }),
+    indent: () => { tk.indent(t.id); ask({ id: t.id }); },
+    outdent: () => { tk.outdent(t.id); ask({ id: t.id }); },
+    up: () => { tk.moveUp(t.id); ask({ id: t.id }); },
+    down: () => { tk.moveDown(t.id); ask({ id: t.id }); },
+  };
+  const addChild = () => { const id = tk.addChild(t.id, {}); expand(t.id); ask({ id, select: true }); };
+  const actions = [
+    { label: 'Open details', onClick: () => onOpen(t.id) },
+    { label: 'Add child item', onClick: addChild },
+    { label: 'Add item below', onClick: keys.enter },
+    { sep: true },
+    { label: 'Indent (make child of the item above)', onClick: keys.indent },
+    { label: 'Outdent (move up one level)', disabled: !t.parent, onClick: keys.outdent },
+    { label: 'Move up', onClick: keys.up },
+    { label: 'Move down', onClick: keys.down },
+    { sep: true },
+    { label: 'Duplicate (with its children)', onClick: () => tk.duplicateMany([t.id]) },
+    {
+      label: 'Delete…',
+      danger: true,
+      onClick: () => {
+        const n = subtreeIds(tasks, t.id).length - 1;
+        ui.ask({
+          title: 'Delete work item?',
+          body: `“${t.name}”${n ? ' and its ' + n + ' child item' + (n > 1 ? 's' : '') : ''} will be permanently deleted.`,
+          confirm: 'Delete',
+          danger: true,
+          onConfirm: () => tk.remove(t.id),
+        });
+      },
+    },
+  ];
+  const dropCls = over && over.id === t.id ? ' drop-' + over.zone : '';
   return (
-    <div className={'tg-row' + (selected ? ' sel' : '') + (parent ? ' par' : '')}>
+    <div
+      className={'tg-row' + (selected ? ' sel' : '') + (parent ? ' par' : '') + (drag && drag.id === t.id ? ' dragging' : '') + dropCls}
+      onDragOver={(e) => {
+        if (!drag || drag.sub.has(t.id)) return;
+        e.preventDefault();
+        const b = e.currentTarget.getBoundingClientRect();
+        const y = (e.clientY - b.top) / b.height;
+        const zone = y < 0.28 ? 'before' : y > 0.72 ? 'after' : 'inside';
+        if (!over || over.id !== t.id || over.zone !== zone) setOver({ id: t.id, zone });
+      }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(null); }}
+      onDrop={(e) => {
+        e.preventDefault();
+        if (over && over.id === t.id) drop(t, over.zone);
+        setDrag(null);
+        setOver(null);
+      }}
+    >
+      <div className="c-wbs mono" title="WBS number">{wbs}</div>
       <div className="tg-name" style={depth ? { paddingLeft: depth * 18 } : undefined}>
+        <span
+          className="w-grip"
+          draggable
+          title="Drag to reorder, or drop onto an item to nest under it"
+          onDragStart={(e) => {
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', t.id);
+            const row = e.currentTarget.closest('.tg-row');
+            if (row) e.dataTransfer.setDragImage(row, 12, 12);
+            setDrag({ id: t.id, sub: new Set(subtreeIds(tasks, t.id)) });
+          }}
+          onDragEnd={() => { setDrag(null); setOver(null); }}
+        >⋮⋮</span>
         <input type="checkbox" className="tg-sel" checked={selected} onChange={() => {}} onClick={(e) => onSelect(t.id, e.shiftKey)} aria-label={'Select ' + t.name} />
         <button className="x tg-exp" onClick={onToggle} aria-label={expanded ? 'Hide child items' : 'Show child items'} title={parent ? (expanded ? 'Collapse' : 'Expand') : 'Add a subtask'}>{expanded ? '▾' : '▸'}</button>
         <TypeMenu task={t} size={16} />
         {parent ? (
-          <span className="x st-btn ro" title="Status is calculated from its child items"><StatusIcon status={statusOf(S, t.status)} /></span>
+          <span className="x st-btn ro" title="Status is calculated from its child items"><StatusIcon status={st} /></span>
         ) : (
           <StatusMenu task={t} />
         )}
-        <button className={'tg-title' + (done ? ' done' : '') + (parent ? ' bold' : '')} onClick={() => onOpen(t.id)} title="Open work item">{t.name}</button>
+        <NameInput t={t} focus={focus} bold={parent} done={done} keys={keys} />
         {parent && <span className="subc" title="Direct child items done">⑂ {kidsDone}/{kidList.length}</span>}
+        <AddChildMenu parent={t} onAdded={(id) => { expand(t.id); ask({ id, select: true }); }} />
       </div>
       <div className="c-ass"><AssigneeMenu task={t} /></div>
+      <div className="c-start">
+        {datesRolled ? (
+          <span className="cell roll" title="Rolled up from child items">Σ {t.start ? fdate(t.start) : '–'}</span>
+        ) : (
+          <Cell value={t.start} type="date" cls="w-date" label="Start date" disabled={milestone} onCommit={(v) => tk.patch(t.id, { start: v })} />
+        )}
+      </div>
       <div className="c-due">
         {datesRolled ? (
-          <span className={'cell roll' + (late ? ' od' : '')} title={'Rolled up from child items' + (t.start ? ' · starts ' + fdate(t.start) : '')}>Σ {t.due ? fdate(t.due) : '–'}</span>
+          <span className={'cell roll' + (late ? ' od' : '')} title="Rolled up from child items">Σ {t.due ? fdate(t.due) : '–'}</span>
         ) : (
-          <Cell value={t.due} type="date" cls={'w-date' + (late ? ' od' : '')} label="Due date" onCommit={(v) => tk.patch(t.id, { due: v })} />
+          <Cell value={t.due} type="date" cls={'w-date' + (late ? ' od' : '')} label={milestone ? 'Date' : 'Due date'} onCommit={(v) => tk.patch(t.id, { due: v })} />
         )}
       </div>
       <div className="c-pri"><PriorityMenu task={t} /></div>
@@ -66,7 +149,14 @@ function Row({ t, depth, kidList, expanded, onToggle, onOpen, selected, onSelect
           <Cell value={t.effort} type="num" cls="n w-sm" label="Effort in hours" min={0} placeholder={milestone ? '' : '–'} disabled={milestone} onCommit={(v) => tk.patch(t.id, { effort: v })} />
         )}
       </div>
-      <div className="c-open"><button className="x" onClick={() => onOpen(t.id)} aria-label="Open details" title="Open details">⤢</button></div>
+      <div className="c-pct w-pct">
+        {pct == null ? <span className="msg">–</span> : (<><div className="bar"><i style={{ width: Math.min(100, pct * 100) + '%' }} /></div><span className="mono">{pc(pct, 0)}</span></>)}
+      </div>
+      <div className="c-st msg" title={parent ? 'Status is calculated from its child items' : undefined}>{st.label}</div>
+      <div className="c-open">
+        <button className="x" onClick={() => onOpen(t.id)} aria-label="Open details" title="Open details">⤢</button>
+        <Menu className="x" label="⋯" title="More actions" items={actions} />
+      </div>
     </div>
   );
 }
@@ -75,10 +165,10 @@ function Row({ t, depth, kidList, expanded, onToggle, onOpen, selected, onSelect
 function Branch({ t, depth, ctx }) {
   const all = ctx.kids.get(t.id) || [];
   const list = all.filter((k) => ctx.visible.has(k.id));
-  const expanded = ctx.isExp(t);
+  const expanded = ctx.isExp(t) && depth + 1 < ctx.maxDepth;
   return (
     <>
-      <Row t={t} depth={depth} kidList={all} expanded={expanded} onToggle={() => ctx.toggle(t)} onOpen={ctx.onOpen} selected={ctx.sel.has(t.id)} onSelect={ctx.onSelect} />
+      <Row t={t} depth={depth} kidList={all} expanded={expanded} onToggle={() => ctx.toggle(t)} ctx={ctx} wbs={ctx.wbsOf.get(t.id) || ''} />
       {expanded && (
         <>
           {list.map((k) => (<Branch key={k.id} t={k} depth={depth + 1} ctx={ctx} />))}
@@ -321,6 +411,11 @@ export default function SprintView() {
   const [q, setQ] = useState('');
   const [by, setBy] = useState('status');
   const [who, setWho] = useState('all');
+  const [ft, setFt] = useState('all'); // work item type filter
+  const [lvl, setLvl] = useState(0); // levels shown in the list (0 = all)
+  const [focus, setFocus] = useState(null); // name box to focus after an item is added or moved
+  const [drag, setDrag] = useState(null); // { id, sub } while a row is dragged
+  const [over, setOver] = useState(null); // { id, zone } the row it is over
   const [open, setOpen] = useState(null); // task shown in the drawer
   const [exp, setExp] = useState({});
   const [shut, setShut] = useState({});
@@ -334,9 +429,9 @@ export default function SprintView() {
   const matched = useMemo(() => {
     if (!c) return new Set();
     const ql = q.trim().toLowerCase();
-    return new Set(c.tasks.filter((t) => (!ql || t.name.toLowerCase().includes(ql)) && (who === 'all' || (who === 'none' ? !(t.assignees || []).length : (t.assignees || []).includes(who)))).map((t) => t.id));
-  }, [c, q, who]);
-  const filtering = !!q.trim() || who !== 'all';
+    return new Set(c.tasks.filter((t) => (!ql || t.name.toLowerCase().includes(ql) || (t.code || '').toLowerCase().includes(ql)) && (ft === 'all' || t.type === ft) && (who === 'all' || (who === 'none' ? !(t.assignees || []).length : (t.assignees || []).includes(who)))).map((t) => t.id));
+  }, [c, q, who, ft]);
+  const filtering = !!q.trim() || who !== 'all' || ft !== 'all';
   const shown = useMemo(() => (!c ? new Set() : filtering ? withAncestors(c.tasks, matched) : new Set(c.tasks.map((t) => t.id))), [c, matched, filtering]);
   const tasks = useMemo(() => (c ? c.tasks.filter((t) => shown.has(t.id)) : []), [c, shown]);
   // a selection belongs to one sprint and one view
@@ -358,13 +453,26 @@ export default function SprintView() {
   const pctA = leaves.length ? Math.round((assigned / leaves.length) * 100) : null;
   const tops = tasks.filter((t) => !t.parent);
   const groups = groupsOf(tops, by, S, !filtering);
-  const view = nav.sprintView;
+  const view = nav.sprintView === 'wbs' ? 'list' : nav.sprintView; // the WBS view was merged into the list
+  const maxDepth = lvl || Infinity;
+  const wbsOf = new Map(flatTree(c.tasks).map((r) => [r.t.id, r.wbs]));
+  const parentIds = c.tasks.filter((t) => (kids.get(t.id) || []).length).map((t) => t.id);
+  const ask = (f) => setFocus({ ...f, n: Date.now() });
+  const expand = (id) => setExp((e) => ({ ...e, [id]: true }));
+  const drop = (target, zone) => {
+    if (!drag) return;
+    if (zone === 'inside') {
+      tk.place(drag.id, { parent: target.id });
+      expand(target.id);
+    } else tk.place(drag.id, { parent: target.parent || '', ref: target.id, pos: zone });
+  };
+  const sum = summarize(S, c);
   const boardTasks = leaves.filter((t) => matched.has(t.id));
 
   // an item is expanded when you opened it, or when it has children and you did not close it
   const isExp = (t) => (exp[t.id] != null ? exp[t.id] : (kids.get(t.id) || []).length > 0);
   const toggle = (t) => setExp({ ...exp, [t.id]: !isExp(t) });
-  const branchIds = (t) => [t.id].concat(isExp(t) ? (kids.get(t.id) || []).filter((k) => shown.has(k.id)).flatMap(branchIds) : []);
+  const branchIds = (t, d = 0) => [t.id].concat(isExp(t) && d + 1 < maxDepth ? (kids.get(t.id) || []).filter((k) => shown.has(k.id)).flatMap((k) => branchIds(k, d + 1)) : []);
   const allBranchIds = (t) => [t.id].concat((kids.get(t.id) || []).filter((k) => shown.has(k.id)).flatMap(allBranchIds));
 
   // selection only counts items that are currently visible (search / assignee filters can hide some)
@@ -416,12 +524,12 @@ export default function SprintView() {
       </div>
 
       <div className="vtabs" role="tablist">
-        {[['dash', 'Dashboard'], ['list', 'List'], ['board', 'Board'], ['wbs', 'WBS']].map(([id, l]) => (
+        {[['dash', 'Dashboard'], ['list', 'List'], ['board', 'Board']].map(([id, l]) => (
           <button key={id} className="vtab" role="tab" aria-selected={view === id} onClick={() => setNav({ sprintView: id })}>{l}</button>
         ))}
       </div>
 
-      {view !== 'wbs' && view !== 'dash' && (
+      {view !== 'dash' && (
       <div className="tools">
         <input className="c" style={{ maxWidth: 240 }} type="search" placeholder="Search tasks" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search tasks" />
         {view === 'list' && (
@@ -439,7 +547,27 @@ export default function SprintView() {
             {people.map((x) => (<option key={x.id} value={x.id}>{x.name}</option>))}
           </select>
         </label>
+        {view === 'list' && (
+          <>
+            <label className="fld" style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              Type
+              <select className="c" value={ft} onChange={(e) => setFt(e.target.value)} style={{ width: 'auto' }} aria-label="Filter by type">
+                <option value="all">All types</option>
+                {typesOf(S).map((x) => (<option key={x.id} value={x.id}>{x.label}</option>))}
+              </select>
+            </label>
+            <label className="fld" style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              Show
+              <select className="c" value={lvl} onChange={(e) => setLvl(parseInt(e.target.value, 10))} style={{ width: 'auto' }} aria-label="Levels to show">
+                <option value={0}>All levels</option><option value={1}>Level 1</option><option value={2}>Down to level 2</option><option value={3}>Down to level 3</option><option value={4}>Down to level 4</option>
+              </select>
+            </label>
+            <button className="btn" onClick={() => setExp(Object.fromEntries(parentIds.map((id) => [id, true])))}>Expand all</button>
+            <button className="btn" onClick={() => setExp(Object.fromEntries(parentIds.map((id) => [id, false])))}>Collapse all</button>
+          </>
+        )}
         <span style={{ flex: 1 }} />
+        {view === 'list' && <button className="btn" onClick={ui.openTypes} title="Add or edit work item types">Types</button>}
         <button className="btn" onClick={ui.openStatuses} title="Add or edit task statuses">Statuses</button>
         <button className="btn primary" onClick={quickAdd}>+ Task</button>
       </div>
@@ -479,9 +607,11 @@ export default function SprintView() {
       {view === 'dash' ? (
         <SprintPanel S={S} c={c} E={E} cr={cr} tk={tk} setNav={setNav} />
       ) : view === 'list' ? (
+        <>
+        <p className="msg wbs-help">Click a name to edit it · Enter adds an item below · Tab / Shift+Tab indent and outdent · Alt+↑ / ↓ reorder · drag ⋮⋮ to reorder or drop onto an item to nest · Σ values add up from the child items. Dragging to reorder is clearest with Group by: None.</p>
         <div className="scroll">
-          <div className="tg">
-            <div className="tg-row tg-h"><div className="tg-name"><TriBox all={tasks.length > 0 && chosen.length === tasks.length} some={chosen.length > 0} onChange={(e) => setMany(tasks.map((t) => t.id), e.target.checked)} label="Select all tasks" />Name</div><div>Assignee</div><div>Due date</div><div>Priority</div><div>Effort (h)</div><div /></div>
+          <div className="tg sp">
+            <div className="tg-row tg-h"><div>WBS</div><div className="tg-name"><TriBox all={tasks.length > 0 && chosen.length === tasks.length} some={chosen.length > 0} onChange={(e) => setMany(tasks.map((t) => t.id), e.target.checked)} label="Select all tasks" />Name</div><div>Assignee</div><div>Start</div><div>Due</div><div>Priority</div><div>Effort (h)</div><div>Progress</div><div>Status</div><div /></div>
             {groups.map((g) => {
               const hide = shut[g.key];
               return (
@@ -498,17 +628,25 @@ export default function SprintView() {
                     <span className="msg">{g.tasks.length}</span>
                   </div>
                   {!hide && g.tasks.map((t) => (
-                    <Branch key={t.id} t={t} depth={0} ctx={{ kids, visible: shown, isExp, toggle, onOpen: setOpen, sel, onSelect: toggleOne, filtering, tk }} />
+                    <Branch key={t.id} t={t} depth={0} ctx={{ kids, visible: shown, isExp, toggle, onOpen: setOpen, sel, onSelect: toggleOne, filtering, tk, maxDepth, wbsOf, drag, over, setDrag, setOver, drop, focus, ask, expand, tasks: c.tasks }} />
                   ))}
                   {!hide && <div className="tg-add"><AddRow onAdd={addTo(g.defaults)} /></div>}
                 </div>
               );
             })}
+            {c.tasks.length > 0 && (
+              <div className="tg-row tg-tot">
+                <div /><div className="tg-name"><b>Total</b> <span className="msg">{sum.items} work item{sum.items === 1 ? '' : 's'} · {sum.leaves} at the lowest level</span></div>
+                <div /><div className="c-start msg">{sum.start ? fdate(sum.start) : ''}</div><div className="c-due msg">{sum.end ? fdate(sum.end) : ''}</div><div />
+                <div className="c-eff mono">{hrsf(sum.hrs)}</div>
+                <div className="c-pct w-pct">{sum.pct == null ? null : (<><div className="bar"><i style={{ width: Math.min(100, sum.pct * 100) + '%' }} /></div><span className="mono">{pc(sum.pct, 0)}</span></>)}</div>
+                <div /><div />
+              </div>
+            )}
             {!groups.length && <div className="empty">{filtering ? 'No tasks match your search or filter.' : 'No tasks yet. Use + Task to add the first one.'}</div>}
           </div>
         </div>
-      ) : view === 'wbs' ? (
-        <WbsTree ids={[c.id]} onOpen={setOpen} />
+        </>
       ) : (
         <Board tasks={boardTasks} onOpen={setOpen} onAdd={(status, name) => tk.add(c.id, { name, status })} />
       )}

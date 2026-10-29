@@ -6,7 +6,6 @@ import { money } from '../lib/format';
 
 export const TABS = [
   ['dash', 'Dashboard'],
-  ['wbs', 'WBS'],
   ['time', 'Timeline'],
   ['budget', 'Budget'],
   ['people', 'Stakeholders'],

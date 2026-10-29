@@ -1,0 +1,28 @@
+/* Sprint list: the full work breakdown row (WBS number, name, assignee, start, due, priority, effort, progress, status) */
+.tg.sp{min-width:1300px}
+.tg.sp .tg-row{grid-template-columns:52px minmax(340px,1fr) 96px 118px 118px 90px 84px 120px 130px 72px}
+.tg.sp .tg-row.sub{grid-template-columns:minmax(0,1fr)}
+.tg.sp .c-wbs{color:var(--muted);font-size:12.5px;padding-left:4px}
+.tg.sp .c-st{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
+.tg.sp .c-open{display:flex;justify-content:flex-end;gap:2px}
+.tg.sp .tg-tot{background:var(--row);font-weight:600;border-top:1px solid var(--line)}
+.tg.sp .tg-tot:hover{background:var(--row)}
+.tg.sp .tg-name .w-in{flex:1;min-width:90px}
+.tg.sp .w-add{opacity:0;flex:none}
+.tg.sp .tg-row:hover .w-add,.tg.sp .w-add:focus-visible{opacity:1}
+.tg.sp .tg-row:hover .w-grip{opacity:1}
+.tg.sp .tg-row.dragging{opacity:.4}
+.tg.sp .tg-row.drop-before{box-shadow:inset 0 2px 0 var(--accent)}
+.tg.sp .tg-row.drop-after{box-shadow:inset 0 -2px 0 var(--accent)}
+.tg.sp .tg-row.drop-inside{background:var(--accent-soft);outline:1px dashed var(--accent);outline-offset:-2px}
+@media (max-width:860px){
+  .tg.sp{min-width:0}
+  .tg.sp .tg-row{grid-template-columns:auto auto auto minmax(0,1fr) auto;grid-template-areas:"name name name name name" "ass start due pri eff" "pct pct st st open"}
+  .tg.sp .tg-row.sub{grid-template-columns:minmax(0,1fr);grid-template-areas:"name"}
+  .tg.sp .c-wbs{display:none}
+  .tg.sp .c-start{grid-area:start}.tg.sp .c-pct{grid-area:pct}.tg.sp .c-st{grid-area:st}
+  .tg.sp .c-start .c{width:100%;min-width:110px}
+  .tg.sp .tg-tot>div:empty{display:none}
+  .tg.sp .w-grip{display:none}
+  .tg.sp .w-add{opacity:1}
+}

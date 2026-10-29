@@ -1,0 +1,3 @@
+Delete these two files from the repo (they are no longer used):
+  src/tabs/Wbs.jsx
+  src/components/WbsTree.jsx
