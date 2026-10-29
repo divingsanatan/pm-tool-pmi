@@ -609,7 +609,7 @@ export default function SprintView() {
       ) : view === 'list' ? (
         <>
         <p className="msg wbs-help">Click a name to edit it · Enter adds an item below · Tab / Shift+Tab indent and outdent · Alt+↑ / ↓ reorder · drag ⋮⋮ to reorder or drop onto an item to nest · Σ values add up from the child items. Dragging to reorder is clearest with Group by: None.</p>
-        <div className="scroll">
+        <div className="scroll sp-scroll">
           <div className="tg sp">
             <div className="tg-row tg-h"><div>WBS</div><div className="tg-name"><TriBox all={tasks.length > 0 && chosen.length === tasks.length} some={chosen.length > 0} onChange={(e) => setMany(tasks.map((t) => t.id), e.target.checked)} label="Select all tasks" />Name</div><div>Assignee</div><div>Start</div><div>Due</div><div>Priority</div><div>Effort (h)</div><div>Progress</div><div>Status</div><div /></div>
             {groups.map((g) => {

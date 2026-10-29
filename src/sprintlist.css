@@ -1,9 +1,16 @@
+/* The list scrolls inside its own frame so the column headings stay in view while you scroll down */
+.sp-scroll{overflow:auto;max-height:calc(100vh - 230px);max-height:calc(100dvh - 230px);min-height:320px;border:1px solid var(--line);border-radius:8px}
+.tg.sp .tg-h{position:sticky;top:0;z-index:5;background:var(--row);box-shadow:inset 0 -1px 0 var(--line);border-bottom:0;padding:8px 4px}
 /* Sprint list: the full work breakdown row (WBS number, name, assignee, start, due, priority, effort, progress, status) */
 .tg.sp{min-width:1300px}
-.tg.sp .tg-row{grid-template-columns:52px minmax(340px,1fr) 96px 118px 118px 90px 84px 120px 130px 72px}
+.tg.sp .tg-row{grid-template-columns:52px minmax(340px,1fr) 96px 118px 118px 90px 84px 150px 140px 72px}
 .tg.sp .tg-row.sub{grid-template-columns:minmax(0,1fr)}
 .tg.sp .c-wbs{color:var(--muted);font-size:12.5px;padding-left:4px}
-.tg.sp .c-st{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
+.tg.sp .c-st{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px;padding-left:14px}
+/* progress: bar and percentage side by side, with room before the Status column */
+.tg.sp .c-pct{display:flex;align-items:center;gap:8px;min-width:0;padding-right:10px}
+.tg.sp .c-pct .bar{flex:1;min-width:40px}
+.tg.sp .c-pct .mono{font-size:12px;color:var(--muted);min-width:36px;text-align:right}
 .tg.sp .c-open{display:flex;justify-content:flex-end;gap:2px}
 .tg.sp .tg-tot{background:var(--row);font-weight:600;border-top:1px solid var(--line)}
 .tg.sp .tg-tot:hover{background:var(--row)}
@@ -17,6 +24,7 @@
 .tg.sp .tg-row.drop-inside{background:var(--accent-soft);outline:1px dashed var(--accent);outline-offset:-2px}
 @media (max-width:860px){
   .tg.sp{min-width:0}
+  .sp-scroll{max-height:none;overflow:visible;border:0;min-height:0}
   .tg.sp .tg-row{grid-template-columns:auto auto auto minmax(0,1fr) auto;grid-template-areas:"name name name name name" "ass start due pri eff" "pct pct st st open"}
   .tg.sp .tg-row.sub{grid-template-columns:minmax(0,1fr);grid-template-areas:"name"}
   .tg.sp .c-wbs{display:none}
