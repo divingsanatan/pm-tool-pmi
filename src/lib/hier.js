@@ -147,13 +147,18 @@ export function rollupContainer(S, c) {
       ws += w;
       e += w * nz(pct.get(k.id));
     });
-    const p = ws ? e / ws : 0;
-    pct.set(t.id, p);
-    t.pct = Math.round(p * 1000) / 1000;
+    const sum = ws ? e / ws : 0;
     // A parent's status is automatic until someone sets it by hand (t.statusSet, like ClickUp: every item can carry its own status).
     // Automatic: children that all share one status give it to the parent as it is (a Blocked or In review item stays so); otherwise the progress decides.
-    // Progress (pct) and earned value always come from the child items, whatever status the parent shows.
-    const manual = t.statusSet && statusesOf(S).some((x) => x.id === t.status);
+    const own = statusesOf(S).find((x) => x.id === t.status);
+    const manual = !!(t.statusSet && own);
+    // Progress follows the same rule as any item: the status says how complete it is ("Counts as"). For a parent whose status was set by hand,
+    // that is the least it shows (In progress = 50% even while its children are still at 0%); its children can only raise it.
+    // A hand-set Done parent is the exception: it stays at what its children add up to, so it never claims work that is not finished.
+    // Earned value is not affected: it only ever counts the lowest-level items.
+    const p = manual && !own.done ? Math.max(sum, statusPct(S, t.status)) : sum;
+    pct.set(t.id, p);
+    t.pct = Math.round(p * 1000) / 1000;
     if (!manual) {
       delete t.statusSet;
       const same = ks.every((k) => k.status === ks[0].status) && statusesOf(S).some((x) => x.id === ks[0].status);

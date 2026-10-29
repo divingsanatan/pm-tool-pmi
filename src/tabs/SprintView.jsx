@@ -155,7 +155,7 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
           <Cell value={t.effort} type="num" cls="n w-sm" label="Effort in hours" min={0} placeholder={milestone ? '' : '–'} disabled={milestone} onCommit={(v) => tk.patch(t.id, { effort: v })} />
         )}
       </div>
-      <div className="c-pct w-pct">
+      <div className="c-pct w-pct" title={parent ? 'Added up from the child items. A status set by hand counts as at least its "Counts as" %.' : st.label + ' counts as ' + pc(pct, 0)}>
         {pct == null ? <span className="msg">–</span> : (<><div className="bar"><i style={{ width: Math.min(100, pct * 100) + '%' }} /></div><span className="mono">{pc(pct, 0)}</span></>)}
       </div>
       <div className="c-st"><StatusMenu task={t} pill /></div>
