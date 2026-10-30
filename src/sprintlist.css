@@ -169,3 +169,27 @@ body.col-resizing{cursor:col-resize;user-select:none}
   .tg.sp .w-grip{display:none}
   .tg.sp .w-add{opacity:1}
 }
+
+/* power / interest grid */
+.pi-wrap{display:grid;grid-template-columns:24px minmax(0,1fr);grid-template-rows:auto 24px;gap:6px;max-width:720px}
+.pi-axis-y{writing-mode:vertical-rl;transform:rotate(180deg);text-align:center;color:var(--muted);font-size:13px;font-weight:600}
+.pi-axis-x{grid-column:2;text-align:center;color:var(--muted);font-size:13px;font-weight:600}
+.pi-grid{position:relative;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;aspect-ratio:1.25/1;min-height:260px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.pi-q{position:relative;padding:8px 10px;font-size:13px;font-weight:600;color:var(--muted)}
+.pi-q.q-closely{background:rgba(220,80,60,.13)}
+.pi-q.q-satisfied{background:rgba(240,170,40,.13);border-right:1px solid var(--line)}
+.pi-q.q-informed{background:rgba(60,140,230,.13);border-top:1px solid var(--line)}
+.pi-q.q-monitor{background:rgba(127,127,127,.09);border-top:1px solid var(--line);border-right:1px solid var(--line)}
+.pi-q.q-closely{border-bottom:1px solid var(--line)}
+.pi-q.q-satisfied{border-bottom:1px solid var(--line)}
+.pi-dot{position:absolute;transform:translate(-50%,50%);z-index:2;border-radius:50%;box-shadow:0 0 0 2px var(--surface,#fff)}
+.pi-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:14px}
+.pi-card{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:4px;align-content:start}
+.pi-card.q-closely{border-left:4px solid rgb(220,80,60)}
+.pi-card.q-satisfied{border-left:4px solid rgb(240,170,40)}
+.pi-card.q-informed{border-left:4px solid rgb(60,140,230)}
+.pi-card.q-monitor{border-left:4px solid rgb(127,127,127)}
+.pi-how{margin:2px 0 4px;font-size:13px}
+.pi-who{display:flex;flex-wrap:wrap;gap:6px}
+.pi-p{display:inline-flex;align-items:center;gap:6px;font-size:13px}
+@media (max-width:520px){.pi-grid{aspect-ratio:1/1}.pi-q{font-size:12px;padding:6px 8px}}

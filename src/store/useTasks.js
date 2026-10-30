@@ -175,7 +175,7 @@ export function useTasks() {
     const say = (o) => uRef.current && uRef.current.toast && uRef.current.toast(o);
     const clear = () => uRef.current && uRef.current.dismiss && uRef.current.dismiss('guard');
     const withDecision = (o) => say({ id: 'guard', tone: 'warn', ...o });
-    // Warning only, never a block: tell the user when work is dated on an off day of the Working calendar (Budget tab).
+    // Warning only, never a block: tell the user when work is dated on an off day of the Working calendar (Stakeholders tab).
     // `ids` are the work items just changed (or created); `patch` holds the start / due dates they were given.
     const warnOffDays = (ids, patch) => {
       const S0 = sRef.current;
@@ -187,7 +187,7 @@ export function useTasks() {
       const who = ids.length === 1 && nm ? '\u201c' + nm + '\u201d' : ids.length > 1 ? ids.length + ' work items' : 'This work item';
       say({
         id: 'offday', tone: 'warn', ttl: 9000,
-        text: who + ' is dated ' + hits.map(why).join(' and ') + ', an off day in the project\u2019s Working calendar. The change is saved, but nobody is expected to work that day. Check the date or the Working calendar on the Budget tab.',
+        text: who + ' is dated ' + hits.map(why).join(' and ') + ', an off day in the project\u2019s Working calendar. The change is saved, but nobody is expected to work that day. Check the date or the Working calendar on the Stakeholders tab.',
       });
     };
     // Every new sprint goes through the New sprint form (planned hours, and a change request once the project has a baseline).

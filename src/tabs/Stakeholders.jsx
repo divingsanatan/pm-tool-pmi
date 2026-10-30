@@ -3,6 +3,9 @@ import { useStore } from '../store/StoreContext';
 import { useUI } from '../components/UI';
 import { Cell } from '../components/Field';
 import { allContainers, uid } from '../lib/tasks';
+import PowerInterestGrid from '../components/PowerInterestGrid';
+import WorkCalendar from '../components/WorkCalendar';
+import { SCORES, quadrantOf, scoreOf } from '../lib/stakeholderGrid';
 
 const key = (x) => (x || '').trim().toLowerCase();
 
@@ -44,7 +47,22 @@ export default function Stakeholders() {
     });
   };
 
+  const setScore = (p, field, v) =>
+    update((s) => {
+      const x = s.people.find((q) => q.id === p.id);
+      if (!x) return;
+      if (v === '') delete x[field];
+      else x[field] = parseInt(v, 10);
+    });
+  const scoreBox = (p, field, label) => (
+    <select className="c w-sm" value={scoreOf(p[field]) || ''} onChange={(e) => setScore(p, field, e.target.value)} aria-label={label + ' of ' + p.name}>
+      <option value="">–</option>
+      {SCORES.map((n) => (<option key={n} value={n}>{n}</option>))}
+    </select>
+  );
+
   return (
+    <>
     <div className="card">
       <h2>Stakeholders</h2>
       <p className="hint">The single list of people for this project. Pick them as assignees on work items, mark them in the RACI chart, and cost them in the Budget. Names can only be added or changed here.</p>
@@ -56,22 +74,28 @@ export default function Stakeholders() {
       {msg && <p className="msg lateTxt" style={{ marginBottom: 8 }}>{msg}</p>}
       <div className="scroll">
         <table className="tbl rwd">
-          <thead><tr><th>Name</th><th>Role or title</th><th className="r">Assigned work items</th><th className="r">RACI roles</th><th>Labour budget</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Role or title</th><th>Power (1–10)</th><th>Interest (1–10)</th><th>Engage</th><th className="r">Assigned work items</th><th className="r">RACI roles</th><th>Labour budget</th><th></th></tr></thead>
           <tbody>
             {S.people.map((p) => (
               <tr key={p.id}>
                 <td data-l="Name"><Cell value={p.name} cls="w-name" label="Stakeholder name" onCommit={(v) => rename(p, v)} /></td>
                 <td data-l="Role"><Cell value={p.role || ''} cls="w-md" placeholder="Role" label="Role or title" onCommit={(v) => update((s) => { s.people.find((x) => x.id === p.id).role = v.trim(); })} /></td>
+                <td data-l="Power">{scoreBox(p, 'power', 'Power')}</td>
+                <td data-l="Interest">{scoreBox(p, 'interest', 'Interest')}</td>
+                <td data-l="Engage"><span className="cell msg">{quadrantOf(p) ? quadrantOf(p).label : 'Set power and interest'}</span></td>
                 <td data-l="Assigned" className="r mono"><span className="cell">{tasks.filter((t) => (t.assignees || []).includes(p.id)).length}</span></td>
                 <td data-l="RACI roles" className="r mono"><span className="cell">{tasks.filter((t) => t.raci && t.raci[p.id]).length}</span></td>
                 <td data-l="Labour budget"><span className="cell msg">{S.team.some((t) => t.person === p.id) ? 'Included' : '–'}</span></td>
                 <td data-l=""><button className="x" onClick={() => remove(p)} aria-label={'Remove ' + p.name}>✕</button></td>
               </tr>
             ))}
-            {!S.people.length && (<tr className="empty-row"><td colSpan="6"><span className="cell msg">No stakeholders yet. Add the first one above.</span></td></tr>)}
+            {!S.people.length && (<tr className="empty-row"><td colSpan="9"><span className="cell msg">No stakeholders yet. Add the first one above.</span></td></tr>)}
           </tbody>
         </table>
       </div>
     </div>
+    <PowerInterestGrid />
+    <WorkCalendar />
+    </>
   );
 }

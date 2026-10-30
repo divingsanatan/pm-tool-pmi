@@ -1,4 +1,3 @@
-import WorkCalendar from '../components/WorkCalendar';
 import { useState } from 'react';
 import { useStore } from '../store/StoreContext';
 import { useCosts } from '../store/useCosts';
@@ -391,8 +390,6 @@ export default function Budget() {
           <label className="fld">Sprint length (weeks)<Cell sec="meta" f="sprintWeeks" value={S.meta.sprintWeeks} type="int" cls="w-sm n" /></label>
         </div>
       </div>
-
-      <WorkCalendar />
 
       <div className="grid2 bud-grid">
         <LabourRegister />

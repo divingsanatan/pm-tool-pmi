@@ -4,7 +4,7 @@ import { DAY, pd } from './dates';
      weekly   a weekday the team always rests (e.g. Sunday), set once for the project  (meta.weeklyOff, 0 = Sunday ... 6 = Saturday)
      holiday  a public holiday or shutdown, set once for the project                   (S.holidays: [{ id, from, to, label }])
      sprint   (retired) days once marked off on one sprint only. Leaves are now managed in the project's Working calendar
-              (Budget tab), so anything still stored in sprint.offDays is ignored and no longer counted.
+              (Stakeholders tab), so anything still stored in sprint.offDays is ignored and no longer counted.
    Every time-based figure (planned %, planned value, SPI, the S-curve) counts working days only:
        working days = calendar days in the sprint - off days
    A project with no weekly off days, no holidays and no sprint off days behaves exactly as before. */

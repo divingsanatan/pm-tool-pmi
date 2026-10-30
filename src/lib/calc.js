@@ -567,7 +567,7 @@ export function alerts(S) {
   S.sprints.forEach((sp) => {
     const cal = sprintCalendar(sp, null, calendarOf(S));
     if (cal && cal.work === 0)
-      a.push({ cls: 'bad', text: sp.name + ' has every day off (weekly off days and holidays), so it has no working days and no planned value. Check the Working calendar on the Budget tab.' });
+      a.push({ cls: 'bad', text: sp.name + ' has every day off (weekly off days and holidays), so it has no working days and no planned value. Check the Working calendar on the Stakeholders tab.' });
   });
   S.sprints.forEach((sp) => {
     const c = sp.crId && S.cr.find((x) => x.id === sp.crId);

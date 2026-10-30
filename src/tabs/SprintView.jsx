@@ -269,7 +269,7 @@ const Bar = ({ f, tone, label }) => <div className={'bar ' + (tone || '')} role=
 const ratio = (v) => (v == null ? '–' : v.toFixed(2) + ' (' + Math.round(v * 100) + '%)');
 
 // Off days of one sprint, for viewing only. Weekly off days and holidays are managed in the project's Working calendar
-// (Budget tab), so nothing here is clickable: the strip just shows which days of the sprint are working and which are off.
+// (Stakeholders tab), so nothing here is clickable: the strip just shows which days of the sprint are working and which are off.
 function OffDays({ c, E }) {
   const { S, setNav } = useStore();
   const list = sprintDayList(c, calendarOf(S));
@@ -282,11 +282,11 @@ function OffDays({ c, E }) {
         <div>
           <h3 className="sp-h" style={{ margin: 0 }}>Off days · {E.offN} of {E.calDays}{parts.length ? ' (' + parts.join(', ') + ')' : ''}</h3>
           <p className="hint" style={{ margin: '4px 0 0' }}>
-            Planned % counts the <b>{E.days}</b> working day{E.days === 1 ? '' : 's'} only: {E.calDays} calendar − {E.offN} off. Weekly off days and holidays come from the project&apos;s Working calendar (Budget tab) and are shown here for reference.
+            Planned % counts the <b>{E.days}</b> working day{E.days === 1 ? '' : 's'} only: {E.calDays} calendar − {E.offN} off. Weekly off days and holidays come from the project&apos;s Working calendar (Stakeholders tab) and are shown here for reference.
             Work can still be planned on an off day, but you will see a warning.
           </p>
         </div>
-        <button className="btn" onClick={() => setNav({ view: 'project', tab: 'budget' })}>Open Working calendar</button>
+        <button className="btn" onClick={() => setNav({ view: 'project', tab: 'people' })}>Open Working calendar</button>
       </div>
       <div className="od-strip" role="list" aria-label="Days of the sprint">
         {list.map((d) => (
