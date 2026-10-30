@@ -86,3 +86,12 @@
 .cp-cell sup{font-size:9.5px;margin-left:3px;font-weight:600}
 @media (max-width:720px){.cp-srow{grid-template-columns:1fr}.cp-srow .tx{justify-content:flex-start}}
 .cp-card .linkbtn,.sd-wrap .linkbtn{appearance:none;background:none;border:0;padding:0;color:var(--accent);font:inherit;font-weight:600;cursor:pointer;text-decoration:underline}
+
+/* ---- capacity settings: project default and overrides ---- */
+.cp-defaults{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end;margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--row)}
+.cp-defaults .fld{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted);font-weight:600}
+.cp-defaults .msg{flex:1 1 220px;font-size:12.5px}
+.inh{font-size:10.5px;color:var(--muted);margin-top:1px;text-align:right}
+.inh.own{color:var(--accent);font-weight:600}
+.cp-others{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+.cp-others summary{cursor:pointer;font-weight:600;font-size:13px}

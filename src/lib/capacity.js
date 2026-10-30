@@ -36,12 +36,28 @@ const r2 = (n) => Math.round(n * 100) / 100;
 const MAX_SPAN = 800; // guard against a mistyped year turning one leave into thousands of days
 
 /* ---------- a person's settings ---------- */
+// The project's defaults: everybody inherits them until a person has a value of their own.
+//   meta.hoursPerDay (the same number the Budget uses, 8 if missing) and meta.focus (80% if missing)
+export function projectDefaults(S) {
+  const m = (S && S.meta) || {};
+  const hpd = nz(m.hoursPerDay) > 0 ? Math.min(24, m.hoursPerDay) : 8;
+  const focus = m.focus != null && !isNaN(m.focus) ? Math.max(0, Math.min(1, m.focus)) : DEFAULT_FOCUS;
+  return { hpd, focus, customHpd: nz(m.hoursPerDay) > 0, customFocus: m.focus != null && !isNaN(m.focus) };
+}
+
 export function settingsOf(S, p) {
-  const base = nz(S && S.meta && S.meta.hoursPerDay) > 0 ? S.meta.hoursPerDay : 8;
-  const hpd = p && p.hpd != null && nz(p.hpd) > 0 ? Math.min(24, p.hpd) : base;
-  const focus = p && p.focus != null && !isNaN(p.focus) ? Math.max(0, Math.min(1, p.focus)) : DEFAULT_FOCUS;
+  const d = projectDefaults(S);
+  const hpd = p && p.hpd != null && nz(p.hpd) > 0 ? Math.min(24, p.hpd) : d.hpd;
+  const focus = p && p.focus != null && !isNaN(p.focus) ? Math.max(0, Math.min(1, p.focus)) : d.focus;
   const alloc = Math.max(0, nz(p && p.cap));
-  return { hpd, focus, alloc, perDay: hpd * focus * alloc, customHpd: !!(p && p.hpd != null && nz(p.hpd) > 0), customFocus: !!(p && p.focus != null) };
+  return { hpd, focus, alloc, perDay: hpd * focus * alloc, customHpd: !!(p && p.hpd != null && nz(p.hpd) > 0), customFocus: !!(p && p.focus != null && !isNaN(p.focus)) };
+}
+
+// Is this stakeholder part of the delivery team for capacity purposes? Yes with an allocation above 0 or any assigned work.
+// Sponsors, customers and other people who only need to be informed stay out of the planner.
+export function onDeliveryTeam(S, p) {
+  if (nz(p && p.cap) > 0) return true;
+  return [S.backlog].concat(S.sprints || []).some((c) => c && (c.tasks || []).some((t) => (t.assignees || []).includes(p.id)));
 }
 
 /* ---------- leave ---------- */
