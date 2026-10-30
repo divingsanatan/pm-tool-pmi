@@ -126,14 +126,17 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
         >⋮⋮</span>
         <input type="checkbox" className="tg-sel" checked={selected} onChange={() => {}} onClick={(e) => onSelect(t.id, e.shiftKey)} aria-label={'Select ' + t.name} />
         {parent ? (
-          <button className="x tg-exp" onClick={onToggle} aria-label={expanded ? 'Hide child items' : 'Show child items'} title={expanded ? 'Collapse' : 'Expand'}>{expanded ? '▾' : '▸'}</button>
+          <button className="x tg-exp" onClick={onToggle} aria-expanded={!!expanded} aria-label={expanded ? 'Hide child items' : 'Show child items'} title={expanded ? 'Collapse' : 'Expand'}>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
         ) : (
           <span className="w-exp sp" aria-hidden="true" />
         )}
         <TypeMenu task={t} size={16} />
         <StatusMenu task={t} />
-        <NameInput t={t} focus={focus} bold={parent} done={done} keys={keys} />
-        <span className="tags-inline"><TagMenu task={t} inline /></span>
+        <NameInput t={t} focus={focus} bold={parent} done={done} keys={keys} wrap={ctx.wrap}>
+          <span className="tags-inline"><TagMenu task={t} inline max={99} /></span>
+        </NameInput>
         {parent && <span className="subc" title="Direct child items done">⑂ {kidsDone}/{kidList.length}</span>}
         <AddChildMenu parent={t} onAdded={(id) => { expand(t.id); ask({ id, select: true }); }} />
       </div>
@@ -522,7 +525,25 @@ export default function SprintView() {
     } else tk.place(drag.id, { parent: target.parent || '', ref: target.id, pos: zone });
   };
   const sum = summarize(S, c);
-  const spCls = 'tg sp' + LIST_COLS.filter((x) => !lc.has(x.id)).map((x) => ' no-' + x.id).join('');
+  // drag the right edge of the Name heading to change the column's width
+  const startResize = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = e.currentTarget.parentElement.getBoundingClientRect().width;
+    let last = startW;
+    const move = (ev) => { last = startW + ev.clientX - startX; lc.setNameW(last, false); };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      document.body.classList.remove('col-resizing');
+      lc.setNameW(last, true);
+    };
+    document.body.classList.add('col-resizing');
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  const spCls = 'tg sp' + (lc.wrap ? ' wrapn' : '') + LIST_COLS.filter((x) => !lc.has(x.id)).map((x) => ' no-' + x.id).join('');
   const boardTasks = leaves.filter((t) => matched.has(t.id));
 
   // an item is expanded when you opened it, or when it has children and you did not close it
@@ -633,6 +654,9 @@ export default function SprintView() {
         )}
         <span style={{ flex: 1 }} />
         {view === 'list' && <Menu className="btn" label="Columns ▾" title="Choose which columns the list shows" items={lc.items()} />}
+        {view === 'list' && (
+          <button className="chip" aria-pressed={lc.wrap} onClick={() => lc.setWrap(!lc.wrap)} title="Show long names on several lines instead of cutting them with …">Wrap names</button>
+        )}
         {view === 'list' && <button className="btn" onClick={ui.openTypes} title="Add or edit work item types">Types</button>}
         <button className="btn" onClick={ui.openStatuses} title="Add or edit task statuses">Statuses</button>
         <button className="btn primary" onClick={quickAdd}>+ Task</button>
@@ -684,7 +708,22 @@ export default function SprintView() {
           <div className={spCls}>
             <div className="tg-row tg-h">
               {LIST_COLS.slice(0, 1).map((c) => (<div key={c.id} className="h-wbs">WBS</div>))}
-              <div className="tg-name"><TriBox all={tasks.length > 0 && chosen.length === tasks.length} some={chosen.length > 0} onChange={(e) => setMany(tasks.map((t) => t.id), e.target.checked)} label="Select all tasks" />Name</div>
+              <div className="tg-name"><TriBox all={tasks.length > 0 && chosen.length === tasks.length} some={chosen.length > 0} onChange={(e) => setMany(tasks.map((t) => t.id), e.target.checked)} label="Select all tasks" />Name<span
+                className="col-rs"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Name column width. Drag to resize, double-click to reset, or use the left and right arrow keys."
+                tabIndex={0}
+                title="Drag to change the width of the Name column. Double-click to reset."
+                onPointerDown={startResize}
+                onDoubleClick={() => lc.setNameW(null, true)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+                  e.preventDefault();
+                  const w = e.currentTarget.parentElement.getBoundingClientRect().width;
+                  lc.setNameW(w + (e.key === 'ArrowRight' ? 24 : -24), true);
+                }}
+              /></div>
               {LIST_COLS.slice(1).map((c) => (
                 <div
                   key={c.id}
@@ -752,7 +791,7 @@ export default function SprintView() {
                     <span className="msg">{g.tasks.length}</span>
                   </div>
                   {!hide && g.tasks.map((t) => (
-                    <Branch key={t.id} t={t} depth={0} ctx={{ kids, visible: shown, isExp, toggle, onOpen: setOpen, sel, onSelect: toggleOne, filtering, tk, maxDepth, wbsOf, drag, over, setDrag, setOver, drop, focus, ask, expand, tasks: c.tasks, by, grp: g.key, setGover }} />
+                    <Branch key={t.id} t={t} depth={0} ctx={{ kids, visible: shown, isExp, toggle, onOpen: setOpen, sel, onSelect: toggleOne, filtering, tk, maxDepth, wbsOf, drag, over, setDrag, setOver, drop, focus, ask, expand, tasks: c.tasks, by, grp: g.key, setGover, wrap: lc.wrap }} />
                   ))}
                   {!hide && <div className="tg-add"><AddRow onAdd={addTo(g.defaults)} /></div>}
                 </div>

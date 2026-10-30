@@ -20,6 +20,11 @@ export const LIST_COLS = [
 ];
 
 const KEY = 'sprint-control-list-cols-v1';
+const KEY_NAME_W = 'sprint-control-list-name-w-v1';
+const KEY_WRAP = 'sprint-control-list-wrap-v1';
+export const NAME_MIN = 180;
+export const NAME_MAX = 900;
+const clampW = (w) => Math.max(NAME_MIN, Math.min(NAME_MAX, Math.round(w)));
 const DEFAULTS = LIST_COLS.filter((c) => c.def).map((c) => c.id);
 
 function load() {
@@ -33,6 +38,15 @@ function load() {
 }
 
 export function useListCols() {
+  // Name column: width null = it takes the room that is left (and never gets narrower than 240px); a number = the width the user dragged it to.
+  const [nameW, setNameWState] = useState(() => { try { const n = parseInt(localStorage.getItem(KEY_NAME_W), 10); return n ? clampW(n) : null; } catch (e) { return null; } });
+  const [wrap, setWrapState] = useState(() => { try { return localStorage.getItem(KEY_WRAP) !== '0'; } catch (e) { return true; } }); // wrap long names (default) or cut them with …
+  const setNameW = useCallback((w, persist) => {
+    const n = w == null ? null : clampW(w);
+    setNameWState(n);
+    if (persist) { try { n == null ? localStorage.removeItem(KEY_NAME_W) : localStorage.setItem(KEY_NAME_W, String(n)); } catch (e) { /* not saved */ } }
+  }, []);
+  const setWrap = useCallback((on) => { setWrapState(on); try { localStorage.setItem(KEY_WRAP, on ? '1' : '0'); } catch (e) { /* not saved */ } }, []);
   const [ids, setIds] = useState(load); // the shown columns, in the order they appear (WBS always stays first, then Name)
   const save = useCallback((next) => {
     setIds(next);
@@ -53,13 +67,17 @@ export function useListCols() {
   const parts = [];
   let min = 64 + 40;
   if (ids.includes('wbs')) { parts.push('52px'); min += 56; }
-  parts.push('minmax(240px,1fr)'); min += 244;
+  if (nameW) { parts.push(nameW + 'px'); min += nameW + 4; } else { parts.push('minmax(260px,1fr)'); min += 264; }
   moving.forEach((id) => { parts.push(colOf(id).w + 'px'); min += colOf(id).w + 4; });
   parts.push('64px');
   const vars = { '--tg-cols': parts.join(' '), '--tg-min': min + 'px' };
   LIST_COLS.forEach((c) => { vars['--o-' + c.id] = moving.includes(c.id) ? moving.indexOf(c.id) + 2 : 900; });
   return {
     ids,
+    nameW,
+    setNameW,
+    wrap,
+    setWrap,
     has: (id) => ids.includes(id),
     toggle,
     move,
