@@ -17,6 +17,7 @@ import { crCls, currentBaseline, signedMoney } from '../lib/change';
 import { flatTree, kidsMap, leafTasks, rootTasks, subtreeIds, summarize, withAncestors } from '../lib/hier';
 import '../sprintlist.css';
 import { WEEKDAYS_SHORT, calendarOf, sprintDayList } from '../lib/offdays';
+import { StakeholderOffDays, SprintCapacity } from '../components/CapacityViews';
 import BulkBar from '../components/BulkBar';
 import NameInput from '../components/NameInput';
 import { LIST_COLS, useListCols } from '../lib/listCols';
@@ -282,7 +283,7 @@ function OffDays({ c, E }) {
         <div>
           <h3 className="sp-h" style={{ margin: 0 }}>Off days · {E.offN} of {E.calDays}{parts.length ? ' (' + parts.join(', ') + ')' : ''}</h3>
           <p className="hint" style={{ margin: '4px 0 0' }}>
-            Planned % counts the <b>{E.days}</b> working day{E.days === 1 ? '' : 's'} only: {E.calDays} calendar − {E.offN} off. Weekly off days and holidays come from the project&apos;s Working calendar (Stakeholders tab) and are shown here for reference.
+            Planned % counts the <b>{E.days}</b> working day{E.days === 1 ? '' : 's'} only: {E.calDays} calendar − {E.offN} off. Weekly off days and holidays come from the project&apos;s Working calendar and each stakeholder&apos;s leave from the Team leave calendar (both on the Stakeholders tab); they are shown here for reference.
             Work can still be planned on an off day, but you will see a warning.
           </p>
         </div>
@@ -301,6 +302,7 @@ function OffDays({ c, E }) {
           </div>
         ))}
       </div>
+      <StakeholderOffDays c={c} />
     </div>
   );
 }
@@ -351,6 +353,7 @@ function SprintPanel({ S, c, E, cr, tk, setNav }) {
           </Tile>
         </div>
         <OffDays c={c} E={E} />
+        <SprintCapacity c={c} />
         {datesLocked && (
           <div className="row" style={{ margin: '10px 0 0', gap: 12, alignItems: 'center' }}>
             <p className="hint" style={{ margin: 0, flex: '1 1 260px' }}>

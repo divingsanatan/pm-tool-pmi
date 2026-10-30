@@ -8,6 +8,7 @@ import { money, nz, pc } from '../lib/format';
 import { changeAlerts, signedMoney } from '../lib/change';
 import { FLAGS, PLURAL, raidInsights } from '../lib/raidInsights';
 import BaselinePanel from '../components/BaselinePanel';
+import { ProjectCapacity } from '../components/CapacityViews';
 import { planLineTotal } from '../lib/lineChange';
 
 const r2 = (n) => (n == null ? null : Math.round(n * 100) / 100);
@@ -186,6 +187,7 @@ export default function Dashboard() {
       </section>
 
       <BaselinePanel />
+      <ProjectCapacity />
 
       <section className="card">
         <h2>Cumulative cost across the project</h2>

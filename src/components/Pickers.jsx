@@ -4,6 +4,7 @@ import { useUI } from './UI';
 import Menu from './Menu';
 import { AvatarStack, Flag, StatusIcon, TypeBadge } from './Bits';
 import { useState } from 'react';
+import { leaveCheck, rangeText } from '../lib/capacity';
 import { PRIORITIES, allTags, cleanTag, cleanTags, findTask, hasTag, nameOf, statusOf, statusesOf, tagHue, typeOf, typesOf } from '../lib/tasks';
 
 // Several stakeholders can be assigned to one work item
@@ -11,7 +12,12 @@ export function AssigneeMenu({ task, className = 'x ass-btn', label, size = 24 }
   const { S, setNav } = useStore();
   const tk = useTasks();
   const ids = task.assignees || [];
-  const items = S.people.map((p) => ({ label: p.name || '(unnamed)', active: ids.includes(p.id), keepOpen: true, onClick: () => tk.toggleAssignee(task.id, p.id) }));
+  const items = S.people.map((p) => {
+    // a stakeholder on leave for every date of the item cannot be given it; partial leave is shown but allowed
+    const lc = ids.includes(p.id) ? null : leaveCheck(S, p, task.start, task.due);
+    const hint = lc && lc.block ? 'on leave ' + rangeText(lc.lost) : lc && lc.lost.length ? 'leave ' + rangeText(lc.lost) : '';
+    return { label: (p.name || '(unnamed)') + (hint ? ' · ' + hint : ''), active: ids.includes(p.id), keepOpen: true, disabled: !!(lc && lc.block), onClick: () => tk.toggleAssignee(task.id, p.id) };
+  });
   items.push(
     { sep: true },
     { label: 'Clear all', disabled: !ids.length, onClick: () => tk.patch(task.id, { assignees: [] }) },

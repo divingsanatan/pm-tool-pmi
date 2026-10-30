@@ -6,6 +6,7 @@ import { allContainers, uid } from '../lib/tasks';
 import WrapCell from '../components/WrapCell';
 import PowerInterestGrid from '../components/PowerInterestGrid';
 import WorkCalendar from '../components/WorkCalendar';
+import LeaveCalendar, { PeopleCapacity } from '../components/LeaveCalendar';
 import { SCORES, quadrantOf, scoreOf } from '../lib/stakeholderGrid';
 
 const key = (x) => (x || '').trim().toLowerCase();
@@ -96,7 +97,9 @@ export default function Stakeholders() {
       </div>
     </div>
     <PowerInterestGrid />
+    <PeopleCapacity />
     <WorkCalendar />
+    <LeaveCalendar />
     </>
   );
 }
