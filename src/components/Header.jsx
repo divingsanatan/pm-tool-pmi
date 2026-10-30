@@ -6,12 +6,12 @@ import { money } from '../lib/format';
 
 export const TABS = [
   ['dash', 'Dashboard'],
-  ['time', 'Timeline'],
-  ['budget', 'Budget'],
   ['people', 'Stakeholders'],
+  ['budget', 'Budget'],
   ['raci', 'RACI'],
   ['raid', 'RAID log'],
   ['change', 'Change control'],
+  ['time', 'Timeline'],
   ['activity', 'Activity'],
 ];
 
