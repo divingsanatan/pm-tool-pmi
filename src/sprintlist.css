@@ -174,7 +174,7 @@ body.col-resizing{cursor:col-resize;user-select:none}
 .pi-wrap{display:grid;grid-template-columns:24px minmax(0,1fr);grid-template-rows:auto 24px;gap:6px;max-width:720px}
 .pi-axis-y{writing-mode:vertical-rl;transform:rotate(180deg);text-align:center;color:var(--muted);font-size:13px;font-weight:600}
 .pi-axis-x{grid-column:2;text-align:center;color:var(--muted);font-size:13px;font-weight:600}
-.pi-grid{position:relative;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;aspect-ratio:1.25/1;min-height:260px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.pi-grid{position:relative;display:grid;grid-template-columns:61fr 39fr;grid-template-rows:39fr 61fr;aspect-ratio:1.25/1;min-height:260px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .pi-q{position:relative;padding:8px 10px;font-size:13px;font-weight:600;color:var(--muted)}
 .pi-q.q-closely{background:rgba(220,80,60,.13)}
 .pi-q.q-satisfied{background:rgba(240,170,40,.13);border-right:1px solid var(--line)}
@@ -193,3 +193,6 @@ body.col-resizing{cursor:col-resize;user-select:none}
 .pi-who{display:flex;flex-wrap:wrap;gap:6px}
 .pi-p{display:inline-flex;align-items:center;gap:6px;font-size:13px}
 @media (max-width:520px){.pi-grid{aspect-ratio:1/1}.pi-q{font-size:12px;padding:6px 8px}}
+
+/* text cells that wrap (Stakeholders name and role) */
+.wrap-in{display:block;width:100%;resize:none;overflow:hidden;line-height:1.4;font:inherit;white-space:pre-wrap;overflow-wrap:anywhere}

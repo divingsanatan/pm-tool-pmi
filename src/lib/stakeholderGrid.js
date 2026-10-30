@@ -1,7 +1,7 @@
-// Power / interest grid (the PMBOK stakeholder grid). Each stakeholder is scored 1 to 10 for power (how much they can influence the project)
-// and interest (how much the project matters to them). Scores of 6 and above count as high.
-export const SCORES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-export const HIGH_FROM = 6;
+// Power / interest grid (the PMBOK stakeholder grid). Each stakeholder is scored 1 to 5 for power (how much they can influence the project)
+// and interest (how much the project matters to them). Scores of 4 and 5 count as high; 1 to 3 as low.
+export const SCORES = [1, 2, 3, 4, 5];
+export const HIGH_FROM = 4;
 
 export const QUADRANTS = [
   { id: 'closely', label: 'Manage closely', power: 'high', interest: 'high', how: 'Involve them in decisions and talk often. Their support makes or breaks the project.' },
@@ -10,9 +10,11 @@ export const QUADRANTS = [
   { id: 'monitor', label: 'Monitor', power: 'low', interest: 'low', how: 'Watch for changes and give minimal effort.' },
 ];
 
+// Scores saved earlier on the 1 to 10 scale are shown on the 1 to 5 scale (6 to 10 become 3 to 5 ... 2 per step)
 export const scoreOf = (v) => {
   const n = typeof v === 'number' ? v : parseInt(v, 10);
-  return n >= 1 && n <= 10 ? Math.round(n) : null;
+  if (!(n >= 1 && n <= 10)) return null;
+  return n <= 5 ? Math.round(n) : Math.ceil(n / 2);
 };
 export const isPlaced = (p) => scoreOf(p.power) != null && scoreOf(p.interest) != null;
 

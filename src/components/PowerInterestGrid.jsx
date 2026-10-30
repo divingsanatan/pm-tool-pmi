@@ -18,14 +18,14 @@ export default function PowerInterestGrid() {
     const w = spot.get(scoreOf(p.power) + '-' + scoreOf(p.interest));
     const i = w.indexOf(p.id);
     return {
-      left: `calc(${6 + ((scoreOf(p.interest) - 1) / 9) * 88}% + ${(i - (w.length - 1) / 2) * 30}px)`,
-      bottom: `${8 + ((scoreOf(p.power) - 1) / 9) * 84}%`,
+      left: `calc(${6 + ((scoreOf(p.interest) - 1) / 4) * 88}% + ${(i - (w.length - 1) / 2) * 30}px)`,
+      bottom: `${6 + ((scoreOf(p.power) - 1) / 4) * 88}%`,
     };
   };
   return (
     <div className="card">
       <h2>Power / interest grid</h2>
-      <p className="hint">Where each stakeholder sits by how much power they have over the project and how interested they are in it. Set the two scores (1 to 10, from 6 up counts as high) for each stakeholder in the table above and they appear here.</p>
+      <p className="hint">Where each stakeholder sits by how much power they have over the project and how interested they are in it. Set the two scores (1 to 5; 4 and 5 count as high) for each stakeholder in the table above and they appear here.</p>
       {!S.people.length ? (
         <p className="msg">Add stakeholders above to build the grid.</p>
       ) : (

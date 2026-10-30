@@ -3,6 +3,7 @@ import { useStore } from '../store/StoreContext';
 import { useUI } from '../components/UI';
 import { Cell } from '../components/Field';
 import { allContainers, uid } from '../lib/tasks';
+import WrapCell from '../components/WrapCell';
 import PowerInterestGrid from '../components/PowerInterestGrid';
 import WorkCalendar from '../components/WorkCalendar';
 import { SCORES, quadrantOf, scoreOf } from '../lib/stakeholderGrid';
@@ -74,12 +75,12 @@ export default function Stakeholders() {
       {msg && <p className="msg lateTxt" style={{ marginBottom: 8 }}>{msg}</p>}
       <div className="scroll">
         <table className="tbl rwd">
-          <thead><tr><th>Name</th><th>Role or title</th><th>Power (1–10)</th><th>Interest (1–10)</th><th>Engage</th><th className="r">Assigned work items</th><th className="r">RACI roles</th><th>Labour budget</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Role or title</th><th>Power (1–5)</th><th>Interest (1–5)</th><th>Engage</th><th className="r">Assigned work items</th><th className="r">RACI roles</th><th>Labour budget</th><th></th></tr></thead>
           <tbody>
             {S.people.map((p) => (
               <tr key={p.id}>
-                <td data-l="Name"><Cell value={p.name} cls="w-name" label="Stakeholder name" onCommit={(v) => rename(p, v)} /></td>
-                <td data-l="Role"><Cell value={p.role || ''} cls="w-md" placeholder="Role" label="Role or title" onCommit={(v) => update((s) => { s.people.find((x) => x.id === p.id).role = v.trim(); })} /></td>
+                <td data-l="Name"><WrapCell value={p.name} label="Stakeholder name" onCommit={(v) => rename(p, v)} /></td>
+                <td data-l="Role"><WrapCell value={p.role || ''} minWidth={180} placeholder="Role" label="Role or title" onCommit={(v) => update((s) => { s.people.find((x) => x.id === p.id).role = v.trim(); })} /></td>
                 <td data-l="Power">{scoreBox(p, 'power', 'Power')}</td>
                 <td data-l="Interest">{scoreBox(p, 'interest', 'Interest')}</td>
                 <td data-l="Engage"><span className="cell msg">{quadrantOf(p) ? quadrantOf(p).label : 'Set power and interest'}</span></td>
