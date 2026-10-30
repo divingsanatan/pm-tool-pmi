@@ -1,13 +1,11 @@
 import { DAY, fsh, pd } from './dates';
-import { lastDay } from './calc';
 import { calendarOf, hasValidDates, WEEKDAYS_SHORT } from './offdays';
-import { capacityBetween, onDeliveryTeam, projectDefaults, settingsOf } from './capacity';
+import { calendarHours, capacityBetween, onDeliveryTeam, planWindow, projectDefaults, settingsOf } from './capacity';
 
-const MAX_DAYS = 104 * 7 + 400;
 const r2 = (n) => Math.round(n * 100) / 100;
 
 /* The project's time and capacity at a glance (the cards at the top of the Stakeholders tab).
-   Window: from the project start (earliest sprint start) to the last day of the plan, the same span the Dashboard and Budget use.
+   Window: from the project start (earliest sprint start) to the last day of the plan. The Budget's labour hours use this same window (cost entries never stretch it).
      calendar days  = days in the window
      off days       = weekly off days + holidays of the Working calendar that fall in the window (a holiday on a Sunday counts once)
      available days = calendar days - off days
@@ -17,8 +15,7 @@ const r2 = (n) => Math.round(n * 100) / 100;
 export function projectGlance(S) {
   const D = projectDefaults(S);
   const cal = calendarOf(S);
-  const startMs = pd(S.meta.start), endMs = lastDay(S);
-  const n = Math.min(MAX_DAYS, Math.max(1, Math.round((endMs - startMs) / DAY) + 1));
+  const win = planWindow(S), startMs = win.start, n = win.n;
   let weekly = 0, holiday = 0;
   for (let i = 0, ms = startMs; i < n; i++, ms += DAY) {
     if (cal.holidays.some((h) => ms >= h.a && ms <= h.b)) holiday++;

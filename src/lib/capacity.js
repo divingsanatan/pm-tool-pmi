@@ -140,6 +140,34 @@ export function capacityBetween(S, p, from, to) {
   return { ...st, cal: days.length, teamOff, leaveFull, leaveHalf, workDays, availDays, gross: availDays * st.hpd, cap: availDays * st.perDay, days };
 }
 
+
+/* ---------- the plan window and the hours the calendar gives a person ---------- */
+// The span the plan covers: the project start (earliest sprint start) to the latest planned date (sprints and their work items).
+// Cost entries and completion dates are left out on purpose: logging an actual cost must never stretch the planned hours, and so the budget.
+export function planWindow(S) {
+  const start = pd(S.meta.start);
+  let end = start + 6 * DAY;
+  const take = (d) => {
+    if (!okDate(d)) return;
+    const t = pd(d);
+    if (t > end) end = t;
+  };
+  (S.sprints || []).forEach((sp) => {
+    take(sp.start);
+    take(sp.end);
+    (sp.tasks || []).forEach((t) => { take(t.start); take(t.due); });
+  });
+  const n = Math.min(104 * 7 + 400, Math.round((end - start) / DAY) + 1);
+  return { start, n, startS: iso(start), endS: iso(start + (n - 1) * DAY) };
+}
+
+// Hours one person has over the plan window before allocation: working days (calendar days - team off days - their own leave)
+// x their hours per day. This is the figure the Budget's labour section starts from; allocation % is applied there.
+export function calendarHours(S, p, win = planWindow(S)) {
+  const c = capacityBetween(S, p, win.startS, win.endS);
+  return { hours: r2(c.availDays * c.hpd), days: c.availDays, cal: c.cal, teamOff: c.teamOff, leave: r2(c.leaveFull + c.leaveHalf * 0.5), hpd: c.hpd };
+}
+
 /* ---------- work counted per person in one sprint ---------- */
 // Hours a work item adds to the load: the real work is on items without children; a parent's own estimate is its ownEffort.
 function loadItems(S, sp) {

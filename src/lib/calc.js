@@ -4,6 +4,7 @@ import { DEFAULT_STATUSES, DEFAULT_TYPES, allContainers, cleanTags, firstOpenSta
 import { flatTree, leafTasks, ownDoneItems, rollupContainer, rootTasks } from './hier';
 import { ACTIVITY_MAX } from './activity';
 import { calendarOf, offDaysOf, sprintCalendar } from './offdays';
+import { calendarHours, planWindow } from './capacity';
 
 /* ---------- timeline helpers ---------- */
 export const nW = (S) => S.meta.weeks;
@@ -98,19 +99,23 @@ export const hourly = (S) => S.team.reduce((a, t) => {
   const p = personOf(S, t.person);
   return a + (p ? nz(p.rate) * nz(p.cap) : 0);
 }, 0);
-// Labour cost of one stakeholder on this project, from numbers typed in the Labour budget:
-//   available hours = (total hours on the project - off hours) x capacity %
-//   cost            = available hours x hourly rate
-// Rate and capacity live on the stakeholder; total hours and off hours belong to this project (the budget team row).
-export function labourOf(S, t) {
+// Labour cost of one stakeholder on this project:
+//   total available hours = the hours their calendar gives them over the plan (working days x hours per day, after team off days and
+//                           their own leave; see capacity.js). It is pulled from the Stakeholders tab until someone types a value on the
+//                           budget row (team row `hours`), which then stays as an adjustment.
+//   available hours       = total available hours x capacity %   (capacity % is the stakeholder's allocation, the same number everywhere)
+//   cost                  = available hours x hourly rate
+// Rate and capacity live on the stakeholder; the optional hours adjustment belongs to this project (the budget team row).
+export function labourOf(S, t, win) {
   const p = personOf(S, t.person);
   if (!p) return null;
-  const total = Math.max(0, nz(t.hours)), off = Math.max(0, nz(t.off));
-  const net = Math.max(0, total - off);
-  const avail = net * nz(p.cap);
-  return { total, off, net, cap: nz(p.cap), rate: nz(p.rate), avail, cost: avail * nz(p.rate), overOff: off > total };
+  const auto = calendarHours(S, p, win || planWindow(S));
+  const manual = t.hours != null && !isNaN(t.hours);
+  const total = manual ? Math.max(0, nz(t.hours)) : auto.hours;
+  const avail = total * nz(p.cap);
+  return { total, off: 0, net: total, cap: nz(p.cap), rate: nz(p.rate), avail, cost: avail * nz(p.rate), manual, auto, diff: total - auto.hours };
 }
-export const labourRows = (S) => S.team.map((t) => labourOf(S, t)).filter(Boolean);
+export const labourRows = (S) => { const win = planWindow(S); return S.team.map((t) => labourOf(S, t, win)).filter(Boolean); };
 export const labourTotal = (S) => labourRows(S).reduce((a, r) => a + r.cost, 0);
 // Labour is a project total now. The weekly figure below is only that total spread evenly over the project weeks,
 // kept for the project budget (projectBAC) and the cost-by-period views; the Budget tab does not use it.
@@ -996,12 +1001,12 @@ export function normalize(S) {
   delete m.workDays;
   // number of weeks: always from the data (latest dated task, sprint, completion or cost)
   m.weeks = autoWeeks(S);
-  // labour budget rows hold total hours and off hours; rows from earlier versions start at the hours they used to imply
-  // (weeks x hours per day x working days), so the budget does not change until the hours are edited
+  // labour budget rows: `hours` is an optional adjustment of the hours the calendar gives (blank = follow the calendar).
+  // Rows saved when "total hours" and "off hours" were typed keep exactly the hours they had (total - off), so no cost changes by itself.
   S.team.forEach((t) => {
-    if (t.hours == null) t.hours = Math.round(m.weeks * nz(m.hoursPerDay) * nz(m.sprintDays) * 100) / 100;
-    t.hours = Math.max(0, nz(t.hours));
-    t.off = Math.max(0, nz(t.off));
+    if (t.hours != null && !isNaN(t.hours)) t.hours = Math.max(0, nz(t.hours) - Math.max(0, nz(t.off)));
+    else delete t.hours;
+    delete t.off;
   });
   // recurring budget lines hold a number of iterations; lines from earlier versions keep the total they used to give
   (S.lines || []).forEach((l) => {

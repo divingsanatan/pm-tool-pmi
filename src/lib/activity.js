@@ -28,7 +28,7 @@ const LABELS = {
   iResources: 'Resource impact', iRisk: 'Risk impact', alt: 'Alternatives', noop: 'If not done', decidedBy: 'Decided by',
   rationale: 'Rationale', apCost: 'Approved cost', apDays: 'Approved days', target: 'Target date', conditions: 'Conditions',
   chk: 'Checklist', reconcile: 'Reconciliation', verified: 'Verification', planPct: 'Planned %', earnPct: 'Earned %', note: 'Note',
-  weeks: 'Duration (weeks)', sprintWeeks: 'Sprint length (weeks)', hoursPerDay: 'Hours per day', sprintDays: 'Working days per sprint', hours: 'Total hours', plannedHours: 'Planned hours', offDays: 'Off days', weeklyOff: 'Weekly off days', from: 'From', off: 'Off hours', iterations: 'Iterations',
+  weeks: 'Duration (weeks)', sprintWeeks: 'Sprint length (weeks)', hoursPerDay: 'Hours per day', sprintDays: 'Working days per sprint', hours: 'Total available hours', plannedHours: 'Planned hours', offDays: 'Off days', weeklyOff: 'Weekly off days', from: 'From', off: 'Off hours', iterations: 'Iterations',
   label: 'Name', color: 'Colour', done: 'Counts as done', pct: 'Progress weight', icon: 'Icon', milestone: 'Milestone', effort: 'Effort (h)',
 };
 const humanize = (k) => {

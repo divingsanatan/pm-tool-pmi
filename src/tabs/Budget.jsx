@@ -4,6 +4,8 @@ import { useCosts } from '../store/useCosts';
 import { Cell, SelectCell } from '../components/Field';
 import { Modal, useUI } from '../components/UI';
 import WeeksControl from '../components/WeeksControl';
+import '../capacity.css';
+import { calendarHours, planWindow } from '../lib/capacity';
 import { ITER_UNIT, baseLine, baseOf, costBy, labourOf, labourTotal, lastDay, ledgerTotal, lineOnce, lineRecurring, lineState, lineTotal, maxIter, personOf, planBAC, projectBAC, reserves, suggestIter } from '../lib/calc';
 import LineCrDialog from './LineCrDialog';
 import { addLineViaCr, changeLineViaCr, dropPendingLine, lineEditable, revertLine, syncClaim } from '../lib/lineChange';
@@ -180,7 +182,7 @@ function AddLabour({ onClose }) {
   const [rate, setRate] = useState(free[0] ? String(free[0].rate == null ? '' : free[0].rate) : '');
   const [cap, setCap] = useState(free[0] ? fmtCap(free[0]) : '100');
   const [hrs, setHrs] = useState('');
-  const [off, setOff] = useState('');
+  const calHrs = pid ? calendarHours(S, S.people.find((p) => p.id === pid) || {}).hours : 0;
   const [need, setNeed] = useState(null); // set when the budget would go above the baseline: a change request is needed first
   const pick = (id) => {
     setPid(id);
@@ -195,7 +197,7 @@ function AddLabour({ onClose }) {
     if (!per) return;
     if (rate !== '') per.rate = parseFloat(rate) || 0;
     if (cap !== '') per.cap = (parseFloat(cap) || 0) / 100;
-    if (!p.team.some((t) => t.person === pid)) p.team.push({ person: pid, hours: Math.max(0, parseFloat(hrs) || 0), off: Math.max(0, parseFloat(off) || 0) });
+    if (!p.team.some((t) => t.person === pid)) p.team.push(hrs === '' ? { person: pid } : { person: pid, hours: Math.max(0, parseFloat(hrs) || 0) });
   };
   const save = () => {
     if (!pid) return;
@@ -239,9 +241,8 @@ function AddLabour({ onClose }) {
         </label>
         <label className="fld">Hourly rate<input className="c n" type="number" step="any" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} placeholder="0" /></label>
         <label className="fld">Capacity for this project (%)<input className="c n" type="number" step="any" inputMode="decimal" value={cap} onChange={(e) => setCap(e.target.value)} placeholder="100" /></label>
-        <label className="fld">Total hours on the project<input className="c n" type="number" step="any" inputMode="decimal" value={hrs} onChange={(e) => setHrs(e.target.value)} placeholder="0" /></label>
-        <label className="fld">Off hours (to deduct)<input className="c n" type="number" step="any" inputMode="decimal" value={off} onChange={(e) => setOff(e.target.value)} placeholder="0" /></label>
-        <p className="msg" style={{ gridColumn: '1 / -1', margin: 0 }}>Available hours = (total hours − off hours) × capacity. Cost = available hours × hourly rate.</p>
+        <label className="fld">Total available hours (optional)<input className="c n" type="number" step="any" inputMode="decimal" value={hrs} onChange={(e) => setHrs(e.target.value)} placeholder={'From calendar: ' + hrsf(calHrs)} /></label>
+        <p className="msg" style={{ gridColumn: '1 / -1', margin: 0 }}>Leave the hours blank to use the Stakeholders calendar (working days × hours per day, after off days and leave). Hours at capacity = total available hours × capacity. Cost = hours at capacity × hourly rate.</p>
         <div className="row" style={{ gridColumn: '1 / -1', justifyContent: 'flex-end' }}>
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn primary" onClick={save}>Add to budget</button>
@@ -263,7 +264,10 @@ function LabourRegister() {
   const used = new Set(S.team.map((t) => t.person));
   const setPerson = (id, patch) => update((s) => void Object.assign(s.people.find((x) => x.id === id), patch));
   const setTeam = (i, patch) => update((s) => void Object.assign(s.team[i], patch));
-  const rows = S.team.map((t, i) => ({ t, i, per: personOf(S, t.person), L: labourOf(S, t) })).filter((r) => r.per && r.L);
+  const win = planWindow(S);
+  const rows = S.team.map((t, i) => ({ t, i, per: personOf(S, t.person), L: labourOf(S, t, win) })).filter((r) => r.per && r.L);
+  const adjusted = rows.filter((r) => r.L.manual);
+  const useCalendar = (idx) => update((s) => { idx.forEach((i) => { delete s.team[i].hours; }); });
   const sum = (f) => rows.reduce((a, r) => a + f(r.L), 0);
 
   return (
@@ -271,7 +275,7 @@ function LabourRegister() {
       <div className="row sp">
         <div>
           <h2>Labour budget</h2>
-          <p className="hint">Pick a stakeholder, then set their hourly rate, the share of their time available to this project (capacity), the total hours on the project and any off hours to deduct. Available hours = (total hours − off hours) × capacity. Cost = available hours × hourly rate.</p>
+          <p className="hint">Pick a stakeholder and set their hourly rate. Capacity is their allocation % from the Stakeholders tab (change it in either place). Total available hours come from the Stakeholders calendar (working days × hours per day, after team off days and their leave); type a value to adjust it and it stays until you reset it. Hours at capacity = total available hours × capacity. Cost = hours at capacity × hourly rate.</p>
         </div>
         <button className="btn primary" onClick={() => setAdding(true)}>+ Add stakeholder</button>
       </div>
@@ -292,16 +296,22 @@ function LabourRegister() {
       )}
       <div className="scroll">
         <table className="tbl rwd">
-          <thead><tr><th>Stakeholder</th><th className="r">Hourly rate</th><th className="r">Capacity for project</th><th className="r">Total hrs</th><th className="r">Off hours</th><th className="r">Available hrs</th><th className="r">Total cost</th>{ctl.active && <th>Against baseline</th>}<th></th></tr></thead>
+          <thead><tr><th>Stakeholder</th><th className="r">Hourly rate</th><th className="r">Capacity for project</th><th className="r">Total available hrs</th><th className="r">Hours at capacity</th><th className="r">Total cost</th>{ctl.active && <th>Against baseline</th>}<th></th></tr></thead>
           <tbody>
             {rows.map(({ t, i, per, L }) => (
               <tr key={per.id + ':' + i}>
                 <td data-l="Stakeholder"><SelectCell value={t.person} options={S.people.filter((x) => x.id === t.person || !used.has(x.id)).map((x) => [x.id, x.name || '(unnamed)'])} cls="w-md" onCommit={(v) => update((s) => { s.team[i].person = v; })} /></td>
                 <td data-l="Hourly rate"><Cell value={per.rate} type="num" cls="w-md n" label="Hourly rate" onCommit={(v) => setPerson(per.id, { rate: v == null ? 0 : v })} /></td>
                 <td data-l="Capacity %"><Cell value={per.cap} type="pct" cls="w-md n" label="Capacity for this project in percent" onCommit={(v) => setPerson(per.id, { cap: v == null ? 0 : v })} /></td>
-                <td data-l="Total hrs"><Cell value={t.hours} type="num" cls="w-md n" label="Total hours on the project" onCommit={(v) => setTeam(i, { hours: v == null ? 0 : Math.max(0, v) })} /></td>
-                <td data-l="Off hours"><Cell value={t.off} type="num" cls="w-md n" label="Off hours deducted from the total" onCommit={(v) => setTeam(i, { off: v == null ? 0 : Math.max(0, v) })} /></td>
-                <td data-l="Available hrs" className="r mono"><span className="cell" title={L.overOff ? 'Off hours are more than the total hours, so no hours are available' : undefined} style={L.overOff ? { color: 'var(--bad)' } : undefined}>{hrsf(L.avail)}</span></td>
+                <td data-l="Total available hrs">
+                  <Cell value={L.total} type="num" cls="w-md n" label="Total available hours on the project, before capacity" onCommit={(v) => setTeam(i, v == null || Math.abs(v - L.auto.hours) < 0.005 ? { hours: undefined } : { hours: Math.max(0, v) })} />
+                  <div className={'inh' + (L.manual ? ' own' : '')} title={L.auto.cal + ' calendar days − ' + L.auto.teamOff + ' team off days − ' + L.auto.leave + ' leave days = ' + L.auto.days + ' days × ' + hrsf(L.auto.hpd) + ' h'}>
+                    {L.manual
+                      ? <>adjusted · calendar {hrsf(L.auto.hours)} h ({L.diff > 0 ? '+' : ''}{hrsf(L.diff)}) <button type="button" className="linkbtn" onClick={() => useCalendar([i])}>reset</button></>
+                      : <>from calendar · {hrsf(L.auto.days)} d × {hrsf(L.auto.hpd)} h</>}
+                  </div>
+                </td>
+                <td data-l="Hours at capacity" className="r mono"><span className="cell">{hrsf(L.avail)}</span></td>
                 <td data-l="Total cost" className="r mono"><span className="cell">{money(L.cost)}</span></td>
                 {ctl.active && (
                   <td data-l="Against baseline">
@@ -319,13 +329,18 @@ function LabourRegister() {
                 <td data-l=""><button className="x" onClick={() => update((s) => { s.team.splice(i, 1); })} aria-label="Remove from the labour budget" title="Remove from the labour budget (they stay in RACI)">✕</button></td>
               </tr>
             ))}
-            {!rows.length && (<tr className="empty-row"><td colSpan={ctl.active ? 9 : 8}><span className="cell msg">Nobody in the labour budget yet. Use “+ Add stakeholder”.</span></td></tr>)}
+            {!rows.length && (<tr className="empty-row"><td colSpan={ctl.active ? 8 : 7}><span className="cell msg">Nobody in the labour budget yet. Use “+ Add stakeholder”.</span></td></tr>)}
           </tbody>
-          {rows.length > 0 && (<tfoot><tr><td>Total</td><td></td><td></td><td className="r mono">{hrsf(sum((l) => l.total))}</td><td className="r mono">{hrsf(sum((l) => l.off))}</td><td className="r mono">{hrsf(sum((l) => l.avail))}</td><td className="r mono">{money(sum((l) => l.cost))}</td>{ctl.active && <td className="msg"><span className="cell">Baseline {money(ctl.baseTotal)}</span></td>}<td></td></tr></tfoot>)}
+          {rows.length > 0 && (<tfoot><tr><td>Total</td><td></td><td></td><td className="r mono">{hrsf(sum((l) => l.total))}</td><td className="r mono">{hrsf(sum((l) => l.avail))}</td><td className="r mono">{money(sum((l) => l.cost))}</td>{ctl.active && <td className="msg"><span className="cell">Baseline {money(ctl.baseTotal)}</span></td>}<td></td></tr></tfoot>)}
         </table>
       </div>
       {ctl.active && ctl.removed.length > 0 && <p className="msg" style={{ marginTop: 8 }}>Removed since baseline {ctl.b.version}: {ctl.removed.map((x) => x.name + ' (' + money(x.cost) + ' released)').join(', ')}.</p>}
-      {rows.some((r) => r.L.overOff) && <p className="msg lateTxt" style={{ marginTop: 8 }}>Off hours are higher than total hours for at least one stakeholder, so their available hours are counted as 0.</p>}
+      {adjusted.length > 0 && (
+        <p className="msg" style={{ marginTop: 8 }}>
+          {adjusted.length} stakeholder{adjusted.length === 1 ? ' has' : 's have'} adjusted hours that differ from the Stakeholders calendar.{' '}
+          <button type="button" className="linkbtn" onClick={() => ui.ask({ title: 'Use calendar hours for everyone?', body: 'Total available hours for ' + adjusted.map((r) => r.per.name || '(unnamed)').join(', ') + ' will follow the Stakeholders calendar again, so the labour cost changes' + (ctl.active ? ' and may need a change request against baseline ' + ctl.b.version : '') + '.', confirm: 'Use calendar', onConfirm: () => useCalendar(adjusted.map((r) => r.i)) })}>Use calendar hours for all</button>
+        </p>
+      )}
       {adding && <AddLabour onClose={() => setAdding(false)} />}
       {claiming && ctl.active && (
         <LabourCrDialog
