@@ -215,7 +215,7 @@ svg .gs{font:11px var(--f-body)}
 }
 
 /* ================= Menus, dialogs, avatars ================= */
-.menu{z-index:100;min-width:170px;max-height:min(360px,70vh);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.22);padding:4px}
+.menu{z-index:100;min-width:170px;max-width:calc(100vw - 16px);max-height:min(360px,70vh);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.22);padding:4px}
 .mi{display:flex;width:100%;justify-content:space-between;gap:14px;align-items:center;border:0;background:none;color:var(--ink);font:inherit;text-align:left;padding:7px 10px;border-radius:5px;cursor:pointer}
 .mi:hover{background:var(--row)}
 .mi.on{color:var(--accent);font-weight:600}
@@ -665,3 +665,10 @@ label.fld{max-width:100%;min-width:0}
 .od[aria-pressed="true"] b{text-decoration:line-through}
 .od[aria-pressed="true"] span{color:var(--warn)}
 @media (max-width:720px){.od{min-width:40px;min-height:44px}}
+
+/* Menus on phones: a sheet from the bottom of the screen, full width, with large touch targets */
+.menu-back{position:fixed;inset:0;z-index:99;background:rgba(0,0,0,.4)}
+.menu.sheet{position:fixed;left:0;right:0;bottom:0;top:auto;width:auto;max-width:none;min-width:0;max-height:78vh;max-height:78dvh;border-radius:16px 16px 0 0;border-width:1px 0 0;padding:8px 8px calc(10px + env(safe-area-inset-bottom,0px));box-shadow:0 -10px 40px rgba(0,0,0,.35);overscroll-behavior:contain}
+.menu.sheet .mi{min-height:46px;padding:10px 14px;font-size:16px;white-space:normal}
+.menu.sheet .own-r .c{width:min(55%,200px)}
+@media (max-width:640px){.menu.sheet .tag-add .c{font-size:16px}}

@@ -16,16 +16,32 @@ export default function Menu({ label, className = '', items, title, align = 'lef
     e.stopPropagation();
     if (pos) return close();
     openedAt.current = Date.now();
-    const r = btn.current.getBoundingClientRect();
-    setPos({ top: r.bottom + 4, left: r.left, right: window.innerWidth - r.right, rTop: r.top });
+    const b = btn.current.getBoundingClientRect();
+    // phones get a sheet that slides up from the bottom; larger screens get a dropdown placed next to the button
+    const sheet = window.matchMedia('(max-width: 640px)').matches;
+    setPos({ r: { top: b.top, bottom: b.bottom, left: b.left, right: b.right }, sheet, placed: false, w: window.innerWidth });
   };
 
-  // flip upward if the menu would run off the bottom of the screen
+  // Place the dropdown once it has been measured: inside the screen on every side, below the button when there is room, above it when
+  // that side has more room, and never taller than the room it has (it scrolls inside instead).
   useLayoutEffect(() => {
-    if (!pos || !menu.current || pos.fixed) return;
-    const h = menu.current.offsetHeight;
-    if (pos.top + h > window.innerHeight - 8) setPos({ ...pos, top: Math.max(8, pos.rTop - h - 4), fixed: true });
-  }, [pos]);
+    if (!pos || pos.placed || !menu.current) return;
+    if (pos.sheet) return setPos({ ...pos, placed: true });
+    const M = 8;
+    const vw = document.documentElement.clientWidth;
+    const vh = window.innerHeight;
+    const w = Math.min(menu.current.offsetWidth, vw - 2 * M);
+    const h = menu.current.scrollHeight + 2;
+    let left = align === 'right' ? pos.r.right - w : pos.r.left;
+    left = Math.max(M, Math.min(left, vw - w - M));
+    const below = vh - pos.r.bottom - M - 4;
+    const above = pos.r.top - M - 4;
+    let top, maxH;
+    if (h <= below || below >= above) { top = pos.r.bottom + 4; maxH = below; }
+    else { maxH = above; top = pos.r.top - 4 - Math.min(h, maxH); }
+    maxH = Math.max(maxH, Math.min(h, 160));
+    setPos({ ...pos, left, top: Math.max(M, top), maxH, placed: true });
+  }, [pos]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!pos) return undefined;
@@ -39,12 +55,14 @@ export default function Menu({ label, className = '', items, title, align = 'lef
     const away = (e) => Date.now() - openedAt.current > 250 && !(menu.current && menu.current.contains(e.target)) && close();
     document.addEventListener('mousedown', down);
     document.addEventListener('keydown', key);
-    window.addEventListener('resize', close);
+    // closing on resize would also close the menu when a phone's keyboard opens (a tag box inside it): only a change of width closes it
+    const resize = () => window.innerWidth !== pos.w && close();
+    window.addEventListener('resize', resize);
     window.addEventListener('scroll', away, true);
     return () => {
       document.removeEventListener('mousedown', down);
       document.removeEventListener('keydown', key);
-      window.removeEventListener('resize', close);
+      window.removeEventListener('resize', resize);
       window.removeEventListener('scroll', away, true);
     };
   }, [pos]);
@@ -56,7 +74,14 @@ export default function Menu({ label, className = '', items, title, align = 'lef
       </button>
       {pos &&
         createPortal(
-          <div ref={menu} className={'menu' + (wide ? ' wide' : '')} role="menu" style={{ position: 'fixed', top: pos.top, ...(align === 'right' ? { right: pos.right } : { left: pos.left }) }}>
+          <>
+            {pos.sheet && <div className="menu-back" onMouseDown={close} onTouchStart={close} />}
+            <div
+              ref={menu}
+              className={'menu' + (wide ? ' wide' : '') + (pos.sheet ? ' sheet' : '')}
+              role="menu"
+              style={pos.sheet ? undefined : { position: 'fixed', top: pos.placed ? pos.top : 0, left: pos.placed ? pos.left : 0, maxHeight: pos.placed ? pos.maxH : undefined, visibility: pos.placed ? 'visible' : 'hidden' }}
+            >
             {items.map((it, i) =>
               it.sep ? (
                 <div key={i} className="msep" />
@@ -80,7 +105,8 @@ export default function Menu({ label, className = '', items, title, align = 'lef
               )
             )}
             {footer && <div className="mfoot">{typeof footer === 'function' ? footer({ close }) : footer}</div>}
-          </div>,
+            </div>
+          </>,
           document.body
         )}
     </>
