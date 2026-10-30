@@ -13,10 +13,10 @@ export function AssigneeMenu({ task, className = 'x ass-btn', label, size = 24 }
   const tk = useTasks();
   const ids = task.assignees || [];
   const items = S.people.map((p) => {
-    // a stakeholder on leave for every date of the item cannot be given it; partial leave is shown but allowed
+    // leave days are shown next to the name; choosing someone on leave raises a warning that can be overridden
     const lc = ids.includes(p.id) ? null : leaveCheck(S, p, task.start, task.due);
-    const hint = lc && lc.block ? 'on leave ' + rangeText(lc.lost) : lc && lc.lost.length ? 'leave ' + rangeText(lc.lost) : '';
-    return { label: (p.name || '(unnamed)') + (hint ? ' · ' + hint : ''), active: ids.includes(p.id), keepOpen: true, disabled: !!(lc && lc.block), onClick: () => tk.toggleAssignee(task.id, p.id) };
+    const hint = lc && lc.lost.length ? (lc.block ? 'on leave ' : 'leave ') + rangeText(lc.lost) : '';
+    return { label: (p.name || '(unnamed)') + (hint ? ' · ' + hint : ''), active: ids.includes(p.id), keepOpen: true, onClick: () => tk.toggleAssignee(task.id, p.id) };
   });
   items.push(
     { sep: true },

@@ -5,6 +5,8 @@
 .toast-i{flex:none;width:22px;height:22px;border-radius:50%;background:var(--tc);color:var(--surface);display:inline-flex;align-items:center;justify-content:center;font:700 14px/1 var(--f-mono,monospace)}
 .toast-b{flex:1;min-width:0}
 .toast p{margin:0;font-size:14.5px;line-height:1.5;font-weight:500;color:var(--ink)}
+.toast-ul{margin:8px 0 0;padding-left:18px;font-size:13.5px;line-height:1.45;color:var(--ink)}
+.toast-ul li+li{margin-top:4px}
 .toast-act{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 .toast-act:empty{display:none}
 .toast-act .btn{font-size:13px;padding:5px 11px}

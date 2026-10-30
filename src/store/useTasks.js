@@ -8,7 +8,7 @@ import { cleanEffort, nz } from '../lib/format';
 import { DAY, fdate, pd } from '../lib/dates';
 import { blankCr, currentBaseline, sprintCrs } from '../lib/change';
 import { offDayInfo } from '../lib/offdays';
-import { leaveCheck, rangeText } from '../lib/capacity';
+import { newLoadIssues } from '../lib/loadGuard';
 import { baselinedDates, clampDates, datePatchViolations, dateCrOf, gapWindow, hoursCrOf, hoursLocked, inWin, nextFreeDay, outsideBaseline, rollover, sane, sprintClash, sprintCovers, tasksOutside, windowOf } from '../lib/sprintGuard';
 
 const plural = (n, a, b) => (n === 1 ? a : b);
@@ -192,72 +192,32 @@ export function useTasks() {
       });
     };
 
-    // ---- Leave guard ----
-    // Work cannot be allocated to a stakeholder on the days they are on leave (Stakeholders tab > Working calendar).
-    //   blocked   every working day of the item's dates is full leave for that person: the assignment (or the dates) is refused
-    //   partial   some days are leave: allowed, but the toast says those days are left out of the person's capacity
-    // `t` is the work item as it is now (or { name } for a new one) and `patch` what is about to change on it.
-    const leaveScan = (t, patch) => {
+    // ---- Allocation guard (leave, hours per day, sprint and project capacity) ----
+    // A warning, never a block. The edit is tried on a copy first; when it would put a stakeholder on a leave day, above their effective
+    // hours per day, or above their effective capacity for the sprint or the project, a notification lists what is wrong and the user
+    // chooses "Allocate anyway" (the override) or Cancel. Only what the edit makes new or worse is reported, so an override is not asked for
+    // again on the next unrelated change. Returns true while the edit is held back for that choice.
+    // `after` runs once the edit has been applied (e.g. the off-day warning).
+    function guardLoad(run, after) {
       const S0 = sRef.current;
-      const touchesDates = 'start' in patch || 'due' in patch;
-      const touchesAss = 'assignees' in patch;
-      const out = { blocked: [], partial: [], touchesDates, touchesAss, next: touchesAss ? patch.assignees || [] : (t && t.assignees) || [], label: t && t.name ? '\u201c' + t.name + '\u201d' : 'This work item' };
-      if (!touchesDates && !touchesAss) return out;
-      const old = (t && t.assignees) || [];
-      const start = 'start' in patch ? patch.start : t && t.start, due = 'due' in patch ? patch.due : t && t.due;
-      // moving the dates: everybody on the item is checked; changing only the assignees: the people being added
-      (touchesDates ? out.next : out.next.filter((x) => !old.includes(x))).forEach((id) => {
-        const per = S0.people.find((x) => x.id === id);
-        if (!per) return;
-        const c = leaveCheck(S0, per, start, due);
-        const row = { id, name: per.name || 'This stakeholder', c };
-        if (c.block) out.blocked.push(row);
-        else if (c.lost.length) out.partial.push(row);
-      });
-      return out;
-    };
-    const sayBlocked = (sc, assign) => {
-      const names = sc.blocked.map((b) => b.name).join(', ');
-      const when = rangeText(sc.blocked[0].c.lost);
-      say({
-        id: 'leave', tone: 'bad', ttl: 10000,
-        text: assign
-          ? sc.label + ' cannot be given to ' + names + ': ' + 'they are' + ' on leave for all of its dates (' + when + '). Change the dates or choose someone else.'
-          : sc.label + ' cannot be moved onto these dates: ' + names + (sc.blocked.length > 1 ? ' are' : ' is') + ' on leave for all of them (' + when + '). Pick other dates or change who is assigned.',
-      });
-    };
-    const sayPartial = (sc) => {
-      if (!sc.partial.length) return;
-      const r = sc.partial[0];
-      say({
-        id: 'leave', tone: 'warn', ttl: 9000,
-        text: sc.partial.map((x) => x.name + ' is on leave on ' + rangeText(x.c.lost)).join('; ') + ' during ' + sc.label + '. The work stays assigned, but ' + 'those days are' + ' left out of ' + (sc.partial.length > 1 ? 'their' : r.name + '\u2019s') + ' capacity, so check the hours fit.',
-      });
-    };
-    // a new work item: assignees on leave for all of its dates are left off
-    const vetNew = (fields) => {
-      if (!fields || !(fields.assignees || []).length || !('start' in fields || 'due' in fields)) return fields;
-      const sc = leaveScan({ name: fields.name, assignees: [] }, fields);
-      if (sc.blocked.length) {
-        const bad = new Set(sc.blocked.map((b) => b.id));
-        sayBlocked(sc, true);
-        return { ...fields, assignees: fields.assignees.filter((x) => !bad.has(x)) };
+      const sim = structuredClone(S0);
+      run(sim, sim);
+      normalize(sim);
+      const issues = newLoadIssues(S0, sim);
+      if (!issues.length) {
+        uRef.current.dismiss && uRef.current.dismiss('load');
+        return false;
       }
-      sayPartial(sc);
-      return fields;
-    };
-    // an edit of one work item: returns the patch to apply, or null when the whole edit is held back
-    const vetPatch = (t, patch) => {
-      const sc = leaveScan(t, patch);
-      if (!sc.blocked.length) {
-        sayPartial(sc);
-        return patch;
-      }
-      sayBlocked(sc, !sc.touchesDates);
-      if (sc.touchesDates) return null;
-      const bad = new Set(sc.blocked.map((b) => b.id));
-      return { ...patch, assignees: sc.next.filter((x) => !bad.has(x)) };
-    };
+      const shown = issues.slice(0, 5).map((x) => x.text);
+      if (issues.length > 5) shown.push('\u2026and ' + (issues.length - 5) + ' more.');
+      say({
+        id: 'load', tone: 'warn',
+        text: 'This allocation goes beyond what the team can take on. It is a warning: you can override it.',
+        lines: shown,
+        actions: [{ label: 'Allocate anyway', primary: true, onClick: () => { update(run); if (after) after(); } }],
+      });
+      return true;
+    }
 
     // Every new sprint goes through the New sprint form (planned hours, and a change request once the project has a baseline).
     // The work items only move after the sprint exists, so cancelling the form changes nothing.
@@ -615,20 +575,21 @@ export function useTasks() {
     return {
       // a new top-level work item
       add(cid, fields = {}) {
-        fields = vetNew(safe(fields));
+        fields = safe(fields);
         const id = fields.id || uid();
         const run = (p) => {
           const c = containerById(p, cid);
           if (c) c.tasks.push(makeTask(p, { ...fields, id, ...(cid === 'backlog' ? { status: '' } : {}) }));
         };
         if (cid !== 'backlog' && nz(fields.effort) > 0 && guardHours(run, { cause: [id] })) return id;
+        if (cid !== 'backlog' && (fields.assignees || []).length && guardLoad(run, () => warnOffDays([id], fields))) return id;
         update(run);
         warnOffDays([id], fields);
         return id;
       },
       // a new work item under another one (its type steps down the ladder: epic > feature > story > task > subtask)
       addChild(parentId, fields = {}) {
-        fields = vetNew(safe(fields));
+        fields = safe(fields);
         const id = fields.id || uid();
         const run = (p) => {
           const f = findTask(p, parentId);
@@ -639,13 +600,14 @@ export function useTasks() {
           f.c.tasks.push(makeTask(p, { ...fields, type, id, parent: parentId, ...(status !== undefined ? { status } : {}) }));
         };
         if (nz(fields.effort) > 0 && guardHours(run, { cause: [id] })) return id;
+        if ((fields.assignees || []).length && guardLoad(run, () => warnOffDays([id], fields))) return id;
         update(run);
         warnOffDays([id], fields);
         return id;
       },
       // a new work item right after another one, at the same level
       addSibling(afterId, fields = {}) {
-        fields = vetNew(safe(fields));
+        fields = safe(fields);
         const id = fields.id || uid();
         const run = (p) => {
           const f = findTask(p, afterId);
@@ -654,6 +616,7 @@ export function useTasks() {
           f.c.tasks.splice(f.i + 1, 0, t);
         };
         if (nz(fields.effort) > 0 && guardHours(run, { cause: [id] })) return id;
+        if ((fields.assignees || []).length && guardLoad(run, () => warnOffDays([id], fields))) return id;
         update(run);
         warnOffDays([id], fields);
         return id;
@@ -661,13 +624,6 @@ export function useTasks() {
       patch(id, patch) {
         patch = safe(patch);
         if (('start' in patch || 'due' in patch) && guardDates([id], patch)) return;
-        if ('start' in patch || 'due' in patch || 'assignees' in patch) {
-          const cur = findTask(sRef.current, id);
-          if (cur) {
-            patch = vetPatch(cur.t, patch);
-            if (!patch) return;
-          }
-        }
         const run = (p) => {
           const f = findTask(p, id);
           if (f) {
@@ -676,6 +632,7 @@ export function useTasks() {
           }
         };
         if ('effort' in patch && guardHours(run, { cause: [id], lockDown: true })) return;
+        if (('start' in patch || 'due' in patch || 'assignees' in patch || 'effort' in patch) && guardLoad(run, () => warnOffDays([id], patch))) return;
         update(run);
         warnOffDays([id], patch);
       },
@@ -720,6 +677,7 @@ export function useTasks() {
           if (f) Object.assign(f.t, own);
         };
         if ('effort' in o && guardHours(run, { cause: [id], lockDown: true })) return;
+        if (guardLoad(run, () => warnOffDays([id], { start: o.start, due: o.due }))) return;
         update(run);
         warnOffDays([id], { start: o.start, due: o.due });
       },
@@ -813,20 +771,6 @@ export function useTasks() {
       patchMany(ids, patch) {
         patch = safe(patch);
         if (('start' in patch || 'due' in patch) && guardDates(ids, patch)) return;
-        if (('start' in patch || 'due' in patch || ((patch.assignees || []).length && 'assignees' in patch))) {
-          // items whose assignees would be on leave for all of the new dates keep their old dates
-          const held = [];
-          ids = ids.filter((id) => {
-            const cur = findTask(sRef.current, id);
-            if (!cur) return true;
-            const sc = leaveScan(cur.t, patch);
-            if (!sc.blocked.length) return true;
-            held.push(cur.t.name);
-            return false;
-          });
-          if (held.length) say({ id: 'leave', tone: 'bad', ttl: 10000, text: held.length === 1 ? '\u201c' + held[0] + '\u201d was left unchanged: a stakeholder on it is on leave for all of those days.' : held.length + ' work items were left unchanged: a stakeholder on each is on leave for all of those days.' });
-          if (!ids.length) return;
-        }
         const run = (p) => {
           ids.forEach((id) => {
             const f = findTask(p, id);
@@ -837,31 +781,22 @@ export function useTasks() {
           });
         };
         if ('effort' in patch && guardHours(run, { cause: ids, lockDown: true })) return;
+        if (('start' in patch || 'due' in patch || 'assignees' in patch || 'effort' in patch) && guardLoad(run, () => warnOffDays(ids, patch))) return;
         update(run);
         warnOffDays(ids, patch);
       },
       // add (on = true) or remove one stakeholder on every listed work item
       assignMany(ids, personId, on) {
-        if (on) {
-          const per = sRef.current.people.find((x) => x.id === personId);
-          const held = [];
-          ids = ids.filter((id) => {
-            const cur = findTask(sRef.current, id);
-            if (!cur || (cur.t.assignees || []).includes(personId)) return true;
-            if (per && leaveCheck(sRef.current, per, cur.t.start, cur.t.due).block) { held.push(cur.t.name); return false; }
-            return true;
-          });
-          if (held.length) say({ id: 'leave', tone: 'bad', ttl: 10000, text: (per ? per.name : 'This stakeholder') + ' is on leave for all the dates of ' + (held.length === 1 ? '\u201c' + held[0] + '\u201d' : held.length + ' of the selected work items') + ', so ' + (held.length === 1 ? 'it was' : 'they were') + ' not assigned.' });
-          if (!ids.length) return;
-        }
-        update((p) => {
+        const run = (p) => {
           ids.forEach((id) => {
             const f = findTask(p, id);
             if (!f) return;
             const a = (f.t.assignees || []).filter((x) => x !== personId);
             f.t.assignees = on ? a.concat(personId) : a;
           });
-        });
+        };
+        if (on && guardLoad(run)) return;
+        update(run);
       },
       // moving an item moves everything below it too
       moveMany(ids, cid) {
@@ -876,6 +811,7 @@ export function useTasks() {
           groups.forEach((list, c) => topIds(c, list).forEach((id) => moveSubtree(p, id, to, true)));
         };
         if (cid !== 'backlog' && guardHours(run, { cause: ids })) return;
+        if (cid !== 'backlog' && guardLoad(run, () => moveNote(previewMove(sRef.current, ids, cid), cid))) return;
         moveNote(previewMove(sRef.current, ids, cid), cid);
         update(run);
       },
@@ -885,6 +821,7 @@ export function useTasks() {
           if (to) moveSubtree(p, id, to, false);
         };
         if (cid !== 'backlog' && guardHours(run, { cause: [id] })) return;
+        if (cid !== 'backlog' && guardLoad(run, () => moveNote(previewMove(sRef.current, [id], cid), cid))) return;
         moveNote(previewMove(sRef.current, [id], cid), cid);
         update(run);
       },
@@ -929,6 +866,7 @@ export function useTasks() {
           );
         };
         if (guardHours(run)) return;
+        if (guardLoad(run)) return;
         update(run);
       },
       // put an item under a parent (or at the top level) at an exact spot: used by drag and drop, indent, outdent
@@ -973,18 +911,15 @@ export function useTasks() {
         });
       },
       toggleAssignee(id, personId) {
-        const cur = findTask(sRef.current, id);
-        if (cur && !(cur.t.assignees || []).includes(personId)) {
-          const sc = leaveScan(cur.t, { assignees: (cur.t.assignees || []).concat(personId) });
-          if (sc.blocked.length) return sayBlocked(sc, true);
-          sayPartial(sc);
-        }
-        update((p) => {
+        const run = (p) => {
           const f = findTask(p, id);
           if (!f) return;
           const a = f.t.assignees || [];
           f.t.assignees = a.includes(personId) ? a.filter((x) => x !== personId) : a.concat(personId);
-        });
+        };
+        const cur = findTask(sRef.current, id);
+        if (cur && !(cur.t.assignees || []).includes(personId) && guardLoad(run)) return;
+        update(run);
       },
       patchContainer(cid, patch) {
         if (('start' in patch || 'end' in patch || 'plannedHours' in patch) && guardSprint(cid, patch)) return;
@@ -1029,6 +964,7 @@ export function useTasks() {
           openRoots(p, a).forEach((t) => moveSubtree(p, t.id, b, false));
         };
         if (to !== 'backlog' && guardHours(run, { cause: a0 ? openRoots(S0, a0).map((t) => t.id) : [] })) return;
+        if (to !== 'backlog' && guardLoad(run, () => a0 && moveNote(previewMove(S0, openRoots(S0, a0).map((t) => t.id), to), to))) return;
         if (a0) moveNote(previewMove(S0, openRoots(S0, a0).map((t) => t.id), to), to);
         update(run);
       },

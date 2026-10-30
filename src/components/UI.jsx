@@ -227,6 +227,7 @@ export function UIProvider({ children }) {
             <span className="toast-i" aria-hidden="true">{t.tone === 'warn' || t.tone === 'bad' ? '!' : 'i'}</span>
             <div className="toast-b">
             <p>{t.text}</p>
+            {t.lines && t.lines.length > 0 && <ul className="toast-ul">{t.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>}
             <div className="toast-act">
               {(t.actions || []).map((a, i) => (
                 <button key={i} className={'btn' + (a.primary ? ' primary' : '')} onClick={() => { dismiss(t.id); a.onClick(); }}>{a.label}</button>
