@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
  * Button + dropdown rendered in a portal (so table scroll areas never clip it).
  * items: [{ label, onClick, danger, active, disabled, hint }]  or  { sep: true }
  */
-export default function Menu({ label, className = '', items, title, align = 'left', footer, wide }) {
+export default function Menu({ label, className = '', items, title, align = 'left', footer, wide, onOpen }) {
   const [pos, setPos] = useState(null);
   const btn = useRef(null);
   const menu = useRef(null);
@@ -16,6 +16,7 @@ export default function Menu({ label, className = '', items, title, align = 'lef
     e.stopPropagation();
     if (pos) return close();
     openedAt.current = Date.now();
+    if (onOpen) onOpen();
     const b = btn.current.getBoundingClientRect();
     // phones get a sheet that slides up from the bottom; larger screens get a dropdown placed next to the button
     const sheet = window.matchMedia('(max-width: 640px)').matches;

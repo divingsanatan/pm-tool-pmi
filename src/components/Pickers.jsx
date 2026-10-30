@@ -5,7 +5,10 @@ import Menu from './Menu';
 import { AvatarStack, Flag, StatusIcon, TypeBadge } from './Bits';
 import { useState } from 'react';
 import { leaveCheck, rangeText } from '../lib/capacity';
-import { PRIORITIES, allTags, cleanTag, cleanTags, findTask, hasTag, nameOf, statusOf, statusesOf, tagHue, typeOf, typesOf } from '../lib/tasks';
+import { PRIORITIES, allTags, cleanTag, cleanTags, findTask, hasTag, nameOf, statusOf, statusesOf, tagColor, typeOf, typesOf } from '../lib/tasks';
+import { TagAdder, TagChip, TagEditor } from './Tags';
+
+export { TagChip };
 
 // Several stakeholders can be assigned to one work item
 export function AssigneeMenu({ task, className = 'x ass-btn', label, size = 24 }) {
@@ -90,43 +93,32 @@ export function AddChildMenu({ parent, className = 'x w-add', label = '＋', onA
   return <Menu className={className} label={label} title={'Add a child under ' + parent.name} items={items} />;
 }
 
-// A coloured tag label. Pass onRemove to get a small ✕ on it.
-export function TagChip({ tag, onRemove }) {
-  return (
-    <span className="tagc" style={{ '--h': tagHue(tag) }} title={tag}>
-      <span className="tagc-t">{tag}</span>
-      {onRemove && <button type="button" className="tagc-x" onClick={onRemove} aria-label={'Remove tag ' + tag}>✕</button>}
-    </span>
-  );
-}
-
-function TagAdder({ onAdd }) {
-  const [v, setV] = useState('');
-  const go = () => {
-    if (!cleanTag(v)) return;
-    onAdd(v);
-    setV('');
-  };
-  return (
-    <div className="tag-add">
-      <input className="c" autoFocus value={v} maxLength={30} placeholder="New tag, then Enter" aria-label="New tag" onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } }} />
-      <button type="button" className="btn" onClick={go} disabled={!cleanTag(v)}>Add</button>
-    </div>
-  );
-}
-
 // Tags of a work item. The button shows the tags themselves (or a small # / "+ Tag" when there are none); the menu lists every tag
-// used in the project to tick on or off, and a box at the bottom creates a new one.
+// of the project to tick on or off, and a box at the bottom creates a new one. The coloured dot in front of a tag opens its editor
+// (rename, colour, filter, delete) and "Manage tags…" opens the Tag manager.
 //   inline: the compact form inside the Name cell (the # only shows when the row is hovered)
 export function TagMenu({ task, inline = false, max = 2, className, label: forced }) {
   const { S } = useStore();
   const tk = useTasks();
+  const ui = useUI();
+  const [edit, setEdit] = useState(null);
   const mine = task.tags || [];
   const set = (next) => tk.patch(task.id, { tags: cleanTags(next) });
   const toggle = (g) => set(hasTag(task, g) ? mine.filter((x) => x.toLowerCase() !== g.toLowerCase()) : mine.concat(g));
   const known = allTags(S);
-  const items = known.map((g) => ({ label: <span className="sm-item"><i className="tag-dot" style={{ '--h': tagHue(g) }} />{g}</span>, active: hasTag(task, g), keepOpen: true, onClick: () => toggle(g) }));
+  const items = known.map((g) => ({
+    label: (
+      <span className="sm-item">
+        <span role="button" tabIndex={0} className="tag-dotbtn" title="Change the color, rename or delete this tag" aria-label={'Edit the tag ' + g} style={{ '--tc': tagColor(S, g) }}
+          onClick={(e) => { e.stopPropagation(); setEdit(g); }}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setEdit(g); } }}><i className="tag-dot" /></span>
+        {g}
+      </span>
+    ),
+    active: hasTag(task, g), keepOpen: true, onClick: () => toggle(g),
+  }));
   if (!items.length) items.push({ label: 'No tags in this project yet', disabled: true });
+  if (ui && ui.openTags) items.push({ sep: true }, { label: 'Manage tags…', onClick: () => ui.openTags() });
   const label = forced || (mine.length ? (
     <span className="tags">
       {mine.slice(0, max).map((g) => (<TagChip key={g} tag={g} />))}
@@ -139,7 +131,15 @@ export function TagMenu({ task, inline = false, max = 2, className, label: force
       label={label}
       title={mine.length ? 'Tags: ' + mine.join(', ') + '. Click to change.' : 'Add a tag'}
       items={items}
-      footer={<TagAdder onAdd={(name) => { const g = cleanTag(name); const same = known.find((x) => x.toLowerCase() === g.toLowerCase()); set(mine.concat(same || g)); }} />}
+      onOpen={() => setEdit(null)}
+      footer={({ close }) => edit ? (
+        <div>
+          <button type="button" className="mi" onClick={() => setEdit(null)}><span>← Back to the tags</span></button>
+          <TagEditor tag={edit} close={close} onRenamed={setEdit} onGone={() => setEdit(null)} />
+        </div>
+      ) : (
+        <TagAdder onAdd={(name) => { const g = cleanTag(name); const same = known.find((x) => x.toLowerCase() === g.toLowerCase()); set(mine.concat(same || g)); }} />
+      )}
     />
   );
 }

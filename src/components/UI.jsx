@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import DataPanel from './DataPanel';
 import StatusManager from './StatusManager';
 import TypeManager from './TypeManager';
+import TagManager from './TagManager';
 import { useStore } from '../store/StoreContext';
 import { useCosts } from '../store/useCosts';
 import { DAY, pd, today } from '../lib/dates';
@@ -197,8 +198,10 @@ export function UIProvider({ children }) {
   const [spr, setSpr] = useState(null);
   const [stat, setStat] = useState(false);
   const [typ, setTyp] = useState(false);
+  const [tagm, setTagm] = useState(false);
   const openStatuses = useCallback(() => setStat(true), []);
   const openTypes = useCallback(() => setTyp(true), []);
+  const openTags = useCallback(() => setTagm(true), []);
   const addCost = useCallback((init = {}) => setCost(init), []);
   const ask = useCallback((o) => setDlg(o), []);
   const openData = useCallback(() => setData(true), []);
@@ -219,7 +222,7 @@ export function UIProvider({ children }) {
     return () => ids.forEach(clearTimeout);
   }, [toasts, dismiss]);
   return (
-    <Ctx.Provider value={{ ask, openData, addCost, openStatuses, openTypes, openSprint, toast, dismiss }}>
+    <Ctx.Provider value={{ ask, openData, addCost, openStatuses, openTypes, openTags, openSprint, toast, dismiss }}>
       {children}
       <div className="toasts" role="region" aria-live="polite" aria-label="Notifications">
         {toasts.map((t) => (
@@ -273,6 +276,11 @@ export function UIProvider({ children }) {
       {typ && (
         <Modal title="Work item types" onClose={() => setTyp(false)} wide>
           <TypeManager />
+        </Modal>
+      )}
+      {tagm && (
+        <Modal title="Tag manager" onClose={() => setTagm(false)} wide>
+          <TagManager />
         </Modal>
       )}
       {cost && (

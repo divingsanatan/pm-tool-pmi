@@ -4,7 +4,9 @@ import { useTasks } from '../store/useTasks';
 import { Modal, useUI } from './UI';
 import Menu from './Menu';
 import { StatusIcon } from './Bits';
-import { PRIORITIES, findTask, statusesOf } from '../lib/tasks';
+import { PRIORITIES, allTags, cleanTag, findTask, hasTag, statusesOf, tagColor } from '../lib/tasks';
+import { useTags } from '../store/useTags';
+import { TagAdder } from './Tags';
 import { fdate } from '../lib/dates';
 
 // Asks for one value (a date or a number) and applies it to every selected work item
@@ -43,6 +45,7 @@ function ValueDialog({ kind, count, tasks, container, onApply, onClose }) {
 export default function BulkBar({ ids, container, onDone }) {
   const { S, setNav } = useStore();
   const tk = useTasks();
+  const tg = useTags();
   const ui = useUI();
   const [dlg, setDlg] = useState(null);
   if (!ids.length) return null;
@@ -60,6 +63,21 @@ export default function BulkBar({ ids, container, onDone }) {
     { label: 'Clear all assignees', onClick: () => tk.patchMany(ids, { assignees: [] }) },
     { label: 'Manage stakeholders…', onClick: () => setNav({ view: 'project', tab: 'people' }) },
   ]);
+  // bulk tagging: a tag is on for all (tick), some, or none of the selected work items; one click sets it on all, or takes it off all
+  const tagItems = allTags(S).map((g) => {
+    const has = tasks.filter((t) => hasTag(t, g)).length;
+    return {
+      label: <span className="sm-item"><i className="tag-dot" style={{ '--tc': tagColor(S, g) }} />{g}</span>,
+      active: has === tasks.length, hint: has && has < tasks.length ? 'some' : '', keepOpen: true,
+      onClick: () => tg.tagMany(ids, g, has !== tasks.length),
+    };
+  });
+  if (!tagItems.length) tagItems.push({ label: 'No tags in this project yet', disabled: true });
+  tagItems.push(
+    { sep: true },
+    { label: 'Remove all tags', disabled: !tasks.some((t) => (t.tags || []).length), onClick: () => tg.clearMany(ids) },
+    { label: 'Manage tags…', onClick: () => ui.openTags() }
+  );
   const prio = PRIORITIES.map((p) => ({ label: p.label, active: tasks.every((t) => t.priority === p.id), onClick: () => tk.patchMany(ids, { priority: p.id }) })).concat([
     { sep: true },
     { label: 'Clear priority', onClick: () => tk.patchMany(ids, { priority: '' }) },
@@ -114,6 +132,13 @@ export default function BulkBar({ ids, container, onDone }) {
           />
         )}
         <Menu className="btn" label="Assignees ▾" title="Assign selected work items" items={assigneeItems} />
+        <Menu
+          className="btn"
+          label="Tags ▾"
+          title="Add or remove tags on the selected work items"
+          items={tagItems}
+          footer={() => <TagAdder placeholder="New tag for all selected" autoFocus={false} onAdd={(name) => { const g = cleanTag(name); if (g) tg.tagMany(ids, g, true); }} />}
+        />
         <Menu className="btn" label="Priority ▾" title="Set priority for selected work items" items={prio} />
         {!backlog && <Menu className="btn" label="Dates ▾" title="Set dates for selected work items" items={dates} />}
         <Menu className="btn" label="Effort ▾" title="Set effort for selected work items" items={effort} />
