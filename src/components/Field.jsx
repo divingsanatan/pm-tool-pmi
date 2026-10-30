@@ -4,6 +4,7 @@ import { useStore } from '../store/StoreContext';
 const toDisplay = (type, val) => {
   if (val == null) return '';
   if (type === 'pct') return String(Math.round(val * 1000) / 10);
+  if (type === 'factor') return String(Math.round(val * 100) / 100);
   return String(val);
 };
 
@@ -20,12 +21,18 @@ const conv = (type, v) => {
     const n = parseFloat(v);
     return v === '' || isNaN(n) ? null : n / 100;
   }
+  if (type === 'factor') {
+    // a factor between 0 and 1 with up to 2 decimals (0.85). A number above 1 up to 100 is read as a percent (85 -> 0.85).
+    const n = parseFloat(v);
+    if (v === '' || isNaN(n)) return null;
+    return Math.max(0, Math.min(1, Math.round((n > 1 && n <= 100 ? n / 100 : n) * 100) / 100));
+  }
   return v;
 };
 
 /**
  * Editable table cell bound to S[sec][i][f] (or S[sec][f] for meta/ui).
- * type: 'text' | 'num' | 'int' | 'pct' | 'date'
+ * type: 'text' | 'num' | 'int' | 'pct' | 'factor' | 'date'
  * 'pct' is stored as a fraction (0.5) and shown as a percent (50).
  * Text/number edits commit on blur or Enter; dates commit immediately.
  */

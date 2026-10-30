@@ -180,7 +180,7 @@ export function SprintCapacity({ c }) {
                 {X.rows.map((r) => (
                   <tr key={r.id}>
                     <td data-l="Stakeholder"><span className="cell"><b>{r.name}</b></span></td>
-                    <td data-l="Hours / day" className="r mono"><span className="cell" title={r.hpd + ' h × ' + Math.round(r.focus * 100) + '% focus × ' + Math.round(r.alloc * 100) + '% allocation'}>{r.perDay > 0 ? r1(r.perDay) : '–'}</span></td>
+                    <td data-l="Hours / day" className="r mono"><span className="cell" title={r.hpd + ' h × ' + (Math.round(r.focus * 100) / 100) + ' focus × ' + Math.round(r.alloc * 100) + '% allocation'}>{r.perDay > 0 ? r1(r.perDay) : '–'}</span></td>
                     <td data-l="Days available" className="r mono"><span className="cell" title={r.workDays + ' working days − ' + r.leaveFull + ' leave' + (r.leaveHalf ? ' − ' + r.leaveHalf + ' half day' + (r.leaveHalf === 1 ? '' : 's') : '')}>{r1(r.availDays)} <span className="msg">of {r.workDays}</span></span></td>
                     <td data-l="Capacity" className="r mono"><span className="cell">{h(r.cap)}</span></td>
                     <td data-l="Assigned" className="r mono"><span className="cell">{h(r.load)}</span></td>

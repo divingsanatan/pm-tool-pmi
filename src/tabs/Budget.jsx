@@ -305,7 +305,7 @@ function LabourRegister() {
                 <td data-l="Capacity %"><Cell value={per.cap} type="pct" cls="w-md n" label="Capacity for this project in percent" onCommit={(v) => setPerson(per.id, { cap: v == null ? 0 : v })} /></td>
                 <td data-l="Total available hrs">
                   <Cell value={L.total} type="num" cls="w-md n" label="Total available hours on the project, before capacity" onCommit={(v) => setTeam(i, v == null || Math.abs(v - L.auto.hours) < 0.005 ? { hours: undefined } : { hours: Math.max(0, v) })} />
-                  <div className={'inh' + (L.manual ? ' own' : '')} title={L.auto.cal + ' calendar days − ' + L.auto.teamOff + ' team off days − ' + L.auto.leave + ' leave days = ' + L.auto.days + ' days × ' + hrsf(L.auto.hpd) + ' h'}>
+                  <div className={'inh' + (L.manual ? ' own' : '')} title={L.auto.cal + ' sprint days − ' + L.auto.teamOff + ' team off days − ' + L.auto.leave + ' leave days = ' + L.auto.days + ' days × ' + hrsf(L.auto.hpd) + ' h'}>
                     {L.manual
                       ? <>adjusted · calendar {hrsf(L.auto.hours)} h ({L.diff > 0 ? '+' : ''}{hrsf(L.diff)}) <button type="button" className="linkbtn" onClick={() => useCalendar([i])}>reset</button></>
                       : <>from calendar · {hrsf(L.auto.days)} d × {hrsf(L.auto.hpd)} h</>}

@@ -755,6 +755,16 @@ export function normalize(S) {
     }
     b.endFromSprints = true;
   });
+  // Focus factor used to be typed into a percent box, so 1 and 0.5 (meant as factors) were saved as 1% and 0.5%. It is a 0-1 factor now:
+  // values of 1% or less are read as the factor that was meant (once only, so a later deliberate 0.01 stays).
+  if (!m.focusUnitFix) {
+    const fix = (o) => {
+      if (o && typeof o.focus === 'number' && o.focus > 0 && o.focus <= 0.01) o.focus = Math.min(1, Math.round(o.focus * 100 * 100) / 100);
+    };
+    fix(m);
+    (S.people || []).forEach(fix);
+    m.focusUnitFix = true;
+  }
   // working calendar: weekly off weekdays (0 = Sunday) and holiday ranges; only tidied when present, so projects without them are untouched
   if (Array.isArray(S.meta.weeklyOff)) S.meta.weeklyOff = Array.from(new Set(S.meta.weeklyOff.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))).sort((a, b) => a - b);
   if (Array.isArray(S.holidays)) {

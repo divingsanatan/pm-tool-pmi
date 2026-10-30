@@ -161,10 +161,37 @@ export function planWindow(S) {
   return { start, n, startS: iso(start), endS: iso(start + (n - 1) * DAY) };
 }
 
-// Hours one person has over the plan window before allocation: working days (calendar days - team off days - their own leave)
-// x their hours per day. This is the figure the Budget's labour section starts from; allocation % is applied there.
-export function calendarHours(S, p, win = planWindow(S)) {
-  const c = capacityBetween(S, p, win.startS, win.endS);
+// The calendar days that belong to a sprint (sprints in one project never overlap). Days between sprints are not project time:
+// they are left out of every figure below. With no dated sprint yet the whole default window counts, so the screen is never blank.
+export function sprintDaySet(S, win = planWindow(S)) {
+  const set = new Set();
+  (S.sprints || []).forEach((sp) => {
+    if (!hasValidDates(sp)) return;
+    for (let t = pd(sp.start), i = 0; t <= pd(sp.end) && i < 2000; t += DAY, i++) set.add(iso(t));
+  });
+  if (!set.size) for (let i = 0; i < win.n; i++) set.add(iso(win.start + i * DAY));
+  return set;
+}
+
+// A person's time over the plan, counting sprint days only: sprint days - team off days - their own leave = available days,
+// x their hours per day = hours before allocation, x effective hours per day = effective capacity (focus factor and allocation included).
+export function capacityOverPlan(S, p, win = planWindow(S), set = sprintDaySet(S, win)) {
+  const st = settingsOf(S, p);
+  const days = dayStates(S, p, win.startS, win.endS).filter((d) => set.has(d.date));
+  let teamOff = 0, leaveFull = 0, leaveHalf = 0, availDays = 0;
+  days.forEach((d) => {
+    if (d.teamOff) teamOff++;
+    else if (d.state === 'leave') leaveFull++;
+    else if (d.state === 'half') { leaveHalf++; availDays += 0.5; }
+    else availDays += 1;
+  });
+  return { ...st, cal: days.length, teamOff, leaveFull, leaveHalf, availDays, gross: availDays * st.hpd, cap: availDays * st.perDay };
+}
+
+// Hours one person has over the plan before allocation. This is the figure the Budget's labour section starts from;
+// allocation % is applied there.
+export function calendarHours(S, p, win = planWindow(S), set) {
+  const c = capacityOverPlan(S, p, win, set);
   return { hours: r2(c.availDays * c.hpd), days: c.availDays, cal: c.cal, teamOff: c.teamOff, leave: r2(c.leaveFull + c.leaveHalf * 0.5), hpd: c.hpd };
 }
 
