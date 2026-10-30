@@ -9,7 +9,7 @@ import { SprintIcon, StatusIcon } from '../components/Bits';
 import { AddChildMenu, AssigneeMenu, PriorityMenu, StatusMenu, TagMenu, TypeMenu } from '../components/Pickers';
 import { RollCell } from '../components/OwnValues';
 import { AddRow, TriBox } from '../components/ListBits';
-import { PRIORITIES, SPRINT_STATUSES, allTags, containerById, hasTag, tagHue, isDoneStatus, isOpen, priorityOf, statusOf, statusPct, statusesOf, typeOf, typesOf } from '../lib/tasks';
+import { PRIORITIES, SPRINT_STATUSES, allTags, containerById, hasTag, tagColor, isDoneStatus, isOpen, priorityOf, statusOf, statusPct, statusesOf, typeOf, typesOf } from '../lib/tasks';
 import { addDays, fdate, pd, today } from '../lib/dates';
 import { outsideSprint, sprintEvm, stCls } from '../lib/calc';
 import { hrsf, money, nz, pc } from '../lib/format';
@@ -243,7 +243,7 @@ export function groupsOf(tasks, by, S, showEmpty) {
     g = typesOf(S).map((ty) => ({ key: ty.id, label: ty.label, color: ty.color, tasks: tasks.filter((t) => t.type === ty.id), defaults: { type: ty.id } }));
   else if (by === 'tag')
     // a work item with several tags shows up under each of them
-    g = allTags(S).map((tag) => ({ key: 'tag:' + tag.toLowerCase(), label: tag, color: 'hsl(' + tagHue(tag) + ' 50% 42%)', tasks: tasks.filter((t) => hasTag(t, tag)), defaults: { tags: [tag] } })).concat([
+    g = allTags(S).map((tag) => ({ key: 'tag:' + tag.toLowerCase(), label: tag, color: tagColor(S, tag), tasks: tasks.filter((t) => hasTag(t, tag)), defaults: { tags: [tag] } })).concat([
       { key: 'notag', label: 'No tags', color: 'var(--muted)', tasks: tasks.filter((t) => !(t.tags || []).length), defaults: {} },
     ]);
   else if (by === 'due')
@@ -483,6 +483,12 @@ export default function SprintView() {
   const lbody = useRef(null); // the rows of the list (scrolls sideways when the columns need more room than the screen has)
 
   const ui = useUI();
+  // "Filter by tag" in a tag's editor sets the Tag filter of the open sprint
+  useEffect(() => {
+    const f = (e) => e.detail && setFg(e.detail);
+    window.addEventListener('sc-tag-filter', f);
+    return () => window.removeEventListener('sc-tag-filter', f);
+  }, []);
   const lc = useListCols();
   const people = S.people.filter((p) => p.name);
   const kids = useMemo(() => kidsMap(c ? c.tasks : []), [c]);
@@ -651,6 +657,7 @@ export default function SprintView() {
                 {allTags(S).map((g) => (<option key={g} value={g}>{g}</option>))}
               </select>
             </label>
+            <button className="btn" onClick={() => ui.openTags()} title="Rename, recolor and delete the project's tags">Manage tags</button>
             <button className="btn" onClick={() => setExp(Object.fromEntries(parentIds.map((id) => [id, true])))}>Expand all</button>
             <button className="btn" onClick={() => setExp(Object.fromEntries(parentIds.map((id) => [id, false])))}>Collapse all</button>
           </>

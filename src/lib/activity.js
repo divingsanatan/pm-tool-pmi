@@ -243,6 +243,7 @@ export function diffProject(before, after) {
     made: (x) => 'Recorded baseline ' + x.version + (x.crCode ? ' for ' + x.crCode : '') + (x.kind === 'Initial' ? ' (initial plan)' : ''),
     gone: (x) => 'Removed baseline ' + x.version });
   q({ cat: 'project', noun: 'status', a: before.statuses, b: after.statuses, label: (x) => '“' + x.label + '”' });
+  q({ cat: 'project', noun: 'tag', a: Object.values(before.tagDefs || {}), b: Object.values(after.tagDefs || {}), id: (x) => x.name.toLowerCase(), label: (x) => '“' + x.name + '”', skip: ['created'] });
   q({ cat: 'project', noun: 'work item type', a: before.types || [], b: after.types || [], label: (x) => '“' + x.label + '”' });
   // weekly tracker (rows have no ids, so they are matched by week)
   (after.report || []).forEach((r, i) => {

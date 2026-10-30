@@ -4,7 +4,8 @@ import { useTasks } from '../store/useTasks';
 import { useUI } from '../components/UI';
 import { Area, Cell, SelectCell } from '../components/Field';
 import { Avatar, StatusIcon, TypeBadge } from '../components/Bits';
-import { AssigneeMenu, TagChip, TagMenu } from '../components/Pickers';
+import { AssigneeMenu, TagMenu } from '../components/Pickers';
+import { EditableTag } from '../components/Tags';
 import { PRIORITIES, allContainers, childTypeFor, findTask, isDoneStatus, nameOf, statusOf, statusesOf, typeOf, typesOf } from '../lib/tasks';
 import { ancestorsOf, flatTree, rollParts, subtreeIds } from '../lib/hier';
 import { fdate } from '../lib/dates';
@@ -100,7 +101,7 @@ export default function TaskDrawer({ taskId, onClose, onOpen }) {
           </label>
           <div className="fld" style={{ gridColumn: '1 / -1' }}>Tags
             <div className="chips-a">
-              {(t.tags || []).map((g) => (<TagChip key={g} tag={g} onRemove={() => tk.patch(t.id, { tags: t.tags.filter((x) => x !== g) })} />))}
+              {(t.tags || []).map((g) => (<EditableTag key={g} tag={g} onRemove={() => tk.patch(t.id, { tags: t.tags.filter((x) => x !== g) })} />))}
               <TagMenu task={t} className="btn tag-add-btn" label="+ Tag" />
             </div>
           </div>

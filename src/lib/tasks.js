@@ -155,9 +155,22 @@ export function cleanTags(a) {
   return out;
 }
 export const hasTag = (t, tag) => (t.tags || []).some((g) => g.toLowerCase() === String(tag).toLowerCase());
-// every tag used anywhere in the project, A to Z (the first spelling found wins when only the capitals differ)
+/* Tag registry: project.tagDefs = { <lower-case name>: { name, color, created } }. It keeps each tag's colour and creation date, and lets a
+   tag exist before any work item uses it (created in the Tag manager). color: '' = automatic (from the name), 'none' = no colour, or '#rrggbb'. */
+export const TAG_COLORS = ['#6b7280', '#5b4bc4', '#3a4fa5', '#2b6fd1', '#2e8b57', '#b8860b', '#c8641c', '#c0283c', '#c2306f', '#8a3fb0', '#8a6455'];
+export const okColor = (c) => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c);
+export const tagDef = (p, tag) => (p && p.tagDefs && p.tagDefs[String(tag).toLowerCase()]) || null;
+// the colour a tag is drawn in (a CSS colour)
+export function tagColor(p, tag) {
+  const d = tagDef(p, tag);
+  if (d && okColor(d.color)) return d.color;
+  if (d && d.color === 'none') return 'var(--muted)';
+  return 'hsl(' + tagHue(tag) + ' 60% 50%)';
+}
+// every tag of the project (used by a work item or kept in the registry), A to Z (the first spelling found wins when only the capitals differ)
 export function allTags(p) {
   const m = new Map();
+  Object.values((p && p.tagDefs) || {}).forEach((d) => d && d.name && m.set(d.name.toLowerCase(), d.name));
   allContainers(p).forEach((c) => c.tasks.forEach((t) => (t.tags || []).forEach((g) => !m.has(g.toLowerCase()) && m.set(g.toLowerCase(), g))));
   return [...m.values()].sort((a, b) => a.localeCompare(b));
 }

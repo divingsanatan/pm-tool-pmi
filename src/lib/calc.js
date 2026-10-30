@@ -1,6 +1,6 @@
 import { DAY, pd, today, fsh } from './dates';
 import { nz, cl, cleanEffort, money as money0 } from './format';
-import { DEFAULT_STATUSES, DEFAULT_TYPES, allContainers, cleanTags, firstOpenStatus, isDoneStatus, makeTask, statusPct, typeOf, uid } from './tasks';
+import { DEFAULT_STATUSES, DEFAULT_TYPES, allContainers, cleanTag, cleanTags, firstOpenStatus, okColor, isDoneStatus, makeTask, statusPct, typeOf, uid } from './tasks';
 import { flatTree, leafTasks, ownDoneItems, rollupContainer, rootTasks } from './hier';
 import { ACTIVITY_MAX } from './activity';
 import { calendarOf, offDaysOf, sprintCalendar } from './offdays';
@@ -917,11 +917,23 @@ export function normalize(S) {
   });
   const typeIds = new Set(S.types.map((x) => x.id));
   const fallbackType = typeIds.has('task') ? 'task' : S.types[0].id;
+  // tag registry: colour and creation date per tag. Every tag a work item uses has an entry, and a work item spells the tag as the registry does.
+  const defs = {};
+  Object.values(S.tagDefs && typeof S.tagDefs === 'object' ? S.tagDefs : {}).forEach((d) => {
+    const name = cleanTag(d && d.name);
+    if (!name || defs[name.toLowerCase()]) return;
+    defs[name.toLowerCase()] = { name, color: okColor(d.color) ? d.color : d.color === 'none' ? 'none' : '', created: typeof d.created === 'string' ? d.created.slice(0, 10) : '' };
+  });
+  const seenOn = new Date().toISOString().slice(0, 10);
+  S.tagDefs = defs; // filled in below as work items are read (same object)
   allContainers(S).forEach((c) => {
     c.tasks.forEach((t) => {
       t.effort = cleanEffort(t.effort); // hours are never negative
       if (t.ownEffort !== undefined) t.ownEffort = cleanEffort(t.ownEffort);
-      t.tags = cleanTags(t.tags);
+      t.tags = cleanTags(t.tags).map((g) => {
+        const d = defs[g.toLowerCase()] || (defs[g.toLowerCase()] = { name: g, color: '', created: seenOn });
+        return d.name;
+      });
     });
     // earlier versions kept subtasks as a small checklist inside a task; they are real child work items now
     const born = [];
