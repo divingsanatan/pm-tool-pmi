@@ -30,6 +30,8 @@ export default function PowerInterestGrid() {
         <p className="msg">Add stakeholders above to build the grid.</p>
       ) : (
         <>
+          <div className="pi-body">
+          <div className="pi-layout">
           <div className="pi-wrap">
             <div className="pi-axis-y" aria-hidden="true">Power →</div>
             <div className="pi-grid" role="img" aria-label={'Power and interest grid with ' + placed.length + ' stakeholder' + (placed.length === 1 ? '' : 's')}>
@@ -59,6 +61,8 @@ export default function PowerInterestGrid() {
                 </div>
               );
             })}
+          </div>
+          </div>
           </div>
           {loose.length > 0 && (
             <p className="msg" style={{ marginTop: 10 }}>
