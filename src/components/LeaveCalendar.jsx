@@ -10,8 +10,8 @@ import '../capacity.css';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const TYPE_MARK = { leave: 'L', sick: 'S', training: 'T', other: 'O' };
 
-// Hours per day, focus factor and allocation: set once for the project, then overridden per person where needed.
-// Effective hours per day = hours per day x focus factor x allocation.
+// Hours per day, allocation and focus factor: set once for the project, then overridden per person where needed.
+// Total hours per day = hours per day x allocation.  Effective hours per day = total hours per day x focus factor.
 export function PeopleCapacity() {
   const { S, update } = useStore();
   const D = projectDefaults(S);
@@ -28,6 +28,7 @@ export function PeopleCapacity() {
   const all = S.people.map((p) => ({ p, st: settingsOf(S, p), team: onDeliveryTeam(S, p) }));
   const team = all.filter((r) => r.team), others = all.filter((r) => !r.team);
   const teamPerDay = team.reduce((a, r) => a + r.st.perDay, 0);
+  const teamTotalDay = team.reduce((a, r) => a + r.st.hpd * r.st.alloc, 0);
 
   const row = ({ p, st }) => (
     <tr key={p.id}>
@@ -36,15 +37,20 @@ export function PeopleCapacity() {
         <Cell value={p.hpd} type="num" cls="w-sm n" placeholder={String(D.hpd)} label={'Working hours per day of ' + p.name} onCommit={(v) => set(p.id, { hpd: v != null && v > 0 ? Math.min(24, v) : null })} />
         <div className={'inh' + (st.customHpd ? ' own' : '')}>{st.customHpd ? 'own value' : 'project default'}</div>
       </td>
+      <td data-l="Allocation" className="r">
+        <Cell value={p.cap} type="pct" cls="w-sm n" label={'Allocation to this project of ' + p.name} onCommit={(v) => set(p.id, { cap: v == null ? 0 : Math.max(0, v) })} />
+      </td>
+      <td data-l="Total hours / day" className="r mono">
+        <span className={'cell' + (st.hpd * st.alloc > 0 ? '' : ' msg')} title={st.hpd + ' h × ' + Math.round(st.alloc * 100) + '% allocation'}>
+          {st.hpd * st.alloc > 0 ? <b>{hrsf(Math.round(st.hpd * st.alloc * 100) / 100)} h</b> : '–'}
+        </span>
+      </td>
       <td data-l="Focus factor" className="r">
         <Cell value={p.focus} type="pct" cls="w-sm n" placeholder={String(Math.round(D.focus * 100))} label={'Focus factor of ' + p.name} onCommit={(v) => set(p.id, { focus: v == null ? null : Math.max(0, Math.min(1, v)) })} />
         <div className={'inh' + (st.customFocus ? ' own' : '')}>{st.customFocus ? 'own value' : 'project default'}</div>
       </td>
-      <td data-l="Allocation" className="r">
-        <Cell value={p.cap} type="pct" cls="w-sm n" label={'Allocation to this project of ' + p.name} onCommit={(v) => set(p.id, { cap: v == null ? 0 : Math.max(0, v) })} />
-      </td>
       <td data-l="Effective hours / day" className="r mono">
-        <span className={'cell' + (st.perDay > 0 ? '' : ' msg')} title={st.hpd + ' h × ' + Math.round(st.focus * 100) + '% focus × ' + Math.round(st.alloc * 100) + '% allocation'}>
+        <span className={'cell' + (st.perDay > 0 ? '' : ' msg')} title={hrsf(Math.round(st.hpd * st.alloc * 100) / 100) + ' h total × ' + Math.round(st.focus * 100) + '% focus'}>
           {st.perDay > 0 ? <b>{hrsf(Math.round(st.perDay * 100) / 100)} h</b> : 'Set an allocation'}
         </span>
       </td>
@@ -56,7 +62,7 @@ export function PeopleCapacity() {
       <h2>Capacity and availability</h2>
       <p className="hint">
         Set the project default once; everybody inherits it. Type a value on a person only where they differ (part-time, shift work, a role with more meetings), and clear the box to go back to the default.
-        <b> Effective hours per day = hours per day × focus factor × allocation.</b> Focus factor is the share of the day that goes to productive work (meetings, email and context switching take the rest).
+        <b> Total hours per day = hours per day × allocation. Effective hours per day = total hours per day × focus factor.</b> Focus factor is the share of the day that goes to productive work (meetings, email and context switching take the rest).
         Allocation is the share of their time given to this project and is the same number as the Capacity % in the Budget.
       </p>
 
@@ -78,18 +84,21 @@ export function PeopleCapacity() {
             <tr>
               <th>Stakeholder</th>
               <th className="r">Hours per day</th>
-              <th className="r">Focus factor %</th>
               <th className="r">Allocation %</th>
+              <th className="r">Total hours / day</th>
+              <th className="r">Focus factor %</th>
               <th className="r">Effective hours / day</th>
             </tr>
           </thead>
           <tbody>
             {team.map(row)}
-            {!team.length && <tr className="empty-row"><td colSpan="5"><span className="cell msg">{all.length ? 'Nobody has an allocation yet. Open “Not on the delivery team” below and give people an allocation %.' : 'Add stakeholders above first.'}</span></td></tr>}
+            {!team.length && <tr className="empty-row"><td colSpan="6"><span className="cell msg">{all.length ? 'Nobody has an allocation yet. Open “Not on the delivery team” below and give people an allocation %.' : 'Add stakeholders above first.'}</span></td></tr>}
             {team.length > 0 && (
               <tr className="tot">
                 <td data-l="Team"><span className="cell"><b>Team</b></span></td>
-                <td></td><td></td><td></td>
+                <td></td><td></td>
+                <td data-l="Total hours / day" className="r mono"><span className="cell"><b>{hrsf(Math.round(teamTotalDay * 100) / 100)} h</b></span></td>
+                <td></td>
                 <td data-l="Effective hours / day" className="r mono"><span className="cell"><b>{hrsf(Math.round(teamPerDay * 100) / 100)} h</b></span></td>
               </tr>
             )}
@@ -103,7 +112,7 @@ export function PeopleCapacity() {
           <p className="msg" style={{ margin: '6px 0' }}>No allocation and no assigned work, so they are left out of the capacity planner (sponsors, customers, people who only need to be informed). Give someone an allocation % to bring them in.</p>
           <div className="scroll">
             <table className="tbl rwd">
-              <thead><tr><th>Stakeholder</th><th className="r">Hours per day</th><th className="r">Focus factor %</th><th className="r">Allocation %</th><th className="r">Effective hours / day</th></tr></thead>
+              <thead><tr><th>Stakeholder</th><th className="r">Hours per day</th><th className="r">Allocation %</th><th className="r">Total hours / day</th><th className="r">Focus factor %</th><th className="r">Effective hours / day</th></tr></thead>
               <tbody>{others.map(row)}</tbody>
             </table>
           </div>

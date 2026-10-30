@@ -6,6 +6,7 @@ import { allContainers, uid } from '../lib/tasks';
 import WrapCell from '../components/WrapCell';
 import PowerInterestGrid from '../components/PowerInterestGrid';
 import WorkCalendar from '../components/WorkCalendar';
+import CapacityCards from '../components/CapacityCards';
 import LeaveCalendar, { PeopleCapacity } from '../components/LeaveCalendar';
 import { SCORES, quadrantOf, scoreOf } from '../lib/stakeholderGrid';
 
@@ -65,6 +66,7 @@ export default function Stakeholders() {
 
   return (
     <>
+    <CapacityCards />
     <div className="card">
       <h2>Stakeholders</h2>
       <p className="hint">The single list of people for this project. Pick them as assignees on work items, mark them in the RACI chart, and cost them in the Budget. Names can only be added or changed here.</p>
