@@ -97,22 +97,23 @@ function listEvents(ev, ctx, o) {
   const { cat, noun, a = [], b = [], label, skip = [], made, gone } = o;
   const sk = new Set(['id', ...skip]);
   const idOf = o.id || ((x, i) => (x.id != null ? x.id : 'row' + i));
+  const who = (x, id) => ({ sub: noun + ':' + id, subName: (o.short || label)(x), subType: noun });
   const A = new Map(a.map((x, i) => [idOf(x, i), x]));
   const B = new Map(b.map((x, i) => [idOf(x, i), x]));
   B.forEach((x, id) => {
     const old = A.get(id);
     if (!old) {
-      ev.push({ cat, act: 'created', text: made ? made(x) : 'Added ' + noun + ' ' + label(x) });
+      ev.push({ cat, act: 'created', ...who(x, id), text: made ? made(x) : 'Added ' + noun + ' ' + label(x) });
       return;
     }
     if (o.noUpdate) return;
     const d = changesOf(ctx, old, x, sk);
     if (!d.length) return;
-    if (d.length === 1) ev.push({ cat, act: 'updated', text: cap(noun) + ' ' + label(x) + ': ' + d[0].f + ' ' + d[0].a + ' → ' + d[0].b });
-    else ev.push({ cat, act: 'updated', text: 'Updated ' + noun + ' ' + label(x), d });
+    if (d.length === 1) ev.push({ cat, act: 'updated', ...who(x, id), text: cap(noun) + ' ' + label(x) + ': ' + d[0].f + ' ' + d[0].a + ' → ' + d[0].b });
+    else ev.push({ cat, act: 'updated', ...who(x, id), text: 'Updated ' + noun + ' ' + label(x), d });
   });
   A.forEach((x, id) => {
-    if (!B.has(id)) ev.push({ cat, act: 'deleted', text: gone ? gone(x) : 'Removed ' + noun + ' ' + label(x) });
+    if (!B.has(id)) ev.push({ cat, act: 'deleted', ...who(x, id), text: gone ? gone(x) : 'Removed ' + noun + ' ' + label(x) });
   });
 }
 
@@ -130,6 +131,7 @@ function taskEvents(before, after, ctx) {
   const who = (ids) => ((ids || []).length ? ids.map((x) => resolve(ctx, x)).join(', ') : 'Unassigned');
   const dt = (v) => (v ? fdate(v) : '(none)');
   const lab = (t) => t.code + ' “' + t.name + '”';
+  const tag = (n0, t) => ev.slice(n0).forEach((e) => Object.assign(e, { sub: 'task:' + t.id, subName: lab(t), subType: 'work item' }));
   const FIELDS = [
     ['type', 'Type', (p, t) => typeOf(p, t.type).label],
     ['status', 'Status', (p, t) => st(p, t.status)],
@@ -146,9 +148,11 @@ function taskEvents(before, after, ctx) {
   A.forEach(({ t, c }, id) => {
     const b = B.get(id);
     const ref = { type: 'task', id };
+    const n0 = ev.length;
     if (!b) {
       const under = t.parent && ctx.codes.get(t.parent) ? ' under ' + ctx.codes.get(t.parent) : '';
       ev.push({ cat: 'work', act: 'created', g: { k: 'created', to: c.name }, item: t.code, ref, text: 'Created ' + typeOf(after, t.type).label.toLowerCase() + ' ' + lab(t) + ' in ' + c.name + under });
+      tag(n0, t);
       return;
     }
     const o = b.t;
@@ -170,10 +174,13 @@ function taskEvents(before, after, ctx) {
     } else if (d.length > 1) {
       ev.push({ cat: 'work', act: 'updated', item: t.code, ref, text: 'Updated ' + lab(t), d: d.map(({ f, a, b }) => ({ f, a, b })) });
     }
+    tag(n0, t);
   });
   B.forEach(({ t, c }, id) => {
     if (A.has(id) || !stillThere.has(c.id)) return; // tasks of a deleted sprint are covered by the sprint entry
+    const n0 = ev.length;
     ev.push({ cat: 'work', act: 'deleted', g: { k: 'deleted', to: c.name }, item: t.code, text: 'Deleted ' + lab(t) + ' from ' + c.name });
+    tag(n0, t);
   });
   return ev;
 }
@@ -201,7 +208,7 @@ function collapse(events) {
       : es[0].act === 'moved' ? 'Moved ' + n + ' work items' + (to ? ' to ' + to : '')
       : 'Changed ' + es[0].g.f.toLowerCase() + ' on ' + n + ' work items' + (to ? ' to ' + to : '');
     idxs.forEach((i) => drop.add(i));
-    first.set(idxs[0], { cat: 'work', act: es[0].act, text, count: n, items: es.map((e) => e.item).filter(Boolean).slice(0, 80) });
+    first.set(idxs[0], { cat: 'work', act: es[0].act, text, count: n, items: es.map((e) => e.item).filter(Boolean).slice(0, 80), subs: es.map((e) => e.sub).filter(Boolean).slice(0, 200) });
   });
   const out = [];
   events.forEach((e, i) => {
@@ -235,8 +242,8 @@ export function diffProject(before, after) {
     made: (x) => 'Added ' + resolve(ctx, x.person) + ' to the budget team', gone: (x) => 'Removed ' + resolve(ctx, x.person) + ' from the budget team' });
   q({ cat: 'budget', noun: 'budget line', a: before.lines, b: after.lines, label: (x) => '“' + (x.name || 'untitled') + '”' });
   q({ cat: 'budget', noun: 'cost entry', a: before.ledger, b: after.ledger, label: (x) => '“' + (x.desc || x.element || 'cost') + '” (' + money(x.amount) + ')' });
-  q({ cat: 'raid', noun: 'RAID item', a: before.raid, b: after.raid, label: (x) => x.id + (x.desc ? ' “' + x.desc + '”' : ''), skip: ['rev', 'key', 'descHtml', 'respHtml'] });
-  q({ cat: 'change', noun: 'change request', a: before.cr, b: after.cr, label: (x) => x.code + ' “' + (x.title || 'untitled') + '”', skip: CR_SKIP,
+  q({ cat: 'raid', noun: 'RAID item', a: before.raid, b: after.raid, label: (x) => x.id + (x.desc ? ' “' + x.desc + '”' : ''), short: (x) => x.id + (x.desc ? ' ' + (x.desc.length > 40 ? x.desc.slice(0, 38) + '…' : x.desc) : ''), skip: ['rev', 'key', 'descHtml', 'respHtml'] });
+  q({ cat: 'change', noun: 'change request', a: before.cr, b: after.cr, label: (x) => x.code + ' “' + (x.title || 'untitled') + '”', short: (x) => x.code + (x.title ? ' ' + x.title : ''), skip: CR_SKIP,
     made: (x) => 'Created change request ' + x.code + (x.title ? ' “' + x.title + '”' : ''),
     gone: (x) => 'Deleted change request ' + x.code + (x.title ? ' “' + x.title + '”' : '') });
   q({ cat: 'change', noun: 'baseline', a: before.baselines, b: after.baselines, label: (x) => x.version, noUpdate: true,
@@ -302,9 +309,9 @@ export function relTime(at, now = Date.now()) {
 }
 
 const csvCell = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-export function activityCsv(p) {
+export function activityCsv(p, list) {
   const head = ['Timestamp (UTC)', 'Local time', 'Category', 'Action', 'By', 'What happened', 'Details'];
-  const rows = (p.activity || []).slice().reverse().map((e) => [
+  const rows = (list || (p.activity || []).slice().reverse()).map((e) => [
     e.at, new Date(e.at).toLocaleString(), (CATS[e.cat] || [e.cat])[0], e.act, e.by, e.text,
     (e.d || []).map((x) => x.f + ': ' + x.a + ' → ' + x.b).join('; ') + (e.items ? (e.d ? '; ' : '') + e.items.join(', ') : ''),
   ]);
