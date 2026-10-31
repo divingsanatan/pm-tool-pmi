@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Kpi from '../components/Kpi';
 import { AddDependency, DepRow, useDepIndex } from '../components/Dependencies';
 import { isBlocked } from '../lib/deps';
+import { fdate } from '../lib/dates';
 
 const FILTERS = [
   ['all', 'All'],
@@ -20,6 +21,8 @@ export default function DependencyView({ c, onOpen }) {
   const count = (k) => mine.filter((e) => match(e, k)).length;
   const rows = mine.filter((e) => match(e, f)).sort((a, b) => rank(a) - rank(b));
   const blocked = c.tasks.filter((t) => isBlocked(idx, t.id)).length;
+  const cp = idx.cpm;
+  const critHere = cp.list.filter((x) => x.sprint.id === c.id).length;
   const holding = new Set(mine.filter((e) => e.pc && e.pc.id === c.id && e.sc.id !== c.id && !e.ev.met).map((e) => e.pred.id)).size;
   return (
     <>
@@ -28,6 +31,7 @@ export default function DependencyView({ c, onOpen }) {
         <Kpi l="Blocked work items" v={blocked} s={blocked ? <span className="pill warn">Waiting on predecessors</span> : <span className="pill good">None blocked</span>} />
         <Kpi l="Conflicts" v={count('conflict')} s={count('conflict') ? <span className="pill bad">Schedule or logic broken</span> : <span className="pill good">Schedule respects them</span>} />
         <Kpi l="Across sprints" v={count('cross')} s={holding ? holding + ' item' + (holding === 1 ? '' : 's') + ' here hold up other sprints' : 'Nothing here holds up another sprint'} />
+        <Kpi l="Critical items" v={critHere} s={cp.list.length ? cp.list.length + ' on the critical path in the whole project' : 'No critical path yet'} />
         <Kpi l="External, open" v={mine.filter((e) => !e.pred && !e.ev.met).length} s="Waiting on people outside the project" />
       </section>
       <div className="card">
@@ -50,6 +54,25 @@ export default function DependencyView({ c, onOpen }) {
           ))}
           {!rows.length && <p className="msg" style={{ margin: 0 }}>{mine.length ? 'No dependencies match this filter.' : 'No dependencies yet. Use “Add dependency”, or the Dependencies column in the List.'}</p>}
         </div>
+      </div>
+      <div className="card">
+        <h2 style={{ margin: 0 }}>Critical path</h2>
+        <p className="hint" style={{ margin: '4px 0 10px' }}>
+          Worked out from the planned dates and the dependencies, in working days. Work items with no float: if one slips, the project finish moves.
+          {cp.list.length ? ' The chain runs ' + cp.length + ' working days and finishes on ' + fdate(cp.end) + '.' : ''}
+        </p>
+        {cp.list.length ? (
+          <ol className="dp-crit">
+            {cp.list.map((x) => (
+              <li key={x.task.id} className={x.sprint.id === c.id ? 'here' : ''}>
+                <button type="button" className="linkbtn" onClick={() => onOpen(x.task.id)}><span className="mono">{x.task.code}</span> {x.task.name}</button>
+                <span className="msg"> · {x.sprint.name} · {fdate(x.start)}{x.due !== x.start ? ' – ' + fdate(x.due) : ''}{x.float < 0 ? ' · ' + Math.abs(x.float) + ' working day' + (x.float === -1 ? '' : 's') + ' over' : ''}</span>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="msg" style={{ margin: 0 }}>Nothing is critical yet. Add dependencies between work items that have start and due dates.</p>
+        )}
       </div>
     </>
   );

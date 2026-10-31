@@ -7,10 +7,12 @@ import { DEFAULT_TL, SCALES, SCOPES, buildAxis, pickedSprint } from '../lib/gant
 import { Fld } from '../components/Field';
 import { TypeBadge } from '../components/Bits';
 import { typeOf } from '../lib/tasks';
+import { depIndex } from '../lib/deps';
+import '../deps.css';
 
 const HH = 78; // three header rows of 26px
 
-function Bar({ s, f, pct, cls, ax, tip }) {
+function Bar({ s, f, pct, cls, ax, tip, note }) {
   s = s || f;
   f = f || s;
   if (!s || !f) return null;
@@ -27,17 +29,22 @@ function Bar({ s, f, pct, cls, ax, tip }) {
     <div
       className={'g-bar ' + cls + (clipL ? ' clipL' : '') + (clipR ? ' clipR' : '')}
       style={{ left: l.toFixed(1) + 'px', width: wd.toFixed(1) + 'px' }}
-      title={(tip ? tip + ' · ' : '') + fdate(s) + ' – ' + fdate(f) + ' · ' + pc(pct, 0) + ' complete'}
+      title={(tip ? tip + ' · ' : '') + fdate(s) + ' – ' + fdate(f) + ' · ' + pc(pct, 0) + ' complete' + (note ? ' · ' + note : '')}
     >
       <i style={{ width: fill.toFixed(1) + 'px' }} />
     </div>
   );
 }
 
+const cpNote = (n) => (!n || !n.linked ? '' : n.critical ? 'Critical path: no float' : 'Float ' + n.float + ' working day' + (n.float === 1 ? '' : 's'));
+
 export default function Timeline() {
   const { S, update } = useStore();
   const box = useRef(null);
   const [shut, setShut] = useState(() => new Set()); // collapsed parents
+  const [showDeps, setShowDeps] = useState(true);
+  const [showCrit, setShowCrit] = useState(true);
+  const di = depIndex(S);
   const tl = { ...DEFAULT_TL, ...(S.tl || {}) };
   const set = (patch) => update((p) => { p.tl = { ...DEFAULT_TL, ...(p.tl || {}), ...patch }; });
   const sp = pickedSprint(S, tl);
@@ -95,6 +102,33 @@ export default function Timeline() {
     box.current.scrollTo({ left: Math.max(0, lw + ax.todayX - box.current.clientWidth / 2), behavior: 'smooth' });
   };
 
+  // dependency arrows between the visible rows
+  const RH = 34, G = 9;
+  const rowOf = new Map();
+  rows.forEach((x, i) => x.taskId && rowOf.set(x.taskId, i));
+  const geo = (x) => {
+    const s = x.start || x.finish, f = x.finish || x.start;
+    if (!s || !f) return null;
+    const l = ((pd(s) - ax.r0) / DAY) * ax.ppd;
+    return { l, r: Math.max(l + 6, l + ((pd(f) - pd(s)) / DAY + 1) * ax.ppd) };
+  };
+  const arrows = showDeps ? di.all.filter((e) => e.pred && rowOf.has(e.pred.id) && rowOf.has(e.succ.id)).map((e) => {
+    const i1 = rowOf.get(e.pred.id), i2 = rowOf.get(e.succ.id);
+    const a = geo(rows[i1]), b = geo(rows[i2]);
+    if (!a || !b) return null;
+    const t = e.dep.type, fromR = t === 'FS' || t === 'FF', toL = t === 'FS' || t === 'SS';
+    const x1 = fromR ? a.r : a.l, y1 = i1 * RH + RH / 2, xe = toL ? b.l : b.r, y2 = i2 * RH + RH / 2;
+    const d1 = fromR ? 1 : -1, d2 = toL ? -1 : 1;
+    const xo = x1 + d1 * G, xs = xe + d2 * G;
+    const ym = y1 + (y2 > y1 ? 1 : -1) * (RH / 2);
+    const pts = d1 === 1 && d2 === -1 && xs > xo
+      ? [[x1, y1], [(xo + xs) / 2, y1], [(xo + xs) / 2, y2], [xe, y2]]
+      : [[x1, y1], [xo, y1], [xo, ym], [xs, ym], [xs, y2], [xe, y2]];
+    const ed = di.cpm.edges.get(e.dep.id);
+    const cls = e.ev.state === 'conflict' ? 'bad' : e.ev.met ? 'met' : showCrit && ed && ed.critical ? 'crit' : '';
+    return { id: e.dep.id, d: 'M' + pts.map((q) => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' L'), cls, tip: e.succ.code + ' waits on ' + e.pred.code + ' (' + t + ')' };
+  }).filter(Boolean) : [];
+
   const hdr = [ax.scale === 'month' ? 'Year' : 'Month', ax.scale === 'day' ? 'Day' : ax.scale === 'week' ? 'Week' : 'Month', 'Sprint'];
 
   return (
@@ -131,8 +165,20 @@ export default function Timeline() {
             <Fld label="To"><input className="c" type="date" value={tl.to} onChange={(e) => set({ to: e.target.value })} aria-label="To date" /></Fld>
           </>
         )}
+        <Fld label="Show">
+          <div className="seg" role="group" aria-label="Dependency display">
+            <button aria-pressed={showDeps} onClick={() => setShowDeps(!showDeps)}>Dependencies</button>
+            <button aria-pressed={showCrit} onClick={() => setShowCrit(!showCrit)}>Critical path</button>
+          </div>
+        </Fld>
         <button className="btn" onClick={jumpToday} disabled={ax.todayX == null} title={ax.todayX == null ? 'Today is outside this range' : 'Scroll to today'}>Today</button>
       </div>
+      {showDeps && (
+        <p className="g-key" style={{ marginBottom: 8 }}>
+          <span><i />Dependency arrow</span><span><i className="m" />Satisfied</span><span><i className="b" />Broken by the plan</span>
+          {showCrit && <span><i className="c" />Critical path (no float)</span>}
+        </p>
+      )}
       {(ax.notice || hidden > 0) && (
         <p className="msg" style={{ marginBottom: 8 }}>{ax.notice} {hidden > 0 ? hidden + ' task' + (hidden > 1 ? 's' : '') + ' outside this range (or without dates) are hidden.' : ''}</p>
       )}
@@ -181,12 +227,22 @@ export default function Timeline() {
                   <TypeBadge type={ty} size={14} />{' '}
                   <span className="mono" style={{ color: 'var(--muted)' }}>{x.wbs}</span> {sum ? <b>{x.name}</b> : x.name}
                 </div>
-                <div className="g-trk"><Bar s={x.start} f={x.finish} pct={x.pct} cls={sum ? 'sum' : ty.milestone ? 'ms' : st === 'Done' ? 'done' : st === 'Late' ? 'late' : ''} ax={ax} tip={x.name} /></div>
+                <div className="g-trk"><Bar s={x.start} f={x.finish} pct={x.pct} cls={(sum ? 'sum' : ty.milestone ? 'ms' : st === 'Done' ? 'done' : st === 'Late' ? 'late' : '') + (showCrit && di.cpm.nodes.get(x.taskId) && di.cpm.nodes.get(x.taskId).critical ? ' crit' : '')} ax={ax} tip={x.name} note={cpNote(di.cpm.nodes.get(x.taskId))} /></div>
               </div>
             );
           })}
           {!rows.length && <div className="g-row"><div className="g-lab msg">Nothing to show</div></div>}
 
+          {arrows.length > 0 && (
+            <svg className="g-deps" width={ax.total} height={rows.length * RH} aria-hidden="true">
+              <defs>
+                {[['', 'var(--muted)'], ['met', 'var(--good)'], ['bad', 'var(--bad)'], ['crit', 'var(--bad)']].map(([k, c]) => (
+                  <marker key={k} id={'gd-' + (k || 'n')} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill={c} stroke="none" /></marker>
+                ))}
+              </defs>
+              {arrows.map((a) => (<path key={a.id} className={a.cls} d={a.d} markerEnd={'url(#gd-' + (a.cls || 'n') + ')'}><title>{a.tip}</title></path>))}
+            </svg>
+          )}
           {ax.todayX != null && (
             <div className="g-layer t"><span className="g-today" style={{ left: ax.todayX.toFixed(1) + 'px' }} /></div>
           )}

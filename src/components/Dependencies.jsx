@@ -4,7 +4,7 @@ import { useTasks } from '../store/useTasks';
 import { useDeps } from '../store/useDeps';
 import { Cell } from './Field';
 import Menu from './Menu';
-import { NATURE, REL, REL_IDS, STATE, buildDeps, raidJump } from '../lib/deps';
+import { NATURE, REL, REL_IDS, STATE, depIndex, depLocked, hasBaseline, raidJump } from '../lib/deps';
 import { allContainers } from '../lib/tasks';
 import { fdate } from '../lib/dates';
 import '../deps.css';
@@ -12,7 +12,7 @@ import '../deps.css';
 // the project's dependencies, recalculated whenever the project changes
 export function useDepIndex() {
   const { S } = useStore();
-  return useMemo(() => buildDeps(S), [S]);
+  return useMemo(() => depIndex(S), [S]);
 }
 
 export const StatePill = ({ e }) => <span className={'pill ' + STATE[e.ev.state].cls} title={e.ev.text}>{STATE[e.ev.state].label}</span>;
@@ -46,10 +46,10 @@ export function AddDependency({ task, side = 'succ', onDone, startOpen = false }
   const { S } = useStore();
   const dp = useDeps();
   const [open, setOpen] = useState(startOpen);
-  const [f, setF] = useState({ other: '', second: '', ext: false, extText: '', due: '', type: 'FS', lag: '0', nature: 'mandatory' });
+  const [f, setF] = useState({ other: '', second: '', ext: false, extText: '', due: '', type: 'FS', lag: '0', lagCal: 'work', nature: 'mandatory' });
   const set = (k) => (v) => setF((x) => ({ ...x, [k]: v }));
   const ev = (k) => (e) => set(k)(e.target.value);
-  const reset = () => { setF({ other: '', second: '', ext: false, extText: '', due: '', type: 'FS', lag: '0', nature: 'mandatory' }); onDone && onDone(); };
+  const reset = () => { setF({ other: '', second: '', ext: false, extText: '', due: '', type: 'FS', lag: '0', lagCal: 'work', nature: 'mandatory' }); onDone && onDone(); };
   if (!open) return <button className="btn" onClick={() => setOpen(true)}>{task ? (side === 'succ' ? '+ Waiting on…' : '+ Blocking…') : '+ Add dependency'}</button>;
   const both = !task;
   // who waits (succ) and who is waited on (pred)
@@ -58,8 +58,7 @@ export function AddDependency({ task, side = 'succ', onDone, startOpen = false }
   const external = !both && side === 'succ' && f.ext;
   const ready = external ? f.extText.trim() : succId && predId;
   const go = () => {
-    const ok = dp.add(external ? task.id : succId, { pred: external ? '' : predId, ext: f.extText, due: f.due, type: f.type, lag: f.lag, nature: f.nature });
-    if (ok) { reset(); setOpen(false); }
+    dp.add(external ? task.id : succId, { pred: external ? '' : predId, ext: f.extText, due: f.due, type: f.type, lag: f.lag, lagCal: f.lagCal, nature: f.nature }, () => { reset(); setOpen(false); });
   };
   const hint = REL[f.type].help;
   return (
@@ -86,13 +85,19 @@ export function AddDependency({ task, side = 'succ', onDone, startOpen = false }
           <label className="fld">Relationship
             <select className="c" value={f.type} onChange={ev('type')}>{REL_IDS.map((k) => (<option key={k} value={k}>{REL[k].label} ({k})</option>))}</select>
           </label>
-          <label className="fld">Lag (+) or lead (−), days<input className="c n" type="number" value={f.lag} onChange={ev('lag')} /></label>
+          <label className="fld">Lag (+) or lead (−)
+            <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+              <input className="c n" type="number" value={f.lag} onChange={ev('lag')} style={{ width: 80 }} />
+              <select className="c" value={f.lagCal} onChange={ev('lagCal')} aria-label="Lag unit"><option value="work">working days</option><option value="cal">calendar days</option></select>
+            </span>
+          </label>
         </div>
       )}
       <label className="fld">Nature
         <select className="c" value={f.nature} onChange={ev('nature')}>{Object.keys(NATURE).map((k) => (<option key={k} value={k}>{NATURE[k].label}: {NATURE[k].help}</option>))}</select>
       </label>
       {!external && <p className="msg dp-help">{REL[f.type].arrow}: {hint}</p>}
+      {hasBaseline(S) && <p className="msg dp-help"><b>This project has a baseline.</b> Adding a dependency now asks you for a change request.</p>}
       <div className="row" style={{ gap: 8 }}>
         <button className="btn primary" disabled={!ready} onClick={go}>Add dependency</button>
         <button className="btn" onClick={() => { reset(); setOpen(false); }}>Cancel</button>
@@ -109,6 +114,10 @@ export function DepRow({ e, side = 'succ', onOpen, showSprint = true }) {
   const { S, setNav } = useStore();
   const dp = useDeps();
   const tk = useTasks();
+  const idx = useDepIndex();
+  const cp = other && idx.cpm.nodes.get(other.id);
+  const cr = e.dep.crId ? (S.cr || []).find((x) => x.id === e.dep.crId) : null;
+  const locked = depLocked(S, e.dep);
   const other = side === 'succ' ? e.pred : e.succ;
   const otherC = side === 'succ' ? e.pc : e.sc;
   const rel = REL[e.dep.type] || REL.FS;
@@ -128,6 +137,9 @@ export function DepRow({ e, side = 'succ', onOpen, showSprint = true }) {
           <span className="dp-name"><span className="msg">External · </span>{e.dep.ext}</span>
         )}
         {showSprint && otherC && <span className="msg dp-where">{otherC.name}</span>}
+        {cp && cp.linked && <span className={'pill ' + (cp.critical ? 'bad' : cp.float < 0 ? 'bad' : 'neutral')} title="Critical Path Method, in working days">{cp.critical ? 'Critical' : 'Float ' + cp.float + ' wd'}</span>}
+        {cr && <span className="pill neutral" title={'Raised under ' + cr.code + ' (' + cr.status + ')'}>{cr.code}</span>}
+        {locked && <span className="msg" title="Part of the approved baseline: changing or removing it needs a change request">🔒 baseline</span>}
       </div>
       <div className="dp-ctl">
         {e.pred && side === 'succ' && (
@@ -136,8 +148,9 @@ export function DepRow({ e, side = 'succ', onOpen, showSprint = true }) {
           </select>
         )}
         {e.pred && (
-          <label className="dp-lag" title="Positive = lag (wait), negative = lead (overlap), in days">Lag
-            <Cell value={e.dep.lag} type="int" cls="n" label="Lag in days" onCommit={(v) => patch({ lag: v == null ? 0 : v })} />
+          <label className="dp-lag" title="Positive = lag (wait), negative = lead (overlap)">Lag
+            <Cell value={e.dep.lag} type="int" cls="n" label="Lag" onCommit={(v) => patch({ lag: v == null ? 0 : v })} />
+            <select className="c" value={e.dep.lagCal === 'cal' ? 'cal' : 'work'} onChange={(x) => patch({ lagCal: x.target.value })} aria-label="Lag unit"><option value="work">working days</option><option value="cal">calendar days</option></select>
           </label>
         )}
         <select className="c" value={e.dep.nature} onChange={(x) => patch({ nature: x.target.value })} aria-label="Nature of the dependency" title={NATURE[e.dep.nature].help}>
@@ -194,6 +207,7 @@ export function DepsCell({ task, idx, onOpen }) {
   const waits = idx.waiting.get(task.id) || [];
   const blocks = idx.blocking.get(task.id) || [];
   const open = waits.filter((e) => !e.ev.met).length;
+  const cp = idx.cpm && idx.cpm.nodes.get(task.id);
   const bad = waits.some((e) => e.ev.state === 'conflict');
   const items = [];
   waits.forEach((e) => items.push({ label: <span className="dp-mi">← {e.pred ? e.pred.code + ' ' + e.pred.name : e.dep.ext} <i className={'pill ' + STATE[e.ev.state].cls}>{STATE[e.ev.state].label}</i></span>, onClick: () => onOpen(e.pred ? e.pred.id : task.id) }));
@@ -204,6 +218,7 @@ export function DepsCell({ task, idx, onOpen }) {
     <span className="dp-chips">
       {waits.length > 0 && <span className={'dp-chip ' + (bad ? 'bad' : open ? 'warn' : 'good')} title={waits.length + ' waiting on, ' + open + ' not satisfied'}>← {waits.length}</span>}
       {blocks.length > 0 && <span className="dp-chip neutral" title={'Blocking ' + blocks.length}>→ {blocks.length}</span>}
+      {cp && cp.critical && <span className="dp-chip bad" title="On the critical path: no float">CP</span>}
     </span>
   ) : <span className="dp-empty">＋</span>;
   return <Menu className="dp-btn" label={label} title="Dependencies" items={items} wide />;

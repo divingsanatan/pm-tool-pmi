@@ -11,6 +11,7 @@ import { newSprint, uid } from '../lib/tasks';
 import { insertAt, sane, sprintClash } from '../lib/sprintGuard';
 import { calendarOf, sprintCalendar } from '../lib/offdays';
 import { blankCr, currentBaseline, sprintCrs } from '../lib/change';
+import { openCrs } from '../lib/deps';
 import './toast.css';
 
 const Ctx = createContext(null);
@@ -141,6 +142,50 @@ function SprintForm({ pid, opts = {}, onClose }) {
 }
 const NEW_CR = '__new';
 
+// A change to the approved schedule logic (a dependency added, changed or removed after the baseline) must belong to a change request.
+// o: { heading, body, confirm, onPick(choice) }   choice = { cr: id } for an open request, or { cr: '', title, cost, days } for a new one
+function CrGate({ o, onClose }) {
+  const { S } = useStore();
+  const crs = openCrs(S);
+  const [pick, setPick] = useState(crs.length ? '' : NEW_CR);
+  const [f, setF] = useState({ title: o.title || '', cost: '0', days: '0' });
+  const on = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const isNum = (v) => v !== '' && !isNaN(parseFloat(v));
+  const ok = pick && (pick !== NEW_CR || (f.title.trim() && isNum(f.cost) && isNum(f.days)));
+  const go = () => {
+    if (!ok) return;
+    o.onPick(pick === NEW_CR ? { cr: '', title: f.title.trim(), cost: parseFloat(f.cost), days: parseFloat(f.days) } : { cr: pick });
+    onClose();
+  };
+  return (
+    <div className="form">
+      <p className="hint" style={{ margin: 0 }}>{o.body}</p>
+      <div className="cr-box">
+        <label className="fld">Change request *
+          <select className="c" value={pick} onChange={(e) => setPick(e.target.value)}>
+            {!pick && <option value="">Choose a change request…</option>}
+            {crs.map((c) => (<option key={c.id} value={c.id}>{c.code} · {c.title || '(untitled)'} · {c.status}</option>))}
+            <option value={NEW_CR}>+ Raise a new change request</option>
+          </select>
+        </label>
+        {pick === NEW_CR && (
+          <div className="form" style={{ marginTop: 8 }}>
+            <label className="fld">Change request title *<input className="c" autoFocus value={f.title} onChange={on('title')} placeholder="e.g. Re-sequence the API and UI work" /></label>
+            <div className="row" style={{ gap: 12, alignItems: 'flex-start' }}>
+              <label className="fld" style={{ flex: 1, minWidth: 140 }}>Cost change *<input className="c" type="number" step="any" value={f.cost} onChange={on('cost')} placeholder="0 if none" /></label>
+              <label className="fld" style={{ flex: 1, minWidth: 140 }}>Schedule change (days) *<input className="c" type="number" step="1" value={f.days} onChange={on('days')} placeholder="0 if none" /></label>
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="row" style={{ justifyContent: 'flex-end' }}>
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn primary" disabled={!ok} onClick={go}>{o.confirm || 'Continue'}</button>
+      </div>
+    </div>
+  );
+}
+
 export function Modal({ title, onClose, children, wide }) {
   useEffect(() => {
     const k = (e) => e.key === 'Escape' && onClose();
@@ -196,6 +241,8 @@ export function UIProvider({ children }) {
   const [data, setData] = useState(false);
   const [cost, setCost] = useState(null);
   const [spr, setSpr] = useState(null);
+  const [gate, setGate] = useState(null);
+  const gateCr = useCallback((o) => setGate(o), []);
   const [stat, setStat] = useState(false);
   const [typ, setTyp] = useState(false);
   const [tagm, setTagm] = useState(false);
@@ -222,7 +269,7 @@ export function UIProvider({ children }) {
     return () => ids.forEach(clearTimeout);
   }, [toasts, dismiss]);
   return (
-    <Ctx.Provider value={{ ask, openData, addCost, openStatuses, openTypes, openTags, openSprint, toast, dismiss }}>
+    <Ctx.Provider value={{ ask, openData, addCost, openStatuses, openTypes, openTags, openSprint, gateCr, toast, dismiss }}>
       {children}
       <div className="toasts" role="region" aria-live="polite" aria-label="Notifications">
         {toasts.map((t) => (
@@ -261,6 +308,11 @@ export function UIProvider({ children }) {
               </button>
             ))}
           </div>
+        </Modal>
+      )}
+      {gate && (
+        <Modal title="Change request needed" onClose={() => setGate(null)}>
+          <CrGate o={gate} onClose={() => setGate(null)} />
         </Modal>
       )}
       {spr && (

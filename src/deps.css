@@ -37,3 +37,15 @@
 .dv-pair{display:grid;gap:4px}
 .dv-arrow{font-size:12.5px;color:var(--muted)}
 @media (max-width:900px){.tg.sp .c-deps{flex:0 0 auto;padding-left:0}}
+
+.dp-crit{margin:0;padding-left:22px;display:grid;gap:6px}
+.dp-crit li.here{font-weight:600}
+.g-deps{position:absolute;left:var(--lw);top:var(--hh);z-index:1;pointer-events:none;overflow:visible}
+.g-deps path{fill:none;stroke:var(--muted);stroke-width:1.4}
+.g-deps path.met{stroke:var(--good);opacity:.7}
+.g-deps path.bad{stroke:var(--bad);stroke-dasharray:4 3}
+.g-deps path.crit{stroke:var(--bad);stroke-width:2.2}
+.g-bar.crit{box-shadow:0 0 0 2px var(--bad)}
+.g-key{display:inline-flex;gap:12px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);align-items:center}
+.g-key i{display:inline-block;width:22px;height:0;border-top:2px solid var(--muted);vertical-align:middle;margin-right:5px}
+.g-key i.c{border-color:var(--bad);border-top-width:3px}.g-key i.b{border-color:var(--bad);border-top-style:dashed}.g-key i.m{border-color:var(--good)}
