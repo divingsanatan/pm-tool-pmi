@@ -356,8 +356,6 @@ function SprintPanel({ S, c, E, cr, tk, setNav }) {
             {money(E.budget)}
           </Tile>
         </div>
-        <OffDays c={c} E={E} />
-        <SprintCapacity c={c} />
         {datesLocked && (
           <div className="row" style={{ margin: '10px 0 0', gap: 12, alignItems: 'center' }}>
             <p className="hint" style={{ margin: 0, flex: '1 1 260px' }}>
@@ -458,6 +456,9 @@ function SprintPanel({ S, c, E, cr, tk, setNav }) {
           <li>The Dashboard adds up these same sprint figures, so its planned value, SPI and S-curve follow the off days marked here.</li>
         </ul>
       </details>
+
+      <SprintCapacity c={c} />
+      <OffDays c={c} E={E} />
     </section>
   );
 }

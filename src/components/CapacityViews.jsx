@@ -91,31 +91,6 @@ function UtilBar({ util, cls, label }) {
   );
 }
 
-// Team capacity for each day of the sprint, in hours. Dips are leave; the red figure under a bar is how many people are away.
-function DailyChart({ daily }) {
-  if (!daily.length) return null;
-  const n = daily.length, bw = 24, W = Math.max(320, n * bw), top = 16, base = 96;
-  const max = Math.max(1, ...daily.map((d) => d.hours));
-  const now = today();
-  return (
-    <svg className="cp-chart" viewBox={'0 0 ' + W + ' 140'} role="img" aria-label="Team capacity in hours for each day of the sprint">
-      <line x1="0" x2={W} y1={base} y2={base} className="ax" />
-      {daily.map((d, i) => {
-        const x = i * (W / n) + 3, w = W / n - 6, hh = d.off ? 3 : (d.hours / max) * (base - top);
-        return (
-          <g key={d.date}>
-            <title>{fdate(d.date) + ': ' + (d.off ? 'team off day' : r1(d.hours) + ' h of team capacity' + (d.away ? ', ' + d.away + ' away' : ''))}</title>
-            <rect x={x} y={base - hh} width={w} height={hh} rx="3" className={'bar ' + (d.off ? 'off' : d.away ? 'dip' : 'full')} />
-            {!d.off && n <= 21 && d.hours > 0 && <text x={x + w / 2} y={base - hh - 4} textAnchor="middle" className="v">{r1(d.hours)}</text>}
-            <text x={x + w / 2} y={base + 14} textAnchor="middle" className={'t' + (d.date === now ? ' today' : '')}>{d.day}</text>
-            <text x={x + w / 2} y={base + 26} textAnchor="middle" className="t2">{WEEKDAYS_SHORT[d.dow][0]}</text>
-            {d.away > 0 && !d.off && <text x={x + w / 2} y={base + 40} textAnchor="middle" className="aw">−{d.away}</text>}
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
 
 /* ---------- Capacity plan of one sprint (Sprint dashboard) ---------- */
 export function SprintCapacity({ c }) {
@@ -157,9 +132,6 @@ export function SprintCapacity({ c }) {
               title="The sprint's planned hours compared with what the team can actually do"
             />
           </div>
-
-          <div className="flabel" style={{ margin: '16px 0 4px' }}>Team capacity by day (hours)</div>
-          <div className="scroll"><DailyChart daily={X.daily} /></div>
 
           <div className="flabel" style={{ margin: '14px 0 6px' }}>By stakeholder</div>
           <div className="scroll">
