@@ -86,16 +86,17 @@ export function AddDependency({ task, side = 'succ', onDone, startOpen = false }
             <select className="c" value={f.type} onChange={ev('type')}>{REL_IDS.map((k) => (<option key={k} value={k}>{REL[k].label} ({k})</option>))}</select>
           </label>
           <label className="fld">Lag (+) or lead (−)
-            <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
-              <input className="c n" type="number" value={f.lag} onChange={ev('lag')} style={{ width: 80 }} />
+            <span className="dp-lagrow">
+              <input className="c n" type="number" value={f.lag} onChange={ev('lag')} />
               <select className="c" value={f.lagCal} onChange={ev('lagCal')} aria-label="Lag unit"><option value="work">working days</option><option value="cal">calendar days</option></select>
             </span>
           </label>
         </div>
       )}
       <label className="fld">Nature
-        <select className="c" value={f.nature} onChange={ev('nature')}>{Object.keys(NATURE).map((k) => (<option key={k} value={k}>{NATURE[k].label}: {NATURE[k].help}</option>))}</select>
+        <select className="c" value={f.nature} onChange={ev('nature')}>{Object.keys(NATURE).map((k) => (<option key={k} value={k}>{NATURE[k].label}</option>))}</select>
       </label>
+      <p className="msg dp-help">{NATURE[f.nature].help}</p>
       {!external && <p className="msg dp-help">{REL[f.type].arrow}: {hint}</p>}
       {hasBaseline(S) && <p className="msg dp-help"><b>This project has a baseline.</b> Adding a dependency now asks you for a change request.</p>}
       <div className="row" style={{ gap: 8 }}>
