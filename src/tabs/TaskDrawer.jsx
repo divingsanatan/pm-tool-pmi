@@ -6,6 +6,7 @@ import { Area, Cell, SelectCell } from '../components/Field';
 import { Avatar, StatusIcon, TypeBadge } from '../components/Bits';
 import { AssigneeMenu, TagMenu } from '../components/Pickers';
 import { EditableTag } from '../components/Tags';
+import { DepsSection } from '../components/Dependencies';
 import { PRIORITIES, allContainers, childTypeFor, findTask, isDoneStatus, nameOf, statusOf, statusesOf, typeOf, typesOf } from '../lib/tasks';
 import { ancestorsOf, flatTree, rollParts, subtreeIds } from '../lib/hier';
 import { fdate } from '../lib/dates';
@@ -169,6 +170,8 @@ export default function TaskDrawer({ taskId, onClose, onOpen }) {
             <button className="btn" onClick={addSub}>Add</button>
           </div>
         </div>
+
+        <DepsSection task={t} onOpen={onOpen} />
 
         <h3 className="d-h">History</h3>
         <ul className="d-hist">

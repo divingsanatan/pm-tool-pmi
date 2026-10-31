@@ -5,6 +5,7 @@ import { flatTree, leafTasks, ownDoneItems, rollupContainer, rootTasks } from '.
 import { ACTIVITY_MAX } from './activity';
 import { calendarOf, offDaysOf, sprintCalendar } from './offdays';
 import { calendarHours, planWindow } from './capacity';
+import { buildDeps, syncDependencies } from './deps';
 
 /* ---------- timeline helpers ---------- */
 export const nW = (S) => S.meta.weeks;
@@ -613,6 +614,11 @@ export function alerts(S) {
     dated.forEach((x, i) => dated.slice(i + 1).forEach((y) => x.start <= y.end && x.end >= y.start && over.push(x.name + ' and ' + y.name)));
     if (over.length) a.push({ cls: 'bad', text: 'Sprint dates overlap: ' + over.join('; ') + '. Sprints in the same project cannot overlap. Open the sprint and change its start or end date.' });
   }
+  {
+    const dp = buildDeps(S).all.filter((e) => e.ev.state === 'conflict');
+    if (dp.length)
+      a.push({ cls: 'warn', text: dp.length + ' dependenc' + (dp.length > 1 ? 'ies are' : 'y is') + ' broken by the schedule or by work that started early (' + dp.slice(0, 3).map((e) => e.succ.code + ' waits on ' + (e.pred ? e.pred.code : 'an external party')).join(', ') + (dp.length > 3 ? '…' : '') + '). Open the sprint\u2019s Dependencies view to fix them.' });
+  }
   const od = S.raid.filter(overdue);
   if (od.length)
     a.push({
@@ -1049,6 +1055,8 @@ export function normalize(S) {
   // a baseline freezes the budget line items too (a baseline made before this was recorded takes the lines as they are now)
   if (lastB && !Array.isArray(lastB.lines))
     lastB.lines = (S.lines || []).map((l) => ({ id: l.id, name: l.name, amount: nz(l.amount), per: l.per, iterations: l.per === 'project' ? 0 : nz(l.iterations) }));
+  // dependencies between work items: tidy them and keep their RAID log entries in step
+  syncDependencies(S);
   // activity log: a list of stamped entries, capped
   if (!Array.isArray(S.activity)) {
     S.activity = [{ id: uid(), at: new Date().toISOString(), by: 'System', cat: 'project', act: 'info', text: 'Activity tracking started for this project' }];

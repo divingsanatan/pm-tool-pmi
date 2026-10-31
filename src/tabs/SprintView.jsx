@@ -25,7 +25,10 @@ import TaskDrawer from './TaskDrawer';
 import ChangeDrawer from './ChangeDrawer';
 import DateChangeDialog from '../components/DateChangeDialog';
 import Board from './Board';
+import DependencyView from './DependencyView';
+import { DepsCell, useDepIndex } from '../components/Dependencies';
 import '../offdays.css';
+import '../deps.css';
 
 export { AddRow, TriBox };
 
@@ -174,6 +177,7 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
         {pct == null ? <span className="msg">–</span> : (<><div className="bar"><i style={{ width: Math.min(100, pct * 100) + '%' }} /></div><span className="mono">{pc(pct, 0)}</span></>)}
       </div>
       <div className="c-st"><StatusMenu task={t} pill /></div>
+      <div className="c-deps"><DepsCell task={t} idx={ctx.depIdx} onOpen={onOpen} /></div>
       <div className="c-tags"><TagMenu task={t} /></div>
       <div className="c-code mono msg" title="Work item ID">{t.code || '–'}</div>
       <div className="c-type msg">{ty.label}</div>
@@ -490,6 +494,7 @@ export default function SprintView() {
     return () => window.removeEventListener('sc-tag-filter', f);
   }, []);
   const lc = useListCols();
+  const depIdx = useDepIndex();
   const people = S.people.filter((p) => p.name);
   const kids = useMemo(() => kidsMap(c ? c.tasks : []), [c]);
   // items that match the search and assignee filter; their parents stay visible so you can see where they live
@@ -612,12 +617,12 @@ export default function SprintView() {
       </div>
 
       <div className="vtabs" role="tablist">
-        {[['dash', 'Dashboard'], ['list', 'List'], ['board', 'Board']].map(([id, l]) => (
+        {[['dash', 'Dashboard'], ['list', 'List'], ['board', 'Board'], ['deps', 'Dependencies']].map(([id, l]) => (
           <button key={id} className="vtab" role="tab" aria-selected={view === id} onClick={() => setNav({ sprintView: id })}>{l}</button>
         ))}
       </div>
 
-      {view !== 'dash' && (
+      {view !== 'dash' && view !== 'deps' && (
       <div className="tools">
         <input className="c" style={{ maxWidth: 240 }} type="search" placeholder="Search tasks or tags" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search tasks or tags" />
         {view === 'list' && (
@@ -706,6 +711,8 @@ export default function SprintView() {
 
       {view === 'dash' ? (
         <SprintPanel S={S} c={c} E={E} cr={cr} tk={tk} setNav={setNav} />
+      ) : view === 'deps' ? (
+        <DependencyView c={c} onOpen={setOpen} />
       ) : view === 'list' ? (
         <>
         <p className="msg wbs-help">Click a name to edit it · Enter adds an item below · Tab / Shift+Tab indent and outdent · Alt+↑ / ↓ reorder · drag ⋮⋮ to reorder or drop onto an item to nest, or (grouped by Status) drop into another status group to change its status · click a Status to change it · Σ values add up from the child items.</p>
@@ -801,7 +808,7 @@ export default function SprintView() {
                     <span className="msg">{g.tasks.length}</span>
                   </div>
                   {!hide && g.tasks.map((t) => (
-                    <Branch key={t.id} t={t} depth={0} ctx={{ kids, visible: shown, isExp, toggle, onOpen: setOpen, sel, onSelect: toggleOne, filtering, tk, maxDepth, wbsOf, drag, over, setDrag, setOver, drop, focus, ask, expand, tasks: c.tasks, by, grp: g.key, setGover, wrap: lc.wrap }} />
+                    <Branch key={t.id} t={t} depth={0} ctx={{ kids, visible: shown, isExp, toggle, onOpen: setOpen, sel, onSelect: toggleOne, filtering, tk, maxDepth, wbsOf, drag, over, setDrag, setOver, drop, focus, ask, expand, tasks: c.tasks, by, grp: g.key, setGover, wrap: lc.wrap, depIdx }} />
                   ))}
                   {!hide && <div className="tg-add"><AddRow onAdd={addTo(g.defaults)} /></div>}
                 </div>
@@ -813,7 +820,7 @@ export default function SprintView() {
                 <div className="h-assignee" /><div className="c-start msg">{sum.start ? fdate(sum.start) : ''}</div><div className="c-due msg">{sum.end ? fdate(sum.end) : ''}</div><div className="h-priority" />
                 <div className="c-eff mono">{hrsf(sum.hrs)}</div>
                 <div className="c-pct w-pct">{sum.pct == null ? null : (<><div className="bar"><i style={{ width: Math.min(100, sum.pct * 100) + '%' }} /></div><span className="mono">{pc(sum.pct, 0)}</span></>)}</div>
-                <div className="h-status" /><div className="h-tags" /><div className="h-code" /><div className="h-type" /><div className="h-doneOn" /><div className="h-parent" /><div className="c-open" />
+                <div className="h-status" /><div className="h-deps" /><div className="h-tags" /><div className="h-code" /><div className="h-type" /><div className="h-doneOn" /><div className="h-parent" /><div className="c-open" />
               </div>
             )}
             {!groups.length && <div className="empty">{filtering ? 'No tasks match your search or filter.' : 'No tasks yet. Use + Task to add the first one.'}</div>}

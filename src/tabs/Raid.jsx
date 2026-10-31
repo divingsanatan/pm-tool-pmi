@@ -7,6 +7,7 @@ import { emv, expo, newRaidId, overdue, rating, score } from '../lib/calc';
 import { FLAGS, PLURAL, flagsOf, raidInsights } from '../lib/raidInsights';
 import { fdate, today } from '../lib/dates';
 import { uid } from '../lib/tasks';
+import { raidJump } from '../lib/deps';
 import { hrsf, money, nz } from '../lib/format';
 import '../raid.css';
 
@@ -94,6 +95,7 @@ function RaidDrawer({ k, fresh, onClose }) {
     if (r.owner && !S.people.some((p) => p.id === r.owner)) o.push([r.owner, r.owner + ' (not on the stakeholder list)']);
     return o;
   })();
+  const auto = r.auto === 'dependency'; // created and kept up to date from a dependency between work items
   const dupId = r.id && S.raid.some((x, j) => j !== i && x.id === r.id);
   const late = overdue(r);
 
@@ -114,11 +116,11 @@ function RaidDrawer({ k, fresh, onClose }) {
         <div className="rd-sec">
           <h3 className="d-h">Basics</h3>
           <div className="d-grid">
-            <Fld label="Type"><SelectCell value={r.type} options={TYPES} onCommit={setType} /></Fld>
-            <Fld label="Status"><SelectCell value={r.status} options={STAT} onCommit={(v) => set('status', v)} /></Fld>
+            {auto ? <Fld label="Type"><span className="c ro-field">Dependency</span></Fld> : <Fld label="Type"><SelectCell value={r.type} options={TYPES} onCommit={setType} /></Fld>}
+            {auto ? <Fld label="Status"><span className="c ro-field">{r.status}{r.depRemoved ? ' (dependency removed)' : ''}</span></Fld> : <Fld label="Status"><SelectCell value={r.status} options={STAT} onCommit={(v) => set('status', v)} /></Fld>}
             <Fld label="Owner"><SelectCell value={r.owner} options={ownerOpts} onCommit={(v) => set('owner', v)} /></Fld>
             <Fld label="ID"><Cell value={r.id} cls={dupId ? 'bad' : ''} label="ID" onCommit={(v) => set('id', v)} /></Fld>
-            <Fld label="Due date"><Cell value={r.due} type="date" label="Due date" cls={late ? 'od' : ''} onCommit={(v) => set('due', v)} /></Fld>
+            {auto ? <Fld label="Due date"><span className="c ro-field">{r.due ? fdate(r.due) : '–'}</span></Fld> : <Fld label="Due date"><Cell value={r.due} type="date" label="Due date" cls={late ? 'od' : ''} onCommit={(v) => set('due', v)} /></Fld>}
             <Fld label="Last reviewed">
               <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
                 <Cell value={r.rev} type="date" label="Last reviewed" onCommit={(v) => set('rev', v)} />
@@ -131,7 +133,14 @@ function RaidDrawer({ k, fresh, onClose }) {
 
         <div className="rd-sec">
           <h3 className="d-h">Description</h3>
-          <RichText html={r.descHtml} text={r.desc} label="Description" placeholder="What is this? Add context, links and details." rows={5} autoFocus={fresh} onCommit={setRich('desc')} />
+          {auto ? (
+            <>
+              <p style={{ margin: 0 }}>{r.desc}</p>
+              <p className="msg" style={{ margin: '6px 0 0' }}>{r.depRemoved ? 'The dependency was removed, so this entry was closed and is kept as a record.' : 'Created automatically from a dependency between work items. The description, due date (the predecessor\u2019s date) and status follow the dependency: it closes here when the dependency is satisfied. Edit the dependency on the work item (Dependencies view or work item details). The owner, impact and response below are yours to edit.'}</p>
+            </>
+          ) : (
+            <RichText html={r.descHtml} text={r.desc} label="Description" placeholder="What is this? Add context, links and details." rows={5} autoFocus={fresh} onCommit={setRich('desc')} />
+          )}
         </div>
 
         {isR && (
@@ -165,9 +174,13 @@ function RaidDrawer({ k, fresh, onClose }) {
         </div>
 
         <div className="d-actions">
-          <button className="btn danger" onClick={() => (arm ? update((s) => { s.raid = s.raid.filter((x) => x.key !== k); }) : setArm(true))} onBlur={() => setArm(false)}>
-            {arm ? 'Click again to delete' : 'Delete item'}
-          </button>
+          {auto && !r.depRemoved ? (
+            <span className="msg">To remove this entry, remove the dependency on the work item.</span>
+          ) : (
+            <button className="btn danger" onClick={() => (arm ? update((s) => { s.raid = s.raid.filter((x) => x.key !== k); }) : setArm(true))} onBlur={() => setArm(false)}>
+              {arm ? 'Click again to delete' : 'Delete item'}
+            </button>
+          )}
           <span style={{ flex: 1 }} />
           <button className="btn primary" onClick={onClose}>Done</button>
         </div>
@@ -227,6 +240,8 @@ export default function Raid() {
     setOpen(key);
   };
   const show = (key) => { setFresh(false); setOpen(key); };
+  // arriving from a dependency's RAID ID opens that entry
+  useEffect(() => { if (raidJump.key) { const k = raidJump.key; raidJump.key = null; setFresh(false); setOpen(k); } }, []);
 
   return (
     <>
@@ -327,7 +342,7 @@ export default function Raid() {
                 const sc = score(r), rt = rating(sc), fl = flagsOf(r);
                 return (
                   <tr key={r.key} className="rd-row" onClick={() => show(r.key)}>
-                    <td data-l="ID" className="rd-c-id"><button type="button" className="linkbtn mono" onClick={(e) => { e.stopPropagation(); show(r.key); }}>{r.id || '(no ID)'}</button></td>
+                    <td data-l="ID" className="rd-c-id"><button type="button" className="linkbtn mono" onClick={(e) => { e.stopPropagation(); show(r.key); }}>{r.id || '(no ID)'}</button>{r.auto === 'dependency' && <span className="msg" title="Created automatically from a dependency between work items"> · auto</span>}</td>
                     <td data-l="Type" className="rd-c-nw"><span className={'cell rd-ty ty-' + r.type}>{r.type}</span></td>
                     <td data-l="Description"><div className="rd-prev">{r.desc ? r.desc : <span className="msg">No description yet</span>}</div></td>
                     <td data-l="Owner" className="rd-c-nw"><span className="cell">{nameOf(r.owner) || <span className="msg">–</span>}</span></td>

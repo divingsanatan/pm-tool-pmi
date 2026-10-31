@@ -12,6 +12,7 @@ export const LIST_COLS = [
   { id: 'effort', label: 'Effort (h)', w: 96, cls: 'c-eff', def: true },
   { id: 'progress', label: 'Progress', w: 128, cls: 'c-pct', def: true },
   { id: 'status', label: 'Status', w: 132, cls: 'c-st', def: true },
+  { id: 'deps', label: 'Dependencies', w: 120, cls: 'c-deps', def: true },
   { id: 'tags', label: 'Tags', w: 150, cls: 'c-tags', def: false },
   { id: 'code', label: 'ID', w: 80, cls: 'c-code', def: false },
   { id: 'type', label: 'Type', w: 100, cls: 'c-type', def: false },
@@ -27,10 +28,20 @@ export const NAME_MAX = 900;
 const clampW = (w) => Math.max(NAME_MIN, Math.min(NAME_MAX, Math.round(w)));
 const DEFAULTS = LIST_COLS.filter((c) => c.def).map((c) => c.id);
 
+const KEY_DEPS = 'sprint-control-list-deps-col-v1';
 function load() {
   try {
     const a = JSON.parse(localStorage.getItem(KEY));
-    if (Array.isArray(a)) return a.filter((id) => LIST_COLS.some((c) => c.id === id));
+    if (Array.isArray(a)) {
+      const ok = a.filter((id) => LIST_COLS.some((c) => c.id === id));
+      // the Dependencies column is new: show it once for people who had already chosen their columns (they can hide it again)
+      if (!localStorage.getItem(KEY_DEPS)) {
+        localStorage.setItem(KEY_DEPS, '1');
+        if (!ok.includes('deps')) ok.push('deps');
+        localStorage.setItem(KEY, JSON.stringify(ok));
+      }
+      return ok;
+    }
   } catch (e) {
     /* storage blocked or corrupt: use the defaults */
   }
