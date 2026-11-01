@@ -10,6 +10,10 @@ import { FLAGS, PLURAL, raidInsights } from '../lib/raidInsights';
 import BaselinePanel from '../components/BaselinePanel';
 import { ProjectCapacity } from '../components/CapacityViews';
 import { planLineTotal } from '../lib/lineChange';
+import { CostSection, ProgressSection, ResourcesSection, RiskSection } from './DashSections';
+import '../dashcharts.css';
+
+const TABS = [['overview', 'Overview'], ['progress', 'Progress and forecast'], ['resources', 'Resources'], ['risk', 'Risk and change'], ['cost', 'Cost']];
 
 const r2 = (n) => (n == null ? null : Math.round(n * 100) / 100);
 
@@ -29,6 +33,8 @@ export default function Dashboard() {
     };
   }, []);
 
+  const [tab, setTabState] = useState(() => { try { return sessionStorage.getItem('sprint-control-dash-tab') || 'overview'; } catch (e) { return 'overview'; } });
+  const setTab = (t) => { setTabState(t); try { sessionStorage.setItem('sprint-control-dash-tab', t); } catch (e) { /* private mode */ } };
   const asOf = today();
   const E = projectEvm(S, asOf);
   const series = evmSeries(S, asOf);
@@ -94,6 +100,14 @@ export default function Dashboard() {
         </div>
       </section>
 
+      <div className="dc-tabs" role="tablist" aria-label="Dashboard sections">
+        {TABS.map(([id, l]) => (<button key={id} type="button" role="tab" id={'dt-' + id} aria-selected={tab === id} className="dc-tab" onClick={() => setTab(id)}>{l}</button>))}
+      </div>
+      {tab === 'progress' && <ProgressSection />}
+      {tab === 'resources' && <ResourcesSection />}
+      {tab === 'risk' && <RiskSection />}
+      {tab === 'cost' && <CostSection />}
+      {tab === 'overview' && (<>
       <section className="kpis">
         <Kpi l="Planned value (PV)" v={money(E.pv)} s={E.hasPlan ? pc(E.bac ? E.pv / E.bac : null, 0) + ' of the budget was due by today' : 'No plan yet: add planned hours and dates to the sprints'} />
         <Kpi l="Earned value (EV)" v={money(E.ev)} s={E.hasPlan ? 'Schedule variance ' + signedMoney(r2(E.sv), money) : ''} />
@@ -281,6 +295,7 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+      </>)}
     </>
   );
 }
