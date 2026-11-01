@@ -31,6 +31,41 @@ function doneByDay(S, sp, ms, now) {
   ownDoneItems(S, sp.tasks).forEach((t) => put(t, nz(t.ownEffort), sp.end));
   return done;
 }
+// a repeatable pseudo-random generator, so the forecast does not jump around between renders
+function rng(seed) {
+  let t = seed >>> 0;
+  return () => { t += 0x6d2b79f5; let r = Math.imul(t ^ (t >>> 15), 1 | t); r ^= r + Math.imul(r ^ (r >>> 7), 61 | r); return ((r ^ (r >>> 14)) >>> 0) / 4294967296; };
+}
+const quant = (sorted, q) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * q)))];
+
+/* Monte Carlo forecast. The weekly hours finished so far (zero weeks included) are drawn at random, again and again, until the
+   remaining work is done: 1,500 possible futures. P50 is the middle outcome, P80 means 80 of 100 futures finish by then. */
+function simulate(samples, left, doneNow, scope, seed) {
+  const RUNS = 1500, K = 104;
+  const rnd = rng(seed);
+  const paths = Array.from({ length: RUNS }, () => new Float32Array(K + 1));
+  const weeks = [];
+  for (let r = 0; r < RUNS; r++) {
+    let c = 0, fin = null;
+    paths[r][0] = doneNow;
+    for (let k = 1; k <= K; k++) {
+      const x = samples[Math.floor(rnd() * samples.length)];
+      if (fin == null && c + x >= left) fin = k - 1 + (x > 0 ? (left - c) / x : 1);
+      c += x;
+      paths[r][k] = Math.min(scope, doneNow + c);
+    }
+    weeks.push(fin == null ? Infinity : fin);
+  }
+  weeks.sort((a, b) => a - b);
+  const w50 = quant(weeks, 0.5), w80 = quant(weeks, 0.8), w95 = quant(weeks, 0.95);
+  const Kmax = Math.min(K, Math.max(4, Math.ceil(isFinite(w95) ? w95 : isFinite(w80) ? w80 : 26) + 1));
+  const lo = [], mid = [], hi = [];
+  for (let k = 0; k <= Kmax; k++) {
+    const col = paths.map((x) => x[k]).sort((a, b) => a - b);
+    lo.push(quant(col, 0.2)); mid.push(quant(col, 0.5)); hi.push(quant(col, 0.8));
+  }
+  return { w50, w80, w95, Kmax, lo, mid, hi };
+}
 const scopeOf = (S, sp) => { const h = sprintHours(S, sp); return h.planned > 0 ? h.planned : h.items; };
 
 export function burnSeries(S, spId = '', asOf = today()) {
@@ -64,22 +99,38 @@ export function burnSeries(S, spId = '', asOf = today()) {
     pace = (doneCum[nowIdx] - doneCum[back]) / Math.max(1, nowIdx - back);
     if (!(pace > 0)) pace = doneCum[nowIdx] / Math.max(1, nowIdx + 1);
   }
+  // weekly throughput so far: hours finished in each completed 7-day block since the first finished work
+  const samples = [];
+  if (nowIdx >= 0) {
+    const first = doneCum.findIndex((v) => v > 0);
+    if (first >= 0) for (let e = nowIdx; e - 7 >= Math.max(0, first - 1); e -= 7) samples.push(doneCum[e] - doneCum[e - 7]);
+  }
+  const leftNow = Math.max(0, scope - doneNow);
+  const sim = nowIdx >= 0 && leftNow > 0 && samples.length >= 3 && samples.some((x) => x > 0) ? simulate(samples, leftNow, doneNow, scope, Math.round(scope * 100 + doneNow * 10 + nowIdx)) : null;
   let finishIdx = null;
   const left = Math.max(0, scope - doneNow);
   if (nowIdx >= 0 && left > 0 && pace > 0) finishIdx = nowIdx + Math.ceil(left / pace);
   else if (nowIdx >= 0 && left <= 0) finishIdx = doneCum.findIndex((v) => v >= scope - 1e-6);
-  const n = Math.min(n0 + 400, Math.max(n0, finishIdx != null ? finishIdx + 1 : 0));
+  const n = Math.min(n0 + 400, Math.max(n0, finishIdx != null ? finishIdx + 1 : 0, sim ? nowIdx + sim.Kmax * 7 + 1 : 0));
   if (n > n0) {
     ms = ms.concat(Array.from({ length: n - n0 }, (_, i) => lo + (n0 + i) * DAY));
     for (let i = n0; i < n; i++) ideal.push(scope);
   }
   const proj = Array(n).fill(null);
   if (nowIdx >= 0 && left > 0 && pace > 0) for (let i = nowIdx; i < n; i++) proj[i] = Math.min(scope, doneNow + pace * (i - nowIdx));
+  let mc = null;
+  if (sim) {
+    const at = (arr, i) => { const k = (i - nowIdx) / 7, a = Math.min(Math.floor(k), arr.length - 1), b = Math.min(arr.length - 1, a + 1); return arr[a] + (arr[b] - arr[a]) * (k - Math.floor(k)); };
+    const band = (arr) => Array.from({ length: n }, (_, i) => (i < nowIdx ? null : at(arr, i)));
+    const date = (w) => (isFinite(w) && w <= 104 ? iso(ms[nowIdx] + Math.round(w * 7) * DAY) : null);
+    mc = { weeks: samples.length, p50: date(sim.w50), p80: date(sim.w80), p95: date(sim.w95), lo: band(sim.lo), mid: band(sim.mid), hi: band(sim.hi) };
+  }
   const planEndIdx = Math.round((planEnd - lo) / DAY);
   return {
     ms, n, nowIdx, scope, ideal: ideal.map((v) => Math.min(scope, v)),
     done: Array.from({ length: n }, (_, i) => (i <= nowIdx && i < n0 ? doneCum[i] : null)),
-    proj, pace, left, doneNow, planEndIdx,
+    proj, pace, left, doneNow, planEndIdx, mc, samples: samples.length,
+    undated: list.reduce((a, sp) => a + leafTasks(sp.tasks).filter((t) => t.status && isDoneStatus(S, t.status) && nz(t.effort) && !t.doneOn).length, 0),
     finish: finishIdx != null && finishIdx < n ? iso(ms[finishIdx]) : null, planEnd: iso(planEnd),
     slip: finishIdx != null ? finishIdx - planEndIdx : null,
   };
@@ -275,4 +326,61 @@ export function spiFinish(S, asOf = today()) {
   const dur = (b - a) / DAY + 1;
   const fd = Math.round(dur / E.spi);
   return { planEnd: iso(b), forecastEnd: iso(a + (fd - 1) * DAY), slipDays: fd - Math.round(dur), spi: E.spi };
+}
+
+/* ---------- cumulative flow: work items by status, day by day (from the daily record) ---------- */
+const holdDays = (H, asOf, cap = 400) => {
+  if (!H.length) return [];
+  const a = pd(H[0].d), b = pd(asOf);
+  const n = Math.min(cap, Math.round((b - a) / DAY) + 1), lo = b - (n - 1) * DAY;
+  const out = [];
+  let j = 0;
+  for (let i = 0; i < n; i++) {
+    const d = iso(lo + i * DAY);
+    while (j + 1 < H.length && H[j + 1].d <= d) j++;
+    out.push({ ms: lo + i * DAY, e: H[j].d <= d ? H[j] : H[0] });
+  }
+  return out;
+};
+export function flowSeries(S, asOf = today()) {
+  const H = (S.history || []).filter((e) => e.w).sort((x, y) => (x.d < y.d ? -1 : 1));
+  const days = holdDays(H, asOf);
+  if (days.length < 2) return { points: days.length };
+  const sts = statusesOf(S);
+  const order = sts.slice().reverse(); // finished work at the bottom, not started at the top
+  const known = new Set(sts.map((x) => x.id));
+  const layers = order.map((x) => ({ id: x.id, label: x.label, color: x.color || 'var(--muted)', done: !!x.done, values: days.map((d) => d.e.w[x.id] || 0) }));
+  const other = days.map((d) => Object.keys(d.e.w).filter((k) => !known.has(k)).reduce((a, k) => a + d.e.w[k], 0));
+  if (other.some((v) => v > 0)) layers.push({ id: '', label: 'No status', color: 'var(--line)', done: false, values: other });
+  const n = days.length;
+  const total = days.map((_, i) => layers.reduce((a, l) => a + l.values[i], 0));
+  const doneV = days.map((_, i) => layers.filter((l) => l.done).reduce((a, l) => a + l.values[i], 0));
+  const firstId = sts.length ? sts[0].id : null;
+  const wipV = days.map((_, i) => layers.filter((l) => !l.done && l.id !== firstId && l.id !== '').reduce((a, l) => a + l.values[i], 0));
+  const back = (k) => Math.max(0, n - 1 - k);
+  const win = Math.min(28, n - 1);
+  const thr = win > 0 ? Math.max(0, doneV[n - 1] - doneV[back(win)]) / (win / 7) : 0; // items finished per week
+  const from = back(Math.min(14, n - 1));
+  const wipAvg = wipV.slice(from).reduce((a, v) => a + v, 0) / (n - from);
+  const firstReal = (S.history || []).find((e) => !e.est);
+  return {
+    points: n, ms: days.map((d) => d.ms), layers, total, wipNow: wipV[n - 1], wipAvg, thr,
+    cycle: thr > 0 ? (wipAvg / thr) * 7 : null, // Little's law: average days an item spends in progress
+    estUntil: firstReal && (S.history || []).some((e) => e.est) ? firstReal.d : null,
+    nowIdx: n - 1,
+  };
+}
+
+/* ---------- risk burn-down: open risks and their exposure over time ---------- */
+export function riskSeries(S, asOf = today()) {
+  const H = (S.history || []).filter((e) => e.k).sort((x, y) => (x.d < y.d ? -1 : 1));
+  const days = holdDays(H, asOf);
+  if (days.length < 2) return { points: days.length };
+  const pick = (f) => days.map((d) => f(d.e.k));
+  return {
+    points: days.length, ms: days.map((d) => d.ms),
+    hi: pick((k) => k.hi), me: pick((k) => k.me), lo: pick((k) => k.lo), un: pick((k) => k.un || 0),
+    emv: pick((k) => k.emv), score: pick((k) => k.score), closed: pick((k) => k.closed || 0),
+    open: pick((k) => k.hi + k.me + k.lo + (k.un || 0)), nowIdx: days.length - 1, since: H[0].d,
+  };
 }

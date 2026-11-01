@@ -66,7 +66,13 @@ export function TimeChart({ ms, series, nowIdx = -1, fmt = fmtNum, yMax, yMin = 
         {nowIdx >= 0 && (
           <g><line x1={xp(nowIdx)} x2={xp(nowIdx)} y1={T} y2={T + ph} style={{ stroke: 'var(--ink)', strokeWidth: 1.2, strokeDasharray: '3 3' }} /><text x={xp(nowIdx)} y={T - 4} textAnchor="middle">Today</text></g>
         )}
-        {series.map((s) => segs(s.values).map((sg, k) => (
+        {series.filter((s) => s.base).map((s) => {
+          const idx = s.values.map((v, i) => (v != null && s.base[i] != null ? i : -1)).filter((i) => i >= 0);
+          if (idx.length < 2) return null;
+          const up = idx.map((i) => xp(i).toFixed(1) + ',' + yp(s.values[i]).toFixed(1)), dn = idx.slice().reverse().map((i) => xp(i).toFixed(1) + ',' + yp(s.base[i]).toFixed(1));
+          return <polygon key={'b' + s.name} points={up.concat(dn).join(' ')} style={{ fill: s.color, opacity: 0.2 }} />;
+        })}
+        {series.filter((s) => !s.base).map((s) => segs(s.values).map((sg, k) => (
           <g key={s.name + k}>
             {s.area && sg.length > 1 && <polygon points={pts(sg) + ' ' + sg[sg.length - 1][0].toFixed(1) + ',' + yp(lo) + ' ' + sg[0][0].toFixed(1) + ',' + yp(lo)} style={{ fill: s.color, opacity: 0.14 }} />}
             <polyline points={pts(sg)} style={{ fill: 'none', stroke: s.color, strokeWidth: s.w || 2.2, strokeDasharray: s.dash ? '5 4' : undefined, strokeLinejoin: 'round', strokeLinecap: 'round' }} />
@@ -76,14 +82,55 @@ export function TimeChart({ ms, series, nowIdx = -1, fmt = fmtNum, yMax, yMin = 
         {hov != null && (
           <g>
             <line x1={xp(hov)} x2={xp(hov)} y1={T} y2={T + ph} style={{ stroke: 'var(--muted)', strokeWidth: 1 }} />
-            {series.map((s) => (s.values[hov] != null ? <circle key={s.name} cx={xp(hov)} cy={yp(s.values[hov])} r="4" style={{ fill: s.color, stroke: 'var(--surface)', strokeWidth: 1.5 }} /> : null))}
+            {series.filter((s) => !s.base).map((s) => (s.values[hov] != null ? <circle key={s.name} cx={xp(hov)} cy={yp(s.values[hov])} r="4" style={{ fill: s.color, stroke: 'var(--surface)', strokeWidth: 1.5 }} /> : null))}
           </g>
         )}
       </svg>
       {hov != null && (
         <div className="dc-tip" style={{ left: Math.min(82, Math.max(10, (xp(hov) / W) * 100)) + '%' }}>
           <b>{fsh(ms[hov])}</b>
-          {series.map((s) => (s.values[hov] != null ? <span key={s.name}><i style={{ background: s.color }} />{s.name} <b>{fmt(s.values[hov])}</b></span> : null))}
+          {series.map((s) => (s.values[hov] != null ? <span key={s.name}><i style={{ background: s.color }} />{s.name} <b>{s.base && s.base[hov] != null ? fmt(s.base[hov]) + ' to ' + fmt(s.values[hov]) : fmt(s.values[hov])}</b></span> : null))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Stacked areas over dates: the layers add up. layers: [{ name, color, values }] from the bottom up */
+export function StackedArea({ ms, layers, nowIdx = -1, fmt = fmtNum, height = 260, label, w = 760 }) {
+  const W = w, H = height, L = 46, R = 16, T = 16, B = 32;
+  const pw = W - L - R, ph = H - T - B, n = ms.length;
+  const [hov, setHov] = useState(null);
+  const box = useRef(null);
+  const cum = layers.map((_, k) => ms.map((__, i) => layers.slice(0, k + 1).reduce((a, l) => a + (l.values[i] || 0), 0)));
+  const top = nice(Math.max(1, ...(cum.length ? cum[cum.length - 1] : [1]))).top;
+  const xp = (i) => L + (n > 1 ? (pw * i) / (n - 1) : pw / 2);
+  const yp = (v) => T + ph - (v / (top || 1)) * ph;
+  const every = Math.max(1, Math.ceil(n / (W < 600 ? 4 : 7)));
+  const ticks = [];
+  for (let i = 0; i < n; i += every) ticks.push(i);
+  const move = (e) => {
+    const r = box.current.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * W;
+    setHov(Math.max(0, Math.min(n - 1, Math.round(((x - L) / pw) * (n - 1)))));
+  };
+  return (
+    <div className="dc-wrap">
+      <svg ref={box} viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block' }} role="img" aria-label={label} onMouseMove={move} onMouseLeave={() => setHov(null)}>
+        {[0, 1, 2, 3, 4].map((g) => { const v = (top * g) / 4, y = yp(v); return (<g key={g}><line className="grid" x1={L} x2={W - R} y1={y} y2={y} /><text x={L - 6} y={y + 4} textAnchor="end">{fmt(v)}</text></g>); })}
+        {ticks.map((i) => (<text key={i} x={xp(i)} y={H - 10} textAnchor="middle">{fsh(ms[i])}</text>))}
+        {layers.map((l, k) => {
+          const up = ms.map((_, i) => xp(i).toFixed(1) + ',' + yp(cum[k][i]).toFixed(1));
+          const dn = ms.map((_, i) => xp(i).toFixed(1) + ',' + yp(k ? cum[k - 1][i] : 0).toFixed(1)).reverse();
+          return <polygon key={l.name} points={up.concat(dn).join(' ')} style={{ fill: l.color, opacity: 0.85, stroke: 'var(--surface)', strokeWidth: 0.6 }} />;
+        })}
+        {nowIdx >= 0 && <g><line x1={xp(nowIdx)} x2={xp(nowIdx)} y1={T} y2={T + ph} style={{ stroke: 'var(--ink)', strokeWidth: 1.2, strokeDasharray: '3 3' }} /></g>}
+        {hov != null && <line x1={xp(hov)} x2={xp(hov)} y1={T} y2={T + ph} style={{ stroke: 'var(--ink)', strokeWidth: 1 }} />}
+      </svg>
+      {hov != null && (
+        <div className="dc-tip" style={{ left: Math.min(82, Math.max(10, (xp(hov) / W) * 100)) + '%' }}>
+          <b>{fsh(ms[hov])} · {fmt(cum[cum.length - 1][hov])} in total</b>
+          {layers.slice().reverse().map((l) => (<span key={l.name}><i style={{ background: l.color }} />{l.name} <b>{fmt(l.values[hov] || 0)}</b></span>))}
         </div>
       )}
     </div>

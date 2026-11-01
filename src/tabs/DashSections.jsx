@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/StoreContext';
-import { BarChart, HBars, HeatGrid, HeatLegend, Legend, RiskGrid, TimeChart, fmtNum, heat } from '../components/DashCharts';
+import { BarChart, HBars, HeatGrid, HeatLegend, Legend, RiskGrid, StackedArea, TimeChart, fmtNum, heat } from '../components/DashCharts';
 import { hasValidDates } from '../lib/offdays';
 import { DAY, fdate, pd, today } from '../lib/dates';
 import { kf, money, pc } from '../lib/format';
 import { inPlan, projectEvm } from '../lib/calc';
 import { projectCapacity } from '../lib/capacity';
 import { raidJump } from '../lib/deps';
-import { burnSeries, changeMix, costByElement, dueWork, eacScenarios, indexTrend, peopleLoad, raidMix, riskMatrix, scheduleHealth, spiFinish, sprintPerformance, statusMix, velocity, weeklyLoad } from '../lib/insights';
+import { burnSeries, changeMix, costByElement, dueWork, eacScenarios, flowSeries, indexTrend, peopleLoad, raidMix, riskMatrix, riskSeries, scheduleHealth, spiFinish, sprintPerformance, statusMix, velocity, weeklyLoad } from '../lib/insights';
 
 const h1 = (v) => (v == null ? '–' : Math.round(v * 10) / 10 + ' h');
 const Big = ({ items }) => (
@@ -38,14 +38,22 @@ export function ProgressSection() {
   const mix = useMemo(() => statusMix(S), [S]);
   const due = useMemo(() => dueWork(S, asOf), [S, asOf]);
   const fin = useMemo(() => spiFinish(S, asOf), [S, asOf]);
+  const flow = useMemo(() => flowSeries(S, asOf), [S, asOf]);
   const spr = S.sprints.filter((sp) => inPlan(S, sp) && hasValidDates(sp));
 
   const slip = whole && whole.slip != null ? whole.slip : null;
   const slipTxt = slip == null ? '' : slip > 0 ? slip + ' day' + (slip === 1 ? '' : 's') + ' later than planned' : slip < 0 ? Math.abs(slip) + ' day' + (slip === -1 ? '' : 's') + ' earlier than planned' : 'on the planned date';
+  const mc = whole && whole.mc;
+  const slipOf = (d) => (d && whole ? Math.round((pd(d) - pd(whole.planEnd)) / DAY) : null);
+  const late = (n) => (n == null ? '' : n > 0 ? n + ' day' + (n === 1 ? '' : 's') + ' after the planned ' + fdate(whole.planEnd) : n < 0 ? Math.abs(n) + ' day' + (n === -1 ? '' : 's') + ' before the planned ' + fdate(whole.planEnd) : 'on the planned date');
   const tiles = [
     { l: 'Work done', v: whole ? pc(whole.scope ? whole.doneNow / whole.scope : 0, 0) : '–', s: whole ? h1(whole.doneNow) + ' of ' + h1(whole.scope) : 'No planned hours yet' },
     { l: 'Pace (last 2 weeks)', v: whole ? (Math.round(whole.pace * 7 * 10) / 10) + ' h/week' : '–', s: whole && whole.pace > 0 ? 'Hours of work finished per week' : 'Nothing finished yet' },
-    { l: 'Finish at this pace', v: whole && whole.finish ? fdate(whole.finish) : '–', s: whole && whole.finish ? slipTxt + ' (plan ' + fdate(whole.planEnd) + ')' : 'Needs some finished work', c: slip > 7 ? COL.bad : slip > 0 ? COL.warn : undefined },
+    mc && mc.p50
+      ? { l: 'Likely finish (P50)', v: fdate(mc.p50), s: late(slipOf(mc.p50)), c: slipOf(mc.p50) > 7 ? COL.bad : slipOf(mc.p50) > 0 ? COL.warn : undefined }
+      : { l: 'Finish at this pace', v: whole && whole.finish ? fdate(whole.finish) : '–', s: whole && whole.finish ? slipTxt : 'Needs some finished work', c: slip > 7 ? COL.bad : slip > 0 ? COL.warn : undefined },
+    mc ? { l: 'Safe finish (P80)', v: mc.p80 ? fdate(mc.p80) : 'Beyond 2 years', s: mc.p80 ? '8 in 10 futures finish by then' : 'At the pace seen so far', c: mc.p80 && slipOf(mc.p80) > 14 ? COL.bad : undefined }
+      : { l: 'Safe finish (P80)', v: '–', s: whole && whole.samples < 3 ? 'Needs 3 weeks of finished work (' + whole.samples + ' so far)' : 'Needs finished work' },
     { l: 'Finish by schedule index', v: fin ? fdate(fin.forecastEnd) : '–', s: fin ? 'SPI ' + pc(fin.spi, 0) + ': ' + (fin.slipDays > 0 ? fin.slipDays + ' days late' : fin.slipDays < 0 ? Math.abs(fin.slipDays) + ' days early' : 'on time') : 'Needs earned value' },
   ];
 
@@ -56,23 +64,31 @@ export function ProgressSection() {
       ? [
         { name: 'Scope', color: COL.pv, values: B.ms.map(() => B.scope), dash: true, w: 1.6 },
         { name: 'Ideal', color: 'var(--muted)', values: B.ideal, w: 1.8 },
+        ...(B.mc ? [{ name: 'Likely range (20% to 80%)', color: COL.acc, values: B.mc.hi, base: B.mc.lo }] : []),
         { name: 'Done', color: COL.ev, values: B.done, area: true, w: 2.6 },
-        { name: 'At today’s pace', color: COL.acc, values: B.proj, dash: true },
+        B.mc ? { name: 'Most likely (P50)', color: COL.acc, values: B.mc.mid, dash: true } : { name: 'At today’s pace', color: COL.acc, values: B.proj, dash: true },
       ]
       : [
         { name: 'Ideal remaining', color: 'var(--muted)', values: rem(B.ideal), w: 1.8 },
+        ...(B.mc ? [{ name: 'Likely range (20% to 80%)', color: COL.acc, values: B.mc.lo.map((v) => (v == null ? null : B.scope - v)), base: B.mc.hi.map((v) => (v == null ? null : B.scope - v)) }] : []),
         { name: 'Remaining', color: COL.ev, values: rem(B.done), area: true, w: 2.6 },
-        { name: 'At today’s pace', color: COL.acc, values: rem(B.proj), dash: true },
+        B.mc ? { name: 'Most likely (P50)', color: COL.acc, values: rem(B.mc.mid), dash: true } : { name: 'At today’s pace', color: COL.acc, values: rem(B.proj), dash: true },
       ];
     burn = (
       <>
         <TimeChart ms={B.ms} series={series} nowIdx={B.nowIdx} fmt={h1} yFmt={(v) => Math.round(v)} yMax={undefined} marks={B.planEndIdx < B.n ? [{ i: B.planEndIdx, label: 'Planned end', color: COL.bad }] : []} label={mode === 'up' ? 'Burn-up chart' : 'Burn-down chart'} />
         <Legend items={series.map((s) => ({ name: s.name, color: s.color, dash: s.dash }))} />
+        {B.mc ? (
+          <p className="dc-note">The shaded range comes from <b>1,500 simulated futures</b>, drawn from your own {B.samples} weeks of finished work: 5 in 10 finish by <b>{B.mc.p50 ? fdate(B.mc.p50) : 'a date beyond two years'}</b> and 8 in 10 by <b>{B.mc.p80 ? fdate(B.mc.p80) : 'a date beyond two years'}</b>. It is wide when your weekly output has been uneven.</p>
+        ) : (
+          <p className="dc-note">The dashed line assumes the pace of the last two weeks continues. After <b>3 full weeks</b> of finished work this becomes a range of likely finish dates, based on how much your weekly output varies{B.samples ? ' (' + B.samples + ' so far)' : ''}.</p>
+        )}
+        {B.undated > 0 && <p className="dc-note"><b>{B.undated}</b> finished work item{B.undated === 1 ? ' has' : 's have'} no completion date, so the due date is used for {B.undated === 1 ? 'it' : 'them'}. Work finished from now on is dated automatically. To correct older items, set “Completed on” in the work item details.</p>}
         <p className="dc-note">
           {mode === 'up'
             ? <>The <b>done</b> line should follow the <b>ideal</b> line. The gap is how far ahead or behind you are, and the <b>scope</b> line shows how much work there is in total.</>
             : <>The <b>remaining</b> line should fall along the <b>ideal</b> line to zero by the planned end.</>}
-          {B.finish ? ' At today’s pace the work finishes on ' + fdate(B.finish) + '.' : ''}
+          {!B.mc && B.finish ? ' At today’s pace the work finishes on ' + fdate(B.finish) + '.' : ''}
         </p>
       </>
     );
@@ -99,6 +115,21 @@ export function ProgressSection() {
           </div>
         )}>
         {burn || <Empty>Add planned hours and dates to a sprint to see the burn chart.</Empty>}
+      </Card>
+
+      <Card title="Cumulative flow" hint="How many work items sit in each status, every day. A band that keeps widening is where work is piling up; parallel bands mean steady flow.">
+        {flow.points >= 2 ? (
+          <>
+            <div className="dc-big">
+              <div><span>Work in progress now</span><b>{flow.wipNow}</b><small>Items started, not finished (average {Math.round(flow.wipAvg * 10) / 10} over 2 weeks)</small></div>
+              <div><span>Throughput</span><b>{Math.round(flow.thr * 10) / 10} / week</b><small>Items finished per week, last 4 weeks</small></div>
+              <div><span>Average time in progress</span><b>{flow.cycle == null ? '–' : Math.round(flow.cycle * 10) / 10 + ' days'}</b><small>Work in progress ÷ throughput</small></div>
+            </div>
+            <StackedArea ms={flow.ms} nowIdx={flow.nowIdx} layers={flow.layers.map((l) => ({ name: l.label, color: l.color, values: l.values }))} label="Cumulative flow diagram" />
+            <Legend items={flow.layers.slice().reverse().map((l) => ({ name: l.label, color: l.color }))} />
+            {flow.estUntil && <p className="dc-note">Before <b>{fdate(flow.estUntil)}</b> the chart is rebuilt from the activity log, so it is an estimate. From that day on it is recorded every day.</p>}
+          </>
+        ) : <Empty>The app now records a daily snapshot of every work item’s status. The chart appears once two days have been recorded.</Empty>}
       </Card>
 
       <div className="grid2e">
@@ -236,6 +267,8 @@ export function ResourcesSection() {
 export function RiskSection() {
   const { S, setNav } = useStore();
   const R = useMemo(() => riskMatrix(S), [S]);
+  const RS = useMemo(() => riskSeries(S, today()), [S]);
+  const [rm, setRm] = useState('rating');
   const mix = useMemo(() => raidMix(S), [S]);
   const C = useMemo(() => changeMix(S), [S]);
   const H = useMemo(() => scheduleHealth(S), [S]);
@@ -262,6 +295,29 @@ export function RiskSection() {
           ) : <Empty>Add a probability % and a cost to risks in the RAID log to see exposure.</Empty>}
         </Card>
       </div>
+
+      <Card title="Risk burn-down" hint="Open risks over time. The aim is a falling line as risks are mitigated or closed."
+        tools={RS.points >= 2 ? (
+          <div className="seg" role="group" aria-label="Measure"><button aria-pressed={rm === 'rating'} onClick={() => setRm('rating')}>By rating</button><button aria-pressed={rm === 'emv'} onClick={() => setRm('emv')}>Exposure</button><button aria-pressed={rm === 'score'} onClick={() => setRm('score')}>Total score</button></div>
+        ) : null}>
+        {RS.points >= 2 ? (
+          <>
+            {rm === 'rating' && (<>
+              <StackedArea ms={RS.ms} nowIdx={RS.nowIdx} layers={[{ name: 'High', color: COL.bad, values: RS.hi }, { name: 'Medium', color: COL.warn, values: RS.me }, { name: 'Low', color: COL.good, values: RS.lo }, { name: 'Not rated', color: COL.pv, values: RS.un }]} label="Open risks by rating over time" />
+              <Legend items={[{ name: 'High (score 15+)', color: COL.bad }, { name: 'Medium (8 to 14)', color: COL.warn }, { name: 'Low (under 8)', color: COL.good }, { name: 'Not rated', color: COL.pv }]} />
+            </>)}
+            {rm === 'emv' && (<>
+              <TimeChart ms={RS.ms} nowIdx={RS.nowIdx} series={[{ name: 'Risk exposure (EMV)', color: COL.acc, values: RS.emv, area: true }]} refs={R.contingency > 0 ? [{ y: R.contingency, label: 'Contingency reserve', color: COL.good }] : []} fmt={(v) => money(Math.round(v))} yFmt={kf} label="Risk exposure over time" />
+              <Legend items={[{ name: 'Risk exposure (EMV)', color: COL.acc }, ...(R.contingency > 0 ? [{ name: 'Contingency reserve', color: COL.good, dash: true }] : [])]} />
+            </>)}
+            {rm === 'score' && (<>
+              <TimeChart ms={RS.ms} nowIdx={RS.nowIdx} series={[{ name: 'Total risk score', color: COL.bad, values: RS.score, area: true }, { name: 'Risks closed', color: COL.good, values: RS.closed }]} fmt={fmtNum} label="Total risk score over time" />
+              <Legend items={[{ name: 'Total risk score (probability × impact, summed)', color: COL.bad }, { name: 'Risks closed so far', color: COL.good }]} />
+            </>)}
+            <p className="dc-note">Recorded every day since <b>{fdate(RS.since)}</b>. Today: <b>{RS.open[RS.nowIdx]}</b> open risk{RS.open[RS.nowIdx] === 1 ? '' : 's'}, <b>{RS.hi[RS.nowIdx]}</b> high, exposure <b>{money(RS.emv[RS.nowIdx])}</b>.</p>
+          </>
+        ) : <Empty>The app now records the state of your risks every day, so this chart fills in as time passes. Risk history from before today cannot be recovered.</Empty>}
+      </Card>
 
       <div className="grid2e">
         <Card title="RAID log" hint="Open, overdue and closed items by type.">

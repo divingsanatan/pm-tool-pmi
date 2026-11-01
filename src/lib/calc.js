@@ -6,6 +6,7 @@ import { ACTIVITY_MAX } from './activity';
 import { calendarOf, offDaysOf, sprintCalendar } from './offdays';
 import { calendarHours, planWindow } from './capacity';
 import { buildDeps, syncDependencies } from './deps';
+import { recordHistory } from './history';
 
 /* ---------- timeline helpers ---------- */
 export const nW = (S) => S.meta.weeks;
@@ -1057,6 +1058,8 @@ export function normalize(S) {
     lastB.lines = (S.lines || []).map((l) => ({ id: l.id, name: l.name, amount: nz(l.amount), per: l.per, iterations: l.per === 'project' ? 0 : nz(l.iterations) }));
   // dependencies between work items: tidy them and keep their RAID log entries in step
   syncDependencies(S);
+  // a daily record of statuses and risks, for the flow and risk burn-down charts
+  recordHistory(S);
   // activity log: a list of stamped entries, capped
   if (!Array.isArray(S.activity)) {
     S.activity = [{ id: uid(), at: new Date().toISOString(), by: 'System', cat: 'project', act: 'info', text: 'Activity tracking started for this project' }];
