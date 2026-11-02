@@ -1,0 +1,5 @@
+/* Backlog list: the same tree rows as the Sprint list, with its own column layout (WBS, name, assignee, priority, effort, move, actions).
+   Kept in its own file so the grid is defined wherever the Backlog is loaded. */
+.tg.sp.bk .tg-row{grid-template-columns:44px minmax(300px,1fr) 96px 90px 100px 170px 64px}
+.tg.sp.bk .tg-row.tg-h .h-wbs{padding-left:4px}
+.tg.sp.bk .c-move .btn{white-space:nowrap;padding:5px 10px;font-size:13px}
