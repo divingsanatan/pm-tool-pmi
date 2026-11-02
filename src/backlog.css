@@ -1,0 +1,15 @@
+/* Backlog list: the same tree rows as the Sprint list, with its own column layout (WBS, name, assignee, priority, effort, move, actions).
+   The Sprint list positions every cell with CSS "order"; cells without an order would jump to the front, so each Backlog cell gets its own. */
+.tg.sp.bk{min-width:900px}
+.tg.sp.bk .tg-row{grid-template-columns:44px minmax(300px,1fr) 96px 90px 100px 170px 64px}
+.tg.sp.bk .c-wbs,.tg.sp.bk .h-wbs{order:0}
+.tg.sp.bk .tg-name{order:1}
+.tg.sp.bk .c-ass,.tg.sp.bk .h-assignee{order:2}
+.tg.sp.bk .c-pri,.tg.sp.bk .h-priority{order:3}
+.tg.sp.bk .c-eff,.tg.sp.bk .h-effort{order:4}
+.tg.sp.bk .c-move,.tg.sp.bk .h-move{order:5}
+.tg.sp.bk .c-open,.tg.sp.bk .h-open{order:1000}
+.tg.sp.bk .tg-row.tg-h .h-wbs{padding-left:4px}
+.tg.sp.bk .tg-row.tg-h>div:not(.tg-name):not(.h-wbs):not(.h-open){padding-left:7px}
+.tg.sp.bk .c-move{padding-left:4px}
+.tg.sp.bk .c-move .btn{white-space:nowrap;padding:5px 10px;font-size:13px}
