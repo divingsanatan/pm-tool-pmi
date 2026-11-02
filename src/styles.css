@@ -455,6 +455,8 @@ label.fld{max-width:100%;min-width:0}
 /* backlog: a flat list with a "move to sprint" action instead of status and dates */
 .h-title{font-size:22px;font-weight:700;letter-spacing:-.01em;margin:0}
 .tg.bk .tg-row{grid-template-columns:minmax(300px,1fr) 96px 90px 100px 170px 40px}
+.tg.sp.bk .tg-row{grid-template-columns:44px minmax(300px,1fr) 96px 90px 100px 170px 64px}
+.tg.sp.bk .tg-row.tg-h .h-wbs{padding-left:4px}
 .tg.bk .tg-row .c-move .btn{white-space:nowrap;padding:5px 10px;font-size:13px}
 @media (max-width:900px){
   .tg.bk .tg-row{grid-template-columns:auto auto auto minmax(0,1fr) auto;grid-template-areas:"name name name name name" "ass pri eff move open"}
