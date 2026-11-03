@@ -3,7 +3,7 @@ import { useStore } from './StoreContext';
 import { useUI } from '../components/UI';
 import { alignSprintDates, normalize, sprintHours } from '../lib/calc';
 import { PRIORITIES, childTypeFor, containerById, findTask, firstOpenStatus, isDoneStatus, makeTask, statusPct, statusesOf, uid } from '../lib/tasks';
-import { leafTasks, rootTasks, subtreeIds } from '../lib/hier';
+import { leafTasks, pinStatus, rootTasks, subtreeIds } from '../lib/hier';
 import { cleanEffort, nz } from '../lib/format';
 import { DAY, fdate, pd } from '../lib/dates';
 import { blankCr, currentBaseline, sprintCrs } from '../lib/change';
@@ -628,7 +628,7 @@ export function useTasks() {
           const f = findTask(p, id);
           if (f) {
             Object.assign(f.t, patch);
-            if ('status' in patch && f.c.tasks.some((k) => k.parent === f.t.id)) f.t.statusSet = true; // a status chosen by hand on a parent stays
+            if ('status' in patch && f.c.tasks.some((k) => k.parent === f.t.id)) pinStatus(f.c.tasks, f.t); // a status chosen by hand on a parent holds until one of its child items changes status
           }
         };
         if ('effort' in patch && guardHours(run, { cause: [id], lockDown: true })) return;
@@ -696,7 +696,7 @@ export function useTasks() {
               const f = findTask(p, id);
               if (!f || f.c.id === 'backlog') return; // the Backlog has no statuses
               f.t.status = statusId;
-              if (f.c.tasks.some((k) => k.parent === f.t.id)) f.t.statusSet = true;
+              if (f.c.tasks.some((k) => k.parent === f.t.id)) pinStatus(f.c.tasks, f.t);
             })
           );
         if (!target.done) {
@@ -745,7 +745,7 @@ export function useTasks() {
       autoStatus(id) {
         update((p) => {
           const f = findTask(p, id);
-          if (f) delete f.t.statusSet;
+          if (f) { delete f.t.statusSet; delete f.t.statusKids; }
         });
       },
       // pull every work item's start and due date of one sprint back inside that sprint
@@ -797,7 +797,7 @@ export function useTasks() {
             const f = findTask(p, id);
             if (f) {
               Object.assign(f.t, patch);
-              if ('status' in patch && f.c.tasks.some((k) => k.parent === f.t.id)) f.t.statusSet = true;
+              if ('status' in patch && f.c.tasks.some((k) => k.parent === f.t.id)) pinStatus(f.c.tasks, f.t);
             }
           });
         };

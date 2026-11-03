@@ -109,10 +109,59 @@ export function derivedStatus(S, p) {
   return mid.reduce((a, b) => (Math.abs(nz(b.pct) - p) < Math.abs(nz(a.pct) - p) ? b : a)).id;
 }
 
+// The status a parent shows when it is calculated from its child items (their own statuses are already final: the walk is bottom-up).
+//   all children in the same status          -> that status (Blocked, In review, Done... are kept as they are)
+//   all children finished (different finals) -> the first finished status
+//   anything started, or part finished       -> the least advanced "working" status among the children
+//                                               (one child In progress + the rest Done = In progress; In progress + In review = In progress)
+//   nothing started                          -> the first open status (To do)
+export function statusFromKids(S, ks) {
+  const sts = statusesOf(S);
+  const idx = new Map(sts.map((x, i) => [x.id, i]));
+  const first = sts.find((x) => !x.done) || sts[0];
+  const fin = sts.find((x) => x.done);
+  const st = (k) => sts.find((x) => x.id === k.status) || first; // unknown status counts as not started
+  const list = ks.map(st);
+  if (!list.length) return first.id;
+  if (list.every((x) => x.id === list[0].id)) return list[0].id;
+  if (fin && list.every((x) => x.done)) return fin.id;
+  const open = list.filter((x) => !x.done);
+  const active = open.filter((x) => x.id !== first.id); // open and past the first (not-started) status
+  const doneSome = open.length < list.length;
+  const byOrder = (a, b) => idx.get(a.id) - idx.get(b.id);
+  const moving = active.filter((x) => nz(x.pct) > 0).sort((a, b) => nz(a.pct) - nz(b.pct) || byOrder(a, b));
+  // the plain \"under way\" status: the first open status after To do that counts as progress (In progress)
+  const prog = sts.filter((x) => !x.done && x.id !== first.id && nz(x.pct) > 0).sort((a, b) => nz(a.pct) - nz(b.pct) || byOrder(a, b));
+  const notStarted = open.some((x) => x.id === first.id);
+  if (moving.length) {
+    // Some child still has not started: the parent is simply In progress, even if another child is already In review.
+    // Otherwise it follows the least advanced child that is under way (all remaining work In review = In review).
+    if (notStarted && prog.length && nz(prog[0].pct) < nz(moving[0].pct)) return prog[0].id;
+    return moving[0].id;
+  }
+  if (doneSome || active.length) {
+    // work has started but no child sits in a status that counts as progress (e.g. some Done, rest To do / Blocked)
+    if (doneSome && prog.length) return prog[0].id;
+    if (active.length) return active.sort(byOrder)[0].id;
+    const second = sts.find((x) => !x.done && x.id !== first.id);
+    return (second || first).id;
+  }
+  return first.id;
+}
+
+// A status chosen by hand on a parent holds only while its child items stay as they were: the moment one child changes status,
+// the parent goes back to following them. statusKids remembers the children's statuses at the time it was set.
+export const kidsSignature = (tasks, id) =>
+  tasks.filter((k) => k.parent === id).map((k) => k.id + ':' + (k.status || '')).sort().join('|');
+export function pinStatus(tasks, t) {
+  t.statusSet = true;
+  t.statusKids = kidsSignature(tasks, t.id);
+}
+
 // Fills in every parent of one list from its children, bottom-up:
 //   effort  = sum of the children's effort (a parent's own estimate is kept while no child has one)
 //   start   = earliest child start,  due = latest child due
-//   status  = calculated from how complete the children are (weighted by effort, else equally)
+//   status  = calculated from the children's statuses (see statusFromKids) until someone sets it by hand
 //   pct     = that completion (0 to 1), stored on the parent only
 export function rollupContainer(S, c) {
   const kids = kidsMap(c.tasks);
@@ -126,6 +175,9 @@ export function rollupContainer(S, c) {
     if (!ks.length) {
       delete t.pct;
       delete t.statusSet; // only a parent can carry its own status
+      delete t.statusKids;
+      delete t.rollE; // nothing rolls up into an item without children
+      delete t.rollD;
       // an item that lost its last child keeps what was its own estimate and dates (they are no longer \"on top of\" anything)
       if (t.ownEffort !== undefined) { t.effort = t.ownEffort; delete t.ownEffort; }
       if (t.ownStart !== undefined || t.ownDue !== undefined) {
@@ -142,7 +194,15 @@ export function rollupContainer(S, c) {
     if (t.ownEffort !== undefined) {
       const tot = r2(nz(t.ownEffort) + kidsE);
       t.effort = tot > 0 ? tot : null;
-    } else if (ks.some((k) => nz(k.effort) > 0)) t.effort = kidsE;
+      t.rollE = true;
+    } else if (ks.some((k) => nz(k.effort) > 0)) {
+      t.effort = kidsE;
+      t.rollE = true;
+    } else if (t.rollE) {
+      // the hours that rolled up are gone (children's hours cleared or the children moved away): the parent must not keep the old total
+      t.effort = null;
+      delete t.rollE;
+    }
     if (back) return;
     // Dates: the earliest start and the latest due date of the child items and of the item's own dates (ownStart, ownDue).
     let s = '', f = '';
@@ -157,8 +217,16 @@ export function rollupContainer(S, c) {
       if (a && (!s || a < s)) s = a;
       if (b && (!f || b > f)) f = b;
     }
-    if (s || ownDates) t.start = s;
-    if (f || ownDates) t.due = f;
+    if (s || ownDates) {
+      t.start = s;
+      t.due = f;
+      t.rollD = true;
+    } else if (t.rollD) {
+      // no child has a date any more and the item has none of its own: clear the old rolled-up dates
+      t.start = '';
+      t.due = '';
+      delete t.rollD;
+    }
     const weighted = ks.some((k) => nz(k.effort) > 0);
     let ws = 0, e = 0;
     ks.forEach((k) => {
@@ -168,8 +236,12 @@ export function rollupContainer(S, c) {
     });
     const sum = ws ? e / ws : 0;
     // A parent's status is automatic until someone sets it by hand (t.statusSet, like ClickUp: every item can carry its own status).
-    // Automatic: children that all share one status give it to the parent as it is (a Blocked or In review item stays so); otherwise the progress decides.
-    const own = statusesOf(S).find((x) => x.id === t.status);
+    let own = statusesOf(S).find((x) => x.id === t.status);
+    // a hand-set status only holds while the children are as they were when it was set (older data without that note: released)
+    if (t.statusSet && (t.statusKids === undefined || t.statusKids !== kidsSignature(c.tasks, t.id))) {
+      delete t.statusSet;
+      delete t.statusKids;
+    }
     const manual = !!(t.statusSet && own);
     // Progress follows the same rule as any item: the status says how complete it is ("Counts as"). For a parent whose status was set by hand,
     // that is the least it shows (In progress = 50% even while its children are still at 0%); its children can only raise it.
@@ -180,8 +252,8 @@ export function rollupContainer(S, c) {
     t.pct = Math.round(p * 1000) / 1000;
     if (!manual) {
       delete t.statusSet;
-      const same = ks.every((k) => k.status === ks[0].status) && statusesOf(S).some((x) => x.id === ks[0].status);
-      t.status = same ? ks[0].status : derivedStatus(S, p);
+      delete t.statusKids;
+      t.status = statusFromKids(S, ks);
     }
     const fin = statusesOf(S).find((x) => x.id === t.status);
     if (fin && fin.done) {
