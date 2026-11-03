@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/StoreContext';
 import { Cell } from './Field';
+import { useUI } from './UI';
 import { fdate, today } from '../lib/dates';
 import { calendarOf, okDate, WEEKDAYS_SHORT } from '../lib/offdays';
-import { LEAVE_TYPES, datesBetween, dayStates, leaveMap, leaveTypeLabel, onDeliveryTeam, projectDefaults, rangeText, setLeaveDays, settingsOf } from '../lib/capacity';
+import { LEAVE_TYPES, datesBetween, dayStates, leaveMap, leaveTypeLabel, onDeliveryTeam, projectDefaults, zeroAllocBlock, rangeText, setLeaveDays, settingsOf } from '../lib/capacity';
 import { hrsf } from '../lib/format';
 import '../capacity.css';
 
@@ -14,6 +15,8 @@ const TYPE_MARK = { leave: 'L', sick: 'S', training: 'T', other: 'O' };
 // Total hours per day = hours per day x allocation.  Effective hours per day = total hours per day x focus factor.
 export function PeopleCapacity() {
   const { S, update } = useStore();
+  const ui = useUI();
+  const [bump, setBump] = useState(0); // remounts the allocation field so a refused value snaps back
   const D = projectDefaults(S);
   const setDefault = (patch) =>
     update((p) => {
@@ -38,7 +41,12 @@ export function PeopleCapacity() {
         <div className={'inh' + (st.customHpd ? ' own' : '')}>{st.customHpd ? <>own value · <button type="button" className="linkbtn" onClick={() => set(p.id, { hpd: null })}>use default</button></> : 'follows project default (' + D.hpd + ')'}</div>
       </td>
       <td data-l="Allocation" className="r">
-        <Cell value={p.cap} type="pct" cls="w-sm n" label={'Allocation to this project of ' + p.name} onCommit={(v) => set(p.id, { cap: v == null ? 0 : Math.max(0, v) })} />
+        <Cell key={p.id + ':' + bump} value={p.cap} type="pct" cls="w-sm n" label={'Allocation to this project of ' + p.name} onCommit={(v) => {
+          const next = v == null ? 0 : Math.max(0, v);
+          const why = next <= 0 ? zeroAllocBlock(S, p) : '';
+          if (why) { ui.toast({ id: 'alloc0-' + p.id, tone: 'bad', ttl: 9000, text: why }); setBump((b) => b + 1); return; }
+          set(p.id, { cap: next });
+        }} />
       </td>
       <td data-l="Total hours / day" className="r mono">
         <span className={'cell' + (st.hpd * st.alloc > 0 ? '' : ' msg')} title={st.hpd + ' h × ' + Math.round(st.alloc * 100) + '% allocation'}>
@@ -77,6 +85,12 @@ export function PeopleCapacity() {
         <span className="msg">= {Math.round(D.hpd * D.focus * 100) / 100} productive hours per day at 100% allocation. Hours per day is the same figure the Budget uses.</span>
         {D.focus < 0.1 && <span className="msg lateTxt">A focus factor of {Math.round(D.focus * 100) / 100} is very low. Use 1 for full focus or 0.8 for 80%.</span>}
       </div>
+
+      {team.filter((r) => !(r.st.alloc > 0)).map((r) => (
+        <p key={r.p.id} className="msg lateTxt" role="alert" style={{ margin: '10px 0 0' }}>
+          {zeroAllocBlock(S, r.p)} Until then, give them an allocation above 0%.
+        </p>
+      ))}
 
       <div className="flabel" style={{ margin: '14px 0 6px' }}>Delivery team · {team.length}</div>
       <div className="scroll">

@@ -5,7 +5,7 @@ import { Cell, SelectCell } from '../components/Field';
 import { Modal, useUI } from '../components/UI';
 import WeeksControl from '../components/WeeksControl';
 import '../capacity.css';
-import { calendarHours, planWindow } from '../lib/capacity';
+import { calendarHours, planWindow, zeroAllocBlock } from '../lib/capacity';
 import { ITER_UNIT, baseLine, baseOf, costBy, labourOf, labourTotal, lastDay, ledgerTotal, lineOnce, lineRecurring, lineState, lineTotal, maxIter, personOf, planBAC, projectBAC, reserves, suggestIter } from '../lib/calc';
 import LineCrDialog from './LineCrDialog';
 import { addLineViaCr, changeLineViaCr, dropPendingLine, lineEditable, revertLine, syncClaim } from '../lib/lineChange';
@@ -176,6 +176,7 @@ function LabourCrDialog({ who, amount, total, baseTotal, version, onConfirm, onC
 // Add someone from the stakeholder list to the labour budget (names are managed on the Stakeholders tab)
 function AddLabour({ onClose }) {
   const { S, update, setNav } = useStore();
+  const ui = useUI();
   const free = S.people.filter((p) => !S.team.some((t) => t.person === p.id));
   const fmtCap = (e) => String(Math.round(nz(e.cap) * 1000) / 10);
   const [pid, setPid] = useState(free[0] ? free[0].id : '');
@@ -201,6 +202,10 @@ function AddLabour({ onClose }) {
   };
   const save = () => {
     if (!pid) return;
+    if (cap !== '' && (parseFloat(cap) || 0) <= 0) {
+      const why = zeroAllocBlock(S, S.people.find((x) => x.id === pid) || {});
+      if (why) { ui.toast({ id: 'alloc0-' + pid, tone: 'bad', ttl: 9000, text: why }); return; }
+    }
     // after a baseline, extra budget needs a change request. Try the change on a copy first.
     const trial = structuredClone(S);
     build(trial);
@@ -256,6 +261,7 @@ function LabourRegister() {
   const { S, update, setNav } = useStore();
   const ui = useUI();
   const [adding, setAdding] = useState(false);
+  const [capBump, setCapBump] = useState(0); // remounts the capacity field so a refused value snaps back
   const [claiming, setClaiming] = useState(false);
   const ctl = labourControl(S);
   const rowCtl = Object.fromEntries((ctl.rows || []).map((r) => [r.i, r]));
@@ -302,7 +308,12 @@ function LabourRegister() {
               <tr key={per.id + ':' + i}>
                 <td data-l="Stakeholder"><SelectCell value={t.person} options={S.people.filter((x) => x.id === t.person || !used.has(x.id)).map((x) => [x.id, x.name || '(unnamed)'])} cls="w-md" onCommit={(v) => update((s) => { s.team[i].person = v; })} /></td>
                 <td data-l="Hourly rate"><Cell value={per.rate} type="num" cls="w-md n" label="Hourly rate" onCommit={(v) => setPerson(per.id, { rate: v == null ? 0 : v })} /></td>
-                <td data-l="Capacity %"><Cell value={per.cap} type="pct" cls="w-md n" label="Capacity for this project in percent" onCommit={(v) => setPerson(per.id, { cap: v == null ? 0 : v })} /></td>
+                <td data-l="Capacity %"><Cell key={per.id + ':' + capBump} value={per.cap} type="pct" cls="w-md n" label="Capacity for this project in percent" onCommit={(v) => {
+                  const next = v == null ? 0 : v;
+                  const why = next <= 0 ? zeroAllocBlock(S, per) : '';
+                  if (why) { ui.toast({ id: 'alloc0-' + per.id, tone: 'bad', ttl: 9000, text: why }); setCapBump((b) => b + 1); return; }
+                  setPerson(per.id, { cap: next });
+                }} /></td>
                 <td data-l="Total available hrs">
                   <Cell value={L.total} type="num" cls="w-md n" label="Total available hours on the project, before capacity" onCommit={(v) => setTeam(i, v == null || Math.abs(v - L.auto.hours) < 0.005 ? { hours: undefined } : { hours: Math.max(0, v) })} />
                   <div className={'inh' + (L.manual ? ' own' : '')} title={L.auto.cal + ' sprint days − ' + L.auto.teamOff + ' team off days − ' + L.auto.leave + ' leave days = ' + L.auto.days + ' days × ' + hrsf(L.auto.hpd) + ' h'}>

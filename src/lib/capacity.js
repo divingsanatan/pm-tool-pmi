@@ -60,6 +60,19 @@ export function onDeliveryTeam(S, p) {
   return [S.backlog].concat(S.sprints || []).some((c) => c && (c.tasks || []).some((t) => (t.assignees || []).includes(p.id)));
 }
 
+// How many work items (sprints and backlog) have this stakeholder as an assignee.
+export function assignedCount(S, p) {
+  return [S.backlog].concat(S.sprints || []).reduce((n, c) => n + ((c && c.tasks) || []).filter((t) => (t.assignees || []).includes(p.id)).length, 0);
+}
+
+// Hard rule: a stakeholder who still has work items assigned cannot have an allocation of 0%.
+// Returns the message to show when that is attempted, or '' when it is fine.
+export function zeroAllocBlock(S, p) {
+  const n = assignedCount(S, p);
+  if (!n) return '';
+  return (p.name || 'This person') + ' still has ' + n + ' work item' + (n === 1 ? '' : 's') + ' assigned, so the allocation cannot be 0%. Unassign them from all work items first, then set the allocation to 0%.';
+}
+
 /* ---------- leave ---------- */
 // date -> { half, type, label } for every day a person is away (a full day beats a half day when two entries meet)
 export function leaveMap(p) {
