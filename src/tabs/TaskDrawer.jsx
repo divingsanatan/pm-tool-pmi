@@ -117,18 +117,18 @@ export default function TaskDrawer({ taskId, onClose, onOpen }) {
           {!back && (
             <>
               <label className="fld">Start date{datesRolled && <span className="msg"> · Σ from children</span>}
-                {datesRolled ? <span className="c ro-field">{t.start ? fdate(t.start) : '–'}</span> : parent ? <Cell value={t.ownStart !== undefined ? t.ownStart : t.start} type="date" onCommit={(v) => tk.patchOwn(t.id, { start: v })} /> : <Cell value={t.start} type="date" onCommit={(v) => tk.patch(t.id, { start: v })} />}
+                {datesRolled ? <span className="c ro-field">{t.start ? fdate(t.start) : '–'}</span> : parent ? <Cell value={t.ownStart !== undefined ? t.ownStart : t.start} type="date" hi={(t.ownDue !== undefined ? t.ownDue : t.due) || undefined} onCommit={(v) => tk.patchOwn(t.id, { start: v })} /> : <Cell value={t.start} type="date" hi={t.due || undefined} onCommit={(v) => tk.patch(t.id, { start: v })} />}
               </label>
               <label className="fld">{milestone ? 'Date' : 'Due date'}{datesRolled && <span className="msg"> · Σ from children</span>}
-                {datesRolled ? <span className="c ro-field">{t.due ? fdate(t.due) : '–'}</span> : parent ? <Cell value={t.ownDue !== undefined ? t.ownDue : t.due} type="date" onCommit={(v) => tk.patchOwn(t.id, { due: v })} /> : <Cell value={t.due} type="date" onCommit={(v) => tk.patch(t.id, { due: v })} />}
+                {datesRolled ? <span className="c ro-field">{t.due ? fdate(t.due) : '–'}</span> : parent ? <Cell value={t.ownDue !== undefined ? t.ownDue : t.due} type="date" lo={milestone ? undefined : (t.ownStart !== undefined ? t.ownStart : t.start) || undefined} onCommit={(v) => tk.patchOwn(t.id, { due: v })} /> : <Cell value={t.due} type="date" lo={milestone ? undefined : t.start || undefined} onCommit={(v) => tk.patch(t.id, { due: v })} />}
               </label>
               {datesRolled && (
                 <>
                   <label className="fld">Its own start<span className="msg"> · the earlier of this and the children</span>
-                    <Cell value={t.ownStart || ''} type="date" onCommit={(v) => tk.patchOwn(t.id, { start: v })} />
+                    <Cell value={t.ownStart || ''} type="date" hi={t.ownDue || undefined} onCommit={(v) => tk.patchOwn(t.id, { start: v })} />
                   </label>
                   <label className="fld">Its own {milestone ? 'date' : 'due date'}<span className="msg"> · the later of this and the children</span>
-                    <Cell value={t.ownDue || ''} type="date" onCommit={(v) => tk.patchOwn(t.id, { due: v })} />
+                    <Cell value={t.ownDue || ''} type="date" lo={t.ownStart || undefined} onCommit={(v) => tk.patchOwn(t.id, { due: v })} />
                   </label>
                 </>
               )}

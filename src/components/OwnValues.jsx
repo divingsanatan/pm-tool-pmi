@@ -41,8 +41,8 @@ function OwnNum({ value, onSave, label }) {
   );
 }
 
-function OwnDate({ value, onSave, label }) {
-  return <input className="c" type="date" value={value || ''} aria-label={label} onChange={(e) => onSave(e.target.value)} />;
+function OwnDate({ value, onSave, label, lo, hi }) {
+  return <input className="c" type="date" value={value || ''} min={lo || undefined} max={hi || undefined} aria-label={label} onChange={(e) => onSave(e.target.value)} />;
 }
 
 const range = (a, b) => (a || b ? (a ? fdate(a) : '–') + (b && b !== a ? ' – ' + fdate(b) : '') : '–');
@@ -66,8 +66,8 @@ export function OwnPanel({ task, c, kind }) {
     <div className="own-pop">
       <div className="own-h">Dates</div>
       <div className="own-r"><span>From {kidsTxt}</span><b className="mono">{range(P.kidsStart, P.kidsDue)}</b></div>
-      <label className="own-r"><span>Its own start</span><OwnDate value={task.ownStart} label="Own start date" onSave={(v) => tk.patchOwn(task.id, { start: v })} /></label>
-      <label className="own-r"><span>Its own due</span><OwnDate value={task.ownDue} label="Own due date" onSave={(v) => tk.patchOwn(task.id, { due: v })} /></label>
+      <label className="own-r"><span>Its own start</span><OwnDate value={task.ownStart} hi={task.ownDue || undefined} label="Own start date" onSave={(v) => tk.patchOwn(task.id, { start: v })} /></label>
+      <label className="own-r"><span>Its own due</span><OwnDate value={task.ownDue} lo={task.ownStart || undefined} label="Own due date" onSave={(v) => tk.patchOwn(task.id, { due: v })} /></label>
       <div className="own-r own-t"><span>Total shown</span><b className="mono">{range(task.start, task.due)}</b></div>
       <p className="own-n">The start is the earliest and the due date the latest of the child items and its own dates. Clear a date to take it away.</p>
     </div>

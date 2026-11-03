@@ -36,7 +36,7 @@ const conv = (type, v) => {
  * 'pct' is stored as a fraction (0.5) and shown as a percent (50).
  * Text/number edits commit on blur or Enter; dates commit immediately.
  */
-export function Cell({ sec, i = 0, f, value, type = 'text', cls = '', placeholder, label, onCommit, list, disabled, min }) {
+export function Cell({ sec, i = 0, f, value, type = 'text', cls = '', placeholder, label, onCommit, list, disabled, min, lo, hi }) {
   const { setField } = useStore();
   const shown = toDisplay(type, value);
   const [draft, setDraft] = useState(shown);
@@ -54,6 +54,8 @@ export function Cell({ sec, i = 0, f, value, type = 'text', cls = '', placeholde
     }
     if (onCommit) onCommit(conv(type, v));
     else setField(sec, i, f, conv(type, v));
+    // a date the app refused (e.g. a start after the due date) leaves the stored value as it was: show that again, not the refused date
+    if (type === 'date') setTimeout(() => { if (shownRef.current === shown) setDraft(shown); }, 50);
   };
   const inputType = type === 'date' ? 'date' : type === 'text' ? 'text' : 'number';
   const numeric = inputType === 'number';
@@ -62,7 +64,8 @@ export function Cell({ sec, i = 0, f, value, type = 'text', cls = '', placeholde
     <input
       className={'c ' + cls + (bad ? ' bad' : '')}
       type={inputType}
-      min={numeric && min != null ? min : undefined}
+      min={numeric && min != null ? min : type === 'date' && lo ? lo : undefined}
+      max={type === 'date' && hi ? hi : undefined}
       aria-invalid={bad || undefined}
       title={bad ? 'Must be ' + min + ' or more' : undefined}
       step={numeric ? 'any' : undefined}

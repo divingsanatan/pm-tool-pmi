@@ -176,6 +176,29 @@ export function useTasks() {
     const say = (o) => uRef.current && uRef.current.toast && uRef.current.toast(o);
     const clear = () => uRef.current && uRef.current.dismiss && uRef.current.dismiss('guard');
     const withDecision = (o) => say({ id: 'guard', tone: 'warn', ...o });
+    // A work item's start date can never be after its due date. `ids` are the items about to change, `patch` holds start and/or due
+    // (own: the dates are a parent's own dates, checked against its other own date). Returns true when the edit was refused (nothing changes).
+    const refuseInverted = (ids, patch, own = false) => {
+      if (!patch || !('start' in patch || 'due' in patch)) return false;
+      const S0 = sRef.current;
+      const bad = [];
+      (own ? ids : leafIds(S0, ids)).forEach((id) => {
+        const f = findTask(S0, id);
+        if (!f) return;
+        const cur = own ? { start: f.t.ownStart || '', due: f.t.ownDue || '' } : f.t;
+        const st = 'start' in patch ? patch.start || '' : cur.start || '', du = 'due' in patch ? patch.due || '' : cur.due || '';
+        if (st && du && sane(st) && sane(du) && st > du) bad.push({ t: f.t, st, du });
+      });
+      if (!bad.length) return false;
+      const x = bad[0];
+      say({
+        id: 'dates', tone: 'warn', ttl: 7000,
+        text: bad.length === 1
+          ? '\u201c' + (x.t.name || 'This work item') + '\u201d cannot ' + ('start' in patch ? 'start on ' + fdate(x.st) + ' because it is due on ' + fdate(x.du) : 'be due on ' + fdate(x.du) + ' because it starts on ' + fdate(x.st)) + '. The start date cannot be after the due date, so nothing was changed.'
+          : bad.length + ' of the selected work items would end up with a start date after their due date. The start date cannot be after the due date, so nothing was changed. Deselect them or pick another date.',
+      });
+      return true;
+    };
     // Warning only, never a block: tell the user when work is dated on an off day of the Working calendar (Stakeholders tab).
     // `ids` are the work items just changed (or created); `patch` holds the start / due dates they were given.
     const warnOffDays = (ids, patch) => {
@@ -623,6 +646,7 @@ export function useTasks() {
       },
       patch(id, patch) {
         patch = safe(patch);
+        if (refuseInverted([id], patch)) return;
         if (('start' in patch || 'due' in patch) && guardDates([id], patch)) return;
         const run = (p) => {
           const f = findTask(p, id);
@@ -647,6 +671,7 @@ export function useTasks() {
         if ('due' in o) own.ownDue = o.due || '';
         const dates = ['start', 'due'].map((k) => o[k]).filter(Boolean);
         if (dates.some((d) => !sane(d))) return; // half-typed date: ignore until it is complete
+        if (refuseInverted([id], { ...('start' in o ? { start: o.start } : {}), ...('due' in o ? { due: o.due } : {}) }, true)) return;
         const S0 = sRef.current;
         const f0 = findTask(S0, id);
         if (!f0) return;
@@ -791,6 +816,7 @@ export function useTasks() {
       // change several work items in one update (one render, one save)
       patchMany(ids, patch) {
         patch = safe(patch);
+        if (refuseInverted(ids, patch)) return;
         if (('start' in patch || 'due' in patch) && guardDates(ids, patch)) return;
         const run = (p) => {
           ids.forEach((id) => {

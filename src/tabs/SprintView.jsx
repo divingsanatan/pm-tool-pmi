@@ -149,18 +149,18 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
         {datesRolled ? (
           <RollCell task={t} c={cc} kind="start" />
         ) : parent ? (
-          <Cell value={t.ownStart !== undefined ? t.ownStart : t.start} type="date" cls="w-date" label="Start date" disabled={milestone} onCommit={(v) => tk.patchOwn(t.id, { start: v })} />
+          <Cell value={t.ownStart !== undefined ? t.ownStart : t.start} type="date" cls="w-date" label="Start date" hi={(t.ownDue !== undefined ? t.ownDue : t.due) || undefined} disabled={milestone} onCommit={(v) => tk.patchOwn(t.id, { start: v })} />
         ) : (
-          <Cell value={t.start} type="date" cls="w-date" label="Start date" disabled={milestone} onCommit={(v) => tk.patch(t.id, { start: v })} />
+          <Cell value={t.start} type="date" cls="w-date" label="Start date" hi={t.due || undefined} disabled={milestone} onCommit={(v) => tk.patch(t.id, { start: v })} />
         )}
       </div>
       <div className="c-due">
         {datesRolled ? (
           <RollCell task={t} c={cc} kind="due" late={late} />
         ) : parent ? (
-          <Cell value={t.ownDue !== undefined ? t.ownDue : t.due} type="date" cls={'w-date' + (late ? ' od' : '')} label={milestone ? 'Date' : 'Due date'} onCommit={(v) => tk.patchOwn(t.id, { due: v })} />
+          <Cell value={t.ownDue !== undefined ? t.ownDue : t.due} type="date" cls={'w-date' + (late ? ' od' : '')} label={milestone ? 'Date' : 'Due date'} lo={milestone ? undefined : (t.ownStart !== undefined ? t.ownStart : t.start) || undefined} onCommit={(v) => tk.patchOwn(t.id, { due: v })} />
         ) : (
-          <Cell value={t.due} type="date" cls={'w-date' + (late ? ' od' : '')} label={milestone ? 'Date' : 'Due date'} onCommit={(v) => tk.patch(t.id, { due: v })} />
+          <Cell value={t.due} type="date" cls={'w-date' + (late ? ' od' : '')} label={milestone ? 'Date' : 'Due date'} lo={milestone ? undefined : t.start || undefined} onCommit={(v) => tk.patch(t.id, { due: v })} />
         )}
       </div>
       <div className="c-pri"><PriorityMenu task={t} /></div>
