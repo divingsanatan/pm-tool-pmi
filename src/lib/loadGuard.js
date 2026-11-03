@@ -9,9 +9,10 @@ import { capacityOverPlan, dayStates, leaveMap, planWindow, rangeText, settingsO
 
    Four things are checked for each stakeholder who has work with dates or hours:
      leave     a work item runs over a day the person is on full leave (Working calendar > leave). Nothing can be allocated to them that day.
-     day       on one calendar day the person's work items add up to more hours than their effective hours per day
-               (hours per day x focus factor x allocation). An item's hours are spread over the days the person can work in its dates,
-               the same way the capacity planner does it.
+     day       the person's work items cannot fit into their effective hours per day (hours per day x focus factor x allocation).
+               Each item's hours are placed on the days of its own dates, earliest due date first, filling whatever room the earlier
+               items left (an 8 h item over 2 and 3 Nov takes the 2 h left on the 2nd and 6 h on the 3rd). Only hours that do not fit
+               anywhere inside the item's dates are reported, on the item's last working day.
      sprint    the person's hours in one sprint are above their effective capacity for that sprint
      project   the person's hours in all sprints are above their effective capacity for the whole plan
 
@@ -40,7 +41,7 @@ export function scanLoad(S) {
   const cal = calendarOf(S);
   const res = { leave: new Map(), day: new Map(), sprint: new Map(), project: new Map(), caps: new Map() };
   const win = planWindow(S), set = sprintDaySet(S, win);
-  const per = new Map(S.people.map((p) => [p.id, { p, st: settingsOf(S, p), lm: leaveMap(p), load: 0 }]));
+  const per = new Map(S.people.map((p) => [p.id, { p, st: settingsOf(S, p), lm: leaveMap(p), load: 0, sched: [] }]));
   (S.sprints || []).forEach((sp) => {
     parts(S, sp).forEach((x) => {
       const lo = okDate(x.start) ? x.start : okDate(x.due) ? x.due : '', hi = okDate(x.due) ? x.due : lo;
@@ -56,17 +57,43 @@ export function scanLoad(S) {
         if (away.length) res.leave.set(pid + '|' + x.key, { pid, name: x.t.name || 'This work item', dates: away, sprint: sp.name });
         const w = ds.reduce((a, d) => a + d.factor, 0);
         if (share > 0 && w > 0 && e.st.perDay > 0) {
-          const need = share / w; // hours per full working day
-          ds.forEach((d) => {
-            if (!d.factor) return;
-            const k = pid + '|' + d.date;
-            const cur = res.day.get(k) || { pid, date: d.date, load: 0, cap: e.st.perDay, items: [] };
-            cur.load += need;
-            cur.items.push(x.t.name);
-            res.day.set(k, cur);
-          });
+          const days = ds.filter((d) => d.factor > 0);
+          e.sched.push({ name: x.t.name, share, left: share, days: new Map(days.map((d) => [d.date, d.factor])), from: days[0].date, due: days[days.length - 1].date });
         }
       });
+    });
+  });
+  // hours per day: place every item's hours into the days of its dates, earliest due date first, filling the room that is left
+  per.forEach((e, pid) => {
+    if (!e.sched.length) return;
+    const perDay = e.st.perDay;
+    const dates = Array.from(new Set(e.sched.flatMap((x) => Array.from(x.days.keys())))).sort();
+    const cell = (date, factor) => {
+      const k = pid + '|' + date;
+      let cur = res.day.get(k);
+      if (!cur) res.day.set(k, (cur = { pid, date, load: 0, cap: perDay * factor, perDay, items: [] }));
+      return cur;
+    };
+    dates.forEach((date) => {
+      const open = e.sched.filter((x) => x.left > EPS && x.days.has(date)).sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+      if (!open.length) return;
+      const cur = cell(date, open[0].days.get(date));
+      let room = cur.cap;
+      open.forEach((x) => {
+        const g = Math.min(x.left, room);
+        if (g <= 0) return;
+        x.left -= g;
+        room -= g;
+        cur.load += g;
+        cur.items.push(x.name);
+      });
+    });
+    // what still does not fit inside an item's own dates lands on its last working day (that day is then over its limit)
+    e.sched.forEach((x) => {
+      if (x.left <= EPS) return;
+      const cur = cell(x.due, x.days.get(x.due));
+      cur.load += x.left;
+      cur.items.push(x.name);
     });
   });
   // sprint and project totals
@@ -108,7 +135,7 @@ export function newLoadIssues(S0, S1) {
   byPerson.forEach((list, pid) => {
     list.sort((x, y) => (x.date < y.date ? -1 : 1));
     const max = list.reduce((m, x) => Math.max(m, x.load), 0);
-    lines.push({ kind: 'day', text: name(pid) + ' would carry up to ' + r1(max) + ' h a day on ' + rangeText(list.map((x) => x.date)) + ', above their effective ' + r1(list[0].cap) + ' h a day (hours per day \u00d7 focus factor \u00d7 allocation).' });
+    lines.push({ kind: 'day', text: name(pid) + ' would carry up to ' + r1(max) + ' h a day on ' + rangeText(list.map((x) => x.date)) + ', above their effective ' + r1(list[0].perDay) + ' h a day (hours per day \u00d7 focus factor \u00d7 allocation).' });
   });
   // sprint total
   const sprintPeople = new Set();
