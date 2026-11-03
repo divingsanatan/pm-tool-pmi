@@ -109,7 +109,7 @@ export function budgetModel(S) {
       const per = (S.people || []).find((p) => p.id === t.person);
       if (!per) return null;
       return {
-        id: per.id, name: per.name || '(unnamed)', role: per.role || '', rate: nz(per.rate), cap: nz(per.cap),
+        id: per.id, name: per.name || '(unnamed)', role: per.role || '', rate: nz(per.rate), cap: t.cap != null && !isNaN(t.cap) ? Math.max(0, nz(t.cap)) : nz(per.cap),
         from: validDate(t.from) ? pd(t.from) : null, to: validDate(t.to) ? pd(t.to) : null, fromS: t.from || '', toS: t.to || '',
         days: 0, hours: 0, cost: 0,
       };

@@ -97,25 +97,36 @@ export function wstat(x) {
 // The labour budget is a list of stakeholders ({ person: id }); their rate and capacity live on the stakeholder itself,
 // so the Budget register and the RACI chart always show the same numbers.
 export const personOf = (S, id) => S.people.find((p) => p.id === id);
+// Capacity % the labour budget uses for one team row. The stakeholder's allocation % (Stakeholders tab) is only the SUGGESTION:
+// until someone types a value on the budget row (team row `cap`) the row follows the allocation; once typed, the row keeps its own
+// value no matter what happens to the allocation or to the work items assigned to that person.
+export const hasOwnCap = (t) => !!t && t.cap != null && !isNaN(t.cap);
+export const budgetCap = (S, t) => {
+  const p = t && personOf(S, t.person);
+  if (!p) return 0;
+  return hasOwnCap(t) ? Math.max(0, nz(t.cap)) : Math.max(0, nz(p.cap));
+};
 export const hourly = (S) => S.team.reduce((a, t) => {
   const p = personOf(S, t.person);
-  return a + (p ? nz(p.rate) * nz(p.cap) : 0);
+  return a + (p ? nz(p.rate) * budgetCap(S, t) : 0);
 }, 0);
 // Labour cost of one stakeholder on this project:
 //   total available hours = the hours their calendar gives them over the plan (working days x hours per day, after team off days and
 //                           their own leave; see capacity.js). It is pulled from the Stakeholders tab until someone types a value on the
 //                           budget row (team row `hours`), which then stays as an adjustment.
-//   available hours       = total available hours x capacity %   (capacity % is the stakeholder's allocation, the same number everywhere)
+//   available hours       = total available hours x capacity %   (capacity % starts as the stakeholder's allocation and can be overridden
+//                           on the budget row; the override never changes the allocation, and the allocation never changes an override)
 //   cost                  = available hours x hourly rate
-// Rate and capacity live on the stakeholder; the optional hours adjustment belongs to this project (the budget team row).
+// Rate lives on the stakeholder; the optional hours adjustment and the optional capacity override belong to this project (the budget team row).
 export function labourOf(S, t, win) {
   const p = personOf(S, t.person);
   if (!p) return null;
   const auto = calendarHours(S, p, win || planWindow(S));
   const manual = t.hours != null && !isNaN(t.hours);
   const total = manual ? Math.max(0, nz(t.hours)) : auto.hours;
-  const avail = total * nz(p.cap);
-  return { total, off: 0, net: total, cap: nz(p.cap), rate: nz(p.rate), avail, cost: avail * nz(p.rate), manual, auto, diff: total - auto.hours };
+  const cap = budgetCap(S, t), capManual = hasOwnCap(t);
+  const avail = total * cap;
+  return { total, off: 0, net: total, cap, capManual, capAuto: Math.max(0, nz(p.cap)), rate: nz(p.rate), avail, cost: avail * nz(p.rate), manual, auto, diff: total - auto.hours };
 }
 export const labourRows = (S) => { const win = planWindow(S); return S.team.map((t) => labourOf(S, t, win)).filter(Boolean); };
 export const labourTotal = (S) => labourRows(S).reduce((a, r) => a + r.cost, 0);
@@ -1036,6 +1047,9 @@ export function normalize(S) {
     if (t.hours != null && !isNaN(t.hours)) t.hours = Math.max(0, nz(t.hours) - Math.max(0, nz(t.off)));
     else delete t.hours;
     delete t.off;
+    // `cap` is an optional capacity override for this project's budget (blank = follow the stakeholder's allocation)
+    if (t.cap != null && !isNaN(t.cap)) t.cap = Math.max(0, nz(t.cap));
+    else delete t.cap;
   });
   // recurring budget lines hold a number of iterations; lines from earlier versions keep the total they used to give
   (S.lines || []).forEach((l) => {
