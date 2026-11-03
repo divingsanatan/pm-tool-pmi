@@ -699,7 +699,28 @@ export function useTasks() {
               if (f.c.tasks.some((k) => k.parent === f.t.id)) f.t.statusSet = true;
             })
           );
-        if (!target.done) return void apply(list);
+        if (!target.done) {
+          // Several items at once (bulk bar, a selection) going back to an open status: work that is already finished is not reopened
+          // silently. A selection can still hold items from an earlier bulk change, so ask before finished work moves back.
+          const fin = list.filter((id) => {
+            const f = findTask(S0, id);
+            return f && f.c.id !== 'backlog' && f.t.status && isDoneStatus(S0, f.t.status);
+          });
+          const rest = list.filter((id) => !fin.includes(id));
+          if (list.length > 1 && fin.length && rest.length) {
+            const doneLabel = (statusesOf(S0).find((x) => x.done) || { label: 'Done' }).label;
+            const n = fin.length;
+            withDecision({
+              text: n + ' of the ' + list.length + ' selected work item' + (list.length === 1 ? ' is' : 's are') + ' already ' + doneLabel + '. Moving ' + (n === 1 ? 'it' : 'them') + ' to ' + target.label + ' would reopen finished work. What would you like to do?',
+              actions: [
+                { label: 'Change only the ' + rest.length + ' not ' + doneLabel.toLowerCase(), primary: true, onClick: () => { clear(); apply(rest); } },
+                { label: 'Reopen the ' + n + ' ' + doneLabel.toLowerCase() + ' ' + plural(n, 'item', 'items') + ' too', onClick: () => { clear(); apply(list); } },
+              ],
+            });
+            return;
+          }
+          return void apply(list);
+        }
         const chosen = new Set(list);
         const open = new Set();
         list.forEach((id) => {

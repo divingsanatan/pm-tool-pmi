@@ -127,7 +127,7 @@ export default function BulkBar({ ids, container, onDone }) {
             items={statusesOf(S).map((st) => ({
               label: (<span className="sm-item"><StatusIcon status={st} size={14} />{st.label}</span>),
               active: tasks.every((t) => t.status === st.id),
-              onClick: () => tk.setStatus(ids, st.id),
+              onClick: () => { tk.setStatus(ids, st.id); onDone(); }, // the selection ends with the action, so it cannot be reused by accident on the next one
             }))}
           />
         )}
