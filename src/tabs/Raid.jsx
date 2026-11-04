@@ -12,6 +12,8 @@ import { hrsf, money, nz } from '../lib/format';
 import '../raid.css';
 
 const TYPES = ['Risk', 'Assumption', 'Issue', 'Dependency'];
+// Dependencies are added on the work items (they then get their RAID entry automatically), so they are not offered as a type to add by hand
+const HAND_TYPES = ['Risk', 'Assumption', 'Issue'];
 const STAT = ['Open', 'Mitigating', 'Closed'];
 const statCls = { Open: 'warn', Mitigating: 'neutral', Closed: 'good' };
 const P_LABELS = ['Rare', 'Unlikely', 'Possible', 'Likely', 'Almost certain'];
@@ -116,7 +118,7 @@ function RaidDrawer({ k, fresh, onClose }) {
         <div className="rd-sec">
           <h3 className="d-h">Basics</h3>
           <div className="d-grid">
-            {auto ? <Fld label="Type"><span className="c ro-field">Dependency</span></Fld> : <Fld label="Type"><SelectCell value={r.type} options={TYPES} onCommit={setType} /></Fld>}
+            {auto ? <Fld label="Type"><span className="c ro-field">Dependency</span></Fld> : <Fld label="Type"><SelectCell value={r.type} options={r.type === 'Dependency' ? TYPES : HAND_TYPES} onCommit={setType} /></Fld>}
             {auto ? <Fld label="Status"><span className="c ro-field">{r.status}{r.depRemoved ? ' (dependency removed)' : ''}</span></Fld> : <Fld label="Status"><SelectCell value={r.status} options={STAT} onCommit={(v) => set('status', v)} /></Fld>}
             <Fld label="Owner"><SelectCell value={r.owner} options={ownerOpts} onCommit={(v) => set('owner', v)} /></Fld>
             <Fld label="ID"><Cell value={r.id} cls={dupId ? 'bad' : ''} label="ID" onCommit={(v) => set('id', v)} /></Fld>
@@ -139,7 +141,10 @@ function RaidDrawer({ k, fresh, onClose }) {
               <p className="msg" style={{ margin: '6px 0 0' }}>{r.depRemoved ? 'The dependency was removed, so this entry was closed and is kept as a record.' : 'Created automatically from a dependency between work items. The description, due date (the predecessor\u2019s date) and status follow the dependency: it closes here when the dependency is satisfied. Edit the dependency on the work item (Dependencies view or work item details). The owner, impact and response below are yours to edit.'}</p>
             </>
           ) : (
-            <RichText html={r.descHtml} text={r.desc} label="Description" placeholder="What is this? Add context, links and details." rows={5} autoFocus={fresh} onCommit={setRich('desc')} />
+            <>
+              <RichText html={r.descHtml} text={r.desc} label="Description" placeholder="What is this? Add context, links and details." rows={5} autoFocus={fresh} onCommit={setRich('desc')} />
+              {r.type === 'Dependency' && <p className="msg" style={{ margin: '6px 0 0' }}>This entry was typed in by hand, so it is not linked to any work item and nothing updates or closes it. Add the dependency on the work item instead (its details, Dependencies section) and it appears here by itself. You can then delete this entry, or change its type.</p>}
+            </>
           )}
         </div>
 
@@ -294,11 +299,11 @@ export default function Raid() {
         <div className="rd-head">
           <div>
             <h2>RAID log</h2>
-            <p className="hint" style={{ margin: 0 }}>Click an item to open and edit it. Risk score is likelihood × impact: High is 15 or more, Medium 8 to 14, Low below 8.</p>
+            <p className="hint" style={{ margin: 0 }}>Click an item to open and edit it. Dependencies are added on the work items and appear here by themselves. Risk score is likelihood × impact: High is 15 or more, Medium 8 to 14, Low below 8.</p>
           </div>
           <div className="rd-add">
             <select className="c" value={newType} onChange={(e) => setNewType(e.target.value)} aria-label="New item type">
-              {TYPES.map((t) => (<option key={t}>{t}</option>))}
+              {HAND_TYPES.map((t) => (<option key={t}>{t}</option>))}
             </select>
             <button className="btn primary" onClick={addRaid}>+ Add {newType.toLowerCase()}</button>
           </div>
