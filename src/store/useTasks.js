@@ -335,13 +335,12 @@ export function useTasks() {
       return true;
     }
 
-    /* Work item hours of a sprint. Two rules, checked on a dry run of the edit (`run`) before anything changes:
-         1. Work items can never add up to more than the sprint's planned hours. The user then chooses: move some work items to the
-            Backlog, or move them to a new sprint (the New sprint form asks for a change request once the project has a baseline).
-         2. Once a baseline exists, the hours of a sprint in it are fixed. A change needs a change request, raised or linked here
-            (kept on the sprint as hoursCrId), unless the sprint's open request already covers it.
-       o.cause: the work items behind the edit (the default is the items the edit created). o.lockDown: lowering hours needs a request too
-       (typing new hours); moving items out of a sprint never does, because that is the way out of rule 1.
+    /* Work item hours of a sprint, checked on a dry run of the edit (`run`) before anything changes:
+       Work items can never add up to more than the sprint's planned hours. The user then chooses: move some work items to the
+       Backlog, or move them to a new sprint (the New sprint form asks for a change request once the project has a baseline).
+       Work item hours that stay inside the planned hours are not held back, baseline or not: the baseline fixes the planned hours
+       (changing those needs a change request, see guardSprint), and that is what a sprint's share of the budget comes from.
+       o.cause: the work items behind the edit (the default is the items the edit created).
        Returns true when the edit was held back. */
     function guardHours(run, o = {}) {
       const S0 = sRef.current;
@@ -357,9 +356,11 @@ export function useTasks() {
         const h = sprintHours(sim, sp);
         const d = r2(h.items - a);
         if (Math.abs(d) < 0.005) return;
+        // Only going over the sprint's planned hours is held back. The baseline fixes the planned hours (changing those needs a change
+        // request, see guardSprint), and work items can never exceed them, so work item hours that stay inside the planned hours
+        // change nothing that was approved and need no request.
         const over = h.planned > 0 && h.items > h.planned + 0.005 && d > 0;
-        const lock = hoursLocked(S0, was) && (d > 0 || !!o.lockDown);
-        if (over || lock) hits.push({ was, sp, before: a, after: h.items, planned: h.planned, over, lock });
+        if (over) hits.push({ was, sp, before: a, after: h.items, planned: h.planned, over });
       });
       if (!hits.length) {
         clear();
@@ -385,7 +386,7 @@ export function useTasks() {
             primary: true,
             onClick: () => update((p) => { run(p, p); cause.forEach((id) => moveSubtree(p, id, p.backlog, true)); }),
           });
-        const sug = h.lock ? null : suggestBacklog(sim, h.sp, excess, cause);
+        const sug = suggestBacklog(sim, h.sp, excess, cause);
         if (sug)
           actions.push({
             label: 'Keep it and move ' + sug.ids.length + ' lower-priority open ' + plural(sug.ids.length, 'item', 'items') + ' (' + hrs(sug.hours) + ') to the Backlog',
@@ -403,37 +404,6 @@ export function useTasks() {
         return true;
       }
 
-      // baseline lock: a change request must cover the new hours
-      const locked = hits.filter((x) => x.lock);
-      const apply = (p, crId) => {
-        run(p, p);
-        const cr = p.cr.find((x) => x.id === crId);
-        locked.forEach((x) => {
-          const sp = containerById(p, x.sp.id);
-          if (sp) sp.hoursCrId = crId;
-          if (cr) cr.log.push({ on: new Date().toISOString().slice(0, 10), text: x.sp.name + ' work item hours set to ' + hrs(x.after) + ' (baselined with ' + hrs(x.before) + ')' });
-        });
-      };
-      const open = sprintCrs(S0).slice(-3).reverse();
-      const up = locked.some((x) => x.after > x.before);
-      const actions = [{
-        label: 'Raise a new change request',
-        primary: true,
-        onClick: () =>
-          update((p) => {
-            const id = uid();
-            p.cr.push(blankCr(p, id, {
-              title: 'Change ' + locked.map((x) => x.sp.name).join(', ') + ' work item hours',
-              kind: up ? 'Enhancement or new requirement' : 'Corrective action', affects: ['Scope', 'Cost'], cost: 0, days: 0,
-              desc: locked.map((x) => x.sp.name + ': work item hours change from ' + hrs(x.before) + ' (baselined) to ' + hrs(x.after) + '.').join(' '),
-            }));
-            apply(p, id);
-          }),
-      }].concat(open.map((cr) => ({ label: 'Link to ' + cr.code + (cr.title ? ' · ' + cr.title : ''), onClick: () => update((p) => apply(p, cr.id)) })));
-      withDecision({
-        text: 'The baseline (' + b0.version + ') fixes the work item hours of ' + locked.map((x) => x.sp.name + ' (' + hrs(x.before) + ')').join(', ') + '. This change makes them ' + locked.map((x) => hrs(x.after)).join(', ') + ', so a change request must cover it. Cancel keeps the hours as they are.',
-        actions,
-      });
       return true;
     }
 
