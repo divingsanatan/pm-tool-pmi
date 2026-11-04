@@ -214,7 +214,8 @@ export default function BacklogView() {
   const allBranchIds = (t) => [t.id].concat((kids.get(t.id) || []).filter((k) => shown.has(k.id)).flatMap(allBranchIds));
   const order = [];
   groups.forEach((g) => !shut[g.key] && g.tasks.forEach((t) => branchIds(t).forEach((id) => !order.includes(id) && order.push(id))));
-  const pick = useSelect(tasks.map((t) => t.id), order, S.id);
+  // selecting a parent selects every work item below it (collapsed or not), as in the sprint list; clearing it clears them too
+  const pick = useSelect(tasks.map((t) => t.id), order, S.id, (id) => subtreeIds(c.tasks, id).filter((x) => shown.has(x)));
 
   return (
     <div className="sprint backlog">
