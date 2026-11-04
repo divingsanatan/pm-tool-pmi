@@ -3,6 +3,7 @@ import { useStore } from '../store/StoreContext';
 import { useTasks } from '../store/useTasks';
 import { useUI } from '../components/UI';
 import { Area, Cell, SelectCell } from '../components/Field';
+import RichText from '../components/RichText';
 import { Avatar, StatusIcon, TypeBadge } from '../components/Bits';
 import { AssigneeMenu, TagMenu } from '../components/Pickers';
 import { EditableTag } from '../components/Tags';
@@ -147,7 +148,7 @@ export default function TaskDrawer({ taskId, onClose, onOpen }) {
         </div>
 
         <h3 className="d-h">Description</h3>
-        <Area value={t.description} placeholder="Add details, acceptance criteria, links…" onCommit={(v) => tk.patch(t.id, { description: v })} label="Description" />
+        <RichText key={t.id} html={t.descriptionHtml} text={t.description} placeholder="Add details, acceptance criteria, links…" label="Description" rows={4} onCommit={({ html, text }) => tk.patch(t.id, { description: text, descriptionHtml: html })} />
 
         <h3 className="d-h">Child items {kids.length > 0 && <span className="msg">{kids.filter((k) => isDoneStatus(S, k.status)).length}/{kids.length} done</span>}</h3>
         <div className="d-subs">

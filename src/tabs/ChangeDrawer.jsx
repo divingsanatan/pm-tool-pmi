@@ -3,6 +3,7 @@ import { useStore } from '../store/StoreContext';
 import { useChange } from '../store/useChange';
 import { useUI } from '../components/UI';
 import { Area, Cell, SelectCell } from '../components/Field';
+import RichText from '../components/RichText';
 import { addDays, fdate, today } from '../lib/dates';
 import { newRaidId, reserves } from '../lib/calc';
 import { money, nz, pc } from '../lib/format';
@@ -89,6 +90,10 @@ export default function ChangeDrawer({ id, onClose }) {
 
   const st = cr.status;
   const set = (patch) => ch.patch(cr.id, patch);
+  // a rich text box for one text field; the plain copy stays in cr[f] (lists, checks, the activity log), the formatted copy in cr[f + 'Html']
+  const rich = (f, label, rows, disabled, placeholder) => (
+    <RichText key={cr.id + f} html={cr[f + 'Html']} text={cr[f]} label={label} rows={rows} disabled={disabled} placeholder={placeholder} onCommit={({ html, text }) => set({ [f]: text, [f + 'Html']: html })} />
+  );
   const base = currentBaseline(S);
   const people = [['', '— select —']].concat(S.people.filter((p) => p.name).map((p) => [p.id, p.name]));
   const who = (pid) => (S.people.find((p) => p.id === pid) || {}).name || '';
@@ -192,10 +197,10 @@ export default function ChangeDrawer({ id, onClose }) {
             </div>
           </div>
           <label className="fld" style={{ gridColumn: '1 / -1' }}>Description: what is changing
-            <Area value={cr.desc} rows={3} label="Description" disabled={lockReq} placeholder="Describe the change precisely" onCommit={(v) => set({ desc: v })} />
+            {rich('desc', 'Description', 3, lockReq, 'Describe the change precisely')}
           </label>
           <label className="fld" style={{ gridColumn: '1 / -1' }}>Justification: why it is needed
-            <Area value={cr.why} rows={3} label="Justification" disabled={lockReq} placeholder="The problem, opportunity, requirement or defect behind the request" onCommit={(v) => set({ why: v })} />
+            {rich('why', 'Justification', 3, lockReq, 'The problem, opportunity, requirement or defect behind the request')}
           </label>
           <label className="fld" style={{ gridColumn: '1 / -1' }}>Evidence or reference
             <Cell value={cr.ref} label="Reference" disabled={lockReq} placeholder="Link, document name or ticket number" onCommit={(v) => set({ ref: v || '' })} />
@@ -262,7 +267,7 @@ export default function ChangeDrawer({ id, onClose }) {
           )}
           {[['iScope', 'Scope impact'], ['iQuality', 'Quality impact'], ['iResources', 'Resource impact'], ['iRisk', 'Risk impact (new or changed risks)'], ['alt', 'Alternatives considered'], ['noop', 'If the change is not made']].map(([k, l]) => (
             <label key={k} className="fld" style={{ gridColumn: '1 / -1' }}>{l}
-              <Area value={cr[k]} rows={2} label={l} disabled={lockImp} onCommit={(v) => set({ [k]: v })} />
+              {rich(k, l, 2, lockImp)}
             </label>
           ))}
         </div>
@@ -278,7 +283,7 @@ export default function ChangeDrawer({ id, onClose }) {
                 <Cell type="date" value={cr.decidedOn} disabled={lockDec} onCommit={(v) => set({ decidedOn: v || '' })} />
               </label>
               <label className="fld" style={{ gridColumn: '1 / -1' }}>Reason for the decision
-                <Area value={cr.rationale} rows={2} label="Reason for the decision" disabled={lockDec} onCommit={(v) => set({ rationale: v })} />
+                {rich('rationale', 'Reason for the decision', 2, lockDec)}
               </label>
               <label className="fld">Approved cost impact
                 <Cell type="num" cls="n" value={cr.apCost} disabled={lockDec} onCommit={(v) => set({ apCost: v })} />
@@ -293,7 +298,7 @@ export default function ChangeDrawer({ id, onClose }) {
                 <Cell type="date" value={cr.target} disabled={lockOwn} onCommit={(v) => set({ target: v || '' })} />
               </label>
               <label className="fld" style={{ gridColumn: '1 / -1' }}>Conditions or constraints
-                <Area value={cr.conditions} rows={2} label="Conditions" disabled={lockOwn} onCommit={(v) => set({ conditions: v })} />
+                {rich('conditions', 'Conditions', 2, lockOwn)}
               </label>
             </div>
           </>
@@ -336,7 +341,7 @@ export default function ChangeDrawer({ id, onClose }) {
                 </p>
                 {rec.mismatch && (
                   <label className="fld" style={{ marginTop: 8 }}>Why the plan differs from the approval
-                    <Area value={cr.reconcile} rows={2} label="Reconciliation note" onCommit={(v) => set({ reconcile: v })} />
+                    {rich('reconcile', 'Reconciliation note', 2, false)}
                   </label>
                 )}
               </div>
@@ -349,7 +354,7 @@ export default function ChangeDrawer({ id, onClose }) {
         {showClose && (
           <>
             <h3 className="d-h">6 · Verification</h3>
-            <Area value={cr.verified} rows={2} label="Verification" disabled={lockClose} placeholder="How you confirmed the change works and the new baseline is correct" onCommit={(v) => set({ verified: v })} />
+            {rich('verified', 'Verification', 2, lockClose, 'How you confirmed the change works and the new baseline is correct')}
           </>
         )}
 

@@ -221,7 +221,7 @@ function collapse(events) {
 }
 
 const META_SKIP = new Set([]);
-const CR_SKIP = ['log', 'code', 'submittedOn', 'decidedOn', 'implementedOn', 'closedOn', 'baselineId'];
+const CR_SKIP = ['log', 'code', 'submittedOn', 'decidedOn', 'implementedOn', 'closedOn', 'baselineId'].concat(['desc', 'why', 'iScope', 'iQuality', 'iResources', 'iRisk', 'alt', 'noop', 'rationale', 'conditions', 'reconcile', 'verified'].map((k) => k + 'Html')); // the formatted copy of a text field is not a separate change
 
 // What changed between two versions of a project, as activity events (without time or author)
 export function diffProject(before, after) {
