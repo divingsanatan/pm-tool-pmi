@@ -8,6 +8,7 @@ import { cleanEffort, nz } from '../lib/format';
 import { DAY, fdate, pd } from '../lib/dates';
 import { blankCr, currentBaseline, sprintCrs } from '../lib/change';
 import { offDayInfo } from '../lib/offdays';
+import { deleteDepNote, depsOfDeleted, dropDepRaid } from '../lib/deps';
 import { newLoadIssues } from '../lib/loadGuard';
 import { baselinedDates, clampDates, datePatchViolations, dateCrOf, gapWindow, hoursCrOf, hoursLocked, inWin, nextFreeDay, outsideBaseline, rollover, sane, sprintClash, sprintCovers, tasksOutside, windowOf } from '../lib/sprintGuard';
 
@@ -152,6 +153,8 @@ function removeIds(p, ids) {
     const f = findTask(p, id);
     if (f) subtreeIds(f.c.tasks, id).forEach((x) => gone.add(x));
   });
+  // the dependencies of the deleted items go with them, together with their automatic RAID entries
+  dropDepRaid(p, new Set(depsOfDeleted(p, ids).links.map((e) => e.dep.id)));
   [...p.sprints, p.backlog].forEach((c) => (c.tasks = c.tasks.filter((t) => !gone.has(t.id))));
 }
 
@@ -873,6 +876,10 @@ export function useTasks() {
         update(run);
       },
       // deleting an item deletes everything below it
+      // sentence for the delete confirmations: which dependencies (and RAID entries) go with the items
+      depNote(ids) {
+        return deleteDepNote(sRef.current, ids);
+      },
       removeMany(ids) {
         update((p) => void removeIds(p, ids));
       },

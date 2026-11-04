@@ -187,7 +187,7 @@ export default function TaskDrawer({ taskId, onClose, onOpen }) {
             onClick={() =>
               ui.ask({
                 title: 'Delete work item?',
-                body: `“${t.name}”${below.length > 1 ? ' and its ' + (below.length - 1) + ' child item' + (below.length > 2 ? 's' : '') : ''} will be permanently deleted.`,
+                body: `“${t.name}”${below.length > 1 ? ' and its ' + (below.length - 1) + ' child item' + (below.length > 2 ? 's' : '') : ''} will be permanently deleted.` + tk.depNote([t.id]),
                 confirm: 'Delete',
                 danger: true,
                 onConfirm: () => {

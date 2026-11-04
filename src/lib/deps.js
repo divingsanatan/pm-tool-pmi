@@ -179,6 +179,44 @@ export function checkAdd(S, succId, predId, extText = '') {
   return '';
 }
 
+/* ---------- deleting work items ---------- */
+// The dependencies that disappear when these work items (and everything below them) are deleted: every link where one of them waits
+// (successor) or is waited on (predecessor). `freed` lists the surviving work items that lose a prerequisite and so stop waiting.
+export function depsOfDeleted(S, rootIds) {
+  const gone = new Set();
+  rootIds.forEach((id) => {
+    const f = findTask(S, id);
+    if (f) subtreeIds(f.c.tasks, id).forEach((x) => gone.add(x));
+  });
+  const links = buildDeps(S).all.filter((e) => gone.has(e.succ.id) || (e.pred && gone.has(e.pred.id)));
+  const freed = [];
+  links.forEach((e) => {
+    if (e.pred && gone.has(e.pred.id) && !gone.has(e.succ.id) && !freed.some((t) => t.id === e.succ.id)) freed.push(e.succ);
+  });
+  return { gone, links, freed };
+}
+// Deleting a work item removes its dependencies, and the RAID entries that were created automatically for them
+// (a RAID entry about a work item that no longer exists would only be noise). Entries of dependencies removed on their own stay as a record.
+export function dropDepRaid(p, depIds) {
+  if (!depIds.size) return;
+  const keys = new Set();
+  p.raid = (p.raid || []).filter((r) => {
+    if (r.auto === 'dependency' && r.depId && depIds.has(r.depId)) { keys.add(r.key); return false; }
+    return true;
+  });
+  (p.cr || []).forEach((c) => { if (Array.isArray(c.raid)) c.raid = c.raid.filter((k) => !keys.has(k)); });
+}
+// the sentence added to the "Delete work item?" confirmations
+export function deleteDepNote(S, rootIds) {
+  const { links, freed } = depsOfDeleted(S, rootIds);
+  if (!links.length) return '';
+  const n = links.length;
+  const nm = (t) => (t.code ? t.code + ' ' : '') + '“' + t.name + '”';
+  let s = ' ' + n + ' dependenc' + (n === 1 ? 'y' : 'ies') + ' linked to ' + (rootIds.length > 1 ? 'them' : 'it') + ' will be removed too, and ' + (n === 1 ? 'its entry' : 'their entries') + ' deleted from the RAID log.';
+  if (freed.length) s += ' ' + freed.slice(0, 3).map(nm).join(', ') + (freed.length > 3 ? ' and ' + (freed.length - 3) + ' more' : '') + ' will no longer wait on a deleted work item.';
+  return s;
+}
+
 /* ---------- change control ---------- */
 export const hasBaseline = (S) => !!(S.baselines && S.baselines.length);
 export const OPEN_CR = ['Draft', 'Submitted', 'Under review', 'Approved'];

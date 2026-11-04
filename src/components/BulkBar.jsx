@@ -104,7 +104,7 @@ export default function BulkBar({ ids, container, onDone }) {
       onClick: () =>
         ui.ask({
           title: 'Delete ' + n + ' work item' + (n > 1 ? 's' : '') + '?',
-          body: 'The selected work items and everything below them will be permanently deleted.',
+          body: 'The selected work items and everything below them will be permanently deleted.' + tk.depNote(ids),
           confirm: 'Delete',
           danger: true,
           onConfirm: () => {

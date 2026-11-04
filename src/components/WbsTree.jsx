@@ -147,7 +147,7 @@ export default function WbsTree({ ids, onOpen }) {
           const n = subtreeIds(c.tasks, t.id).length - 1;
           ui.ask({
             title: 'Delete work item?',
-            body: `“${t.name}”${n ? ' and its ' + n + ' child item' + (n > 1 ? 's' : '') : ''} will be permanently deleted.`,
+            body: `“${t.name}”${n ? ' and its ' + n + ' child item' + (n > 1 ? 's' : '') : ''} will be permanently deleted.` + tk.depNote([t.id]),
             confirm: 'Delete',
             danger: true,
             onConfirm: () => tk.remove(t.id),
