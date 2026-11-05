@@ -3,9 +3,21 @@
 .tl-top .hint{margin:0 0 14px;max-width:78ch}
 
 /* controls: one quiet row; the two toggles on the right are chips, the rest are segmented controls */
-.tl-tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 14px}
+.tl-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(176px,1fr));gap:10px;margin:0 0 14px}
+.tl-k{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);min-width:0}
+.tl-k .l{color:var(--muted);font-size:12.5px}
+.tl-k .v{font:600 20px/1.25 var(--f-body);font-variant-numeric:tabular-nums}
+.tl-k .v.good,.tl-k .s.good{color:var(--good)}.tl-k .v.warn{color:var(--warn)}.tl-k .v.bad,.tl-k .s.bad{color:var(--bad)}
+.tl-k .s{color:var(--muted);font-size:12.5px;overflow-wrap:anywhere}
+
+/* controls: a left group (what to show) and a right group (toggles); whole groups wrap, never single controls */
+.tl-tools{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;margin:0 0 14px}
+.tl-grp{display:flex;flex-wrap:wrap;align-items:center;gap:10px;min-width:0}
+.tl-grp:last-child{margin-left:auto}
 .tl-tools .seg button{padding:6px 14px;font-size:13px}
-.tl-sp{flex:1 1 16px}
+.tl-tools .c{width:auto;min-width:0}
+.tl-tools select.c{min-width:190px;max-width:min(320px,100%)}
+.tl-tools input.c{width:9.5em}
 .tl-f{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px}
 .tl-chip{appearance:none;display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font:600 13px var(--f-body);padding:6px 13px;border-radius:99px;cursor:pointer}
 .tl-chip i{width:8px;height:8px;border-radius:50%;border:1.5px solid currentColor;box-sizing:border-box}
@@ -14,7 +26,7 @@
 .tl-chip[aria-pressed="true"] i{background:currentColor}
 
 /* the chart scrolls inside its own frame, so the date header and the name column stay in view */
-.gantt{--lw:320px;position:relative;overflow:auto;max-height:min(76vh,880px);max-width:100%;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.gantt{--lw:340px;position:relative;overflow:auto;max-height:min(76vh,880px);max-width:100%;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
 .g-in{position:relative;min-width:calc(var(--lw) + var(--tw))}
 .g-row{display:flex;min-height:46px;border-bottom:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
 .g-row:not(.g-h):hover,.g-row:not(.g-h):hover .g-lab{background:var(--row)}
@@ -24,6 +36,11 @@
 .g-lab{flex:none;box-sizing:border-box;width:var(--lw);position:sticky;left:0;z-index:3;background:var(--surface);padding:11px 12px 11px 4px;display:flex;align-items:flex-start;gap:7px;border-right:1px solid var(--line);font-size:13.5px;line-height:1.35;box-shadow:6px 0 8px -8px rgba(0,0,0,.35)}
 .g-name{flex:1;min-width:0;overflow-wrap:anywhere}
 .g-name small{display:block;margin-top:1px;color:var(--muted);font-size:12px;font-weight:400}
+.g-nm{display:block}
+.g-meta{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;margin-top:2px;color:var(--muted);font-size:12px;font-weight:400;font-variant-numeric:tabular-nums}
+.g-tag{font-style:normal;font-weight:600;font-size:11px;line-height:16px;padding:0 7px;border-radius:99px;background:var(--line);color:var(--muted)}
+.g-tag.bad{background:var(--bad-bg);color:var(--bad)}
+.g-tag.crit{background:none;color:var(--bad);box-shadow:inset 0 0 0 1px var(--bad)}
 .g-code{flex:none;min-width:26px;padding-top:1px;color:var(--muted);font:12px/1.5 var(--f-mono);font-variant-numeric:tabular-nums}
 .g-lab>svg,.g-lab>.tb{flex:none;margin-top:3px}
 .g-ind{flex:none;align-self:stretch;width:14px;margin:-11px 0 -11px 4px;border-left:1px solid var(--line)}
@@ -47,7 +64,7 @@ button.g-exp:hover{background:var(--line);color:var(--ink)}
 .g-m{padding-left:8px;border-left:1px solid var(--line);color:var(--ink)}
 .g-w{justify-content:center;border-left:1px solid color-mix(in srgb,var(--line) 70%,transparent);font:500 11.5px var(--f-mono);font-variant-numeric:tabular-nums}
 .g-w.we{opacity:.6}
-.g-w.now{color:var(--accent);font-weight:700;opacity:1}
+.g-w.now{background:var(--bad);color:var(--surface);font-weight:700;opacity:1;border-left-color:transparent}
 .g-s{top:4px;bottom:4px;padding:0 8px;border-radius:6px;background:var(--accent-soft);color:var(--accent);text-overflow:ellipsis}
 .g-s.alt{background:var(--warn-bg);color:var(--warn)}
 
@@ -73,7 +90,10 @@ button.g-exp:hover{background:var(--line);color:var(--ink)}
 .g-gl{position:absolute;top:0;bottom:0;width:1px;background:color-mix(in srgb,var(--line) 65%,transparent)}
 .g-we{position:absolute;top:0;bottom:0;background:color-mix(in srgb,var(--ink) 4%,transparent)}
 .g-today{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--bad);opacity:.8}
-.g-tnow{position:absolute;top:50%;z-index:2;transform:translate(-50%,-50%);padding:1px 8px;border-radius:99px;background:var(--bad);color:var(--surface);font:700 10.5px/16px var(--f-body);white-space:nowrap}
+/* baseline: dashed line at the baselined finish, and the baselined window of a sprint that has moved */
+.g-bl{position:absolute;top:0;bottom:0;width:0;border-left:2px dashed var(--muted);margin-left:-1px;opacity:.9}
+.g-bl b{position:absolute;top:4px;right:5px;padding:0 6px;border-radius:4px;background:var(--surface);color:var(--muted);font:600 11px/18px var(--f-body);white-space:nowrap}
+.g-ghost{position:absolute;bottom:7px;height:6px;box-sizing:border-box;border:1.5px dashed var(--muted);border-radius:3px;opacity:.85}
 .g-empty{position:sticky;left:0;box-sizing:border-box;width:min(100%,640px);padding:36px 20px;color:var(--muted)}
 
 /* legend */
@@ -89,6 +109,9 @@ button.g-exp:hover{background:var(--line);color:var(--ink)}
 .k-ln{width:22px;height:0;border-top:2px solid var(--muted)}
 .k-ln.met{border-color:var(--good)}
 .k-ln.bad{border-top-style:dashed;border-color:var(--bad)}
+.k-gh{width:22px;height:6px;box-sizing:border-box;border:1.5px dashed var(--muted);border-radius:3px}
+.k-bl{width:0;height:12px;border-left:2px dashed var(--muted)}
+.k-td{width:2px;height:12px;background:var(--bad)}
 
 @media (max-width:860px){.g-s{font-size:11px}}
 @media (max-width:600px){

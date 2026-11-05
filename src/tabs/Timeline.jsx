@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from '../store/StoreContext';
-import { roll, wbsOf, wstat } from '../lib/calc';
-import { DAY, fdate, pd } from '../lib/dates';
-import { nz, pc } from '../lib/format';
+import { projectEvm, roll, wbsOf, wstat } from '../lib/calc';
+import { currentBaseline, drift, signedDays, signedMoney } from '../lib/change';
+import { DAY, fdate, pd, today } from '../lib/dates';
+import { hrsf, money, nz, pc } from '../lib/format';
 import { DEFAULT_TL, SCALES, SCOPES, buildAxis, pickedSprint } from '../lib/gantt';
 import { Fld } from '../components/Field';
 import { TypeBadge } from '../components/Bits';
@@ -12,7 +13,7 @@ import '../deps.css';
 import '../timeline.css';
 
 const HH = 78; // three sticky header rows of 26px
-const MIN_H = 46; // a work item row is at least this tall; longer names wrap and the row grows
+const MIN_H = 52; // a work item row is at least this tall; longer names wrap and the row grows
 
 function Bar({ s, f, pct, cls, ax, tip, note }) {
   s = s || f;
@@ -36,6 +37,16 @@ function Bar({ s, f, pct, cls, ax, tip, note }) {
       <i style={{ width: fill.toFixed(1) + 'px' }} />
     </div>
   );
+}
+
+// the baselined window of a sprint, drawn as a dashed outline under its bar when the sprint has moved since
+function Ghost({ s, f, ax, tip }) {
+  if (!s || !f) return null;
+  const a = pd(s), b = pd(f);
+  if (b < ax.r0 || a > ax.r1) return null;
+  const l = Math.max(0, ((a - ax.r0) / DAY) * ax.ppd);
+  const r = Math.min(ax.total, ((b - ax.r0) / DAY + 1) * ax.ppd);
+  return <div className="g-ghost" style={{ left: l.toFixed(1) + 'px', width: Math.max(6, r - l).toFixed(1) + 'px' }} title={tip} />;
 }
 
 const cpNote = (n) => (!n || !n.linked ? '' : n.critical ? 'Critical path: no float' : 'Float ' + n.float + ' working day' + (n.float === 1 ? '' : 's'));
@@ -113,6 +124,19 @@ export default function Timeline() {
     }
     return true;
   });
+  // schedule picture for the PM: finish against the baseline, progress against plan (EVM), critical path, what is late or broken
+  const base = currentBaseline(S);
+  const dr = drift(S);
+  const evm = projectEvm(S);
+  const leaves = everyRow.filter((x) => x.type === 'WP');
+  const todayD = pd(today());
+  const lateN = leaves.filter((x) => wstat(x) === 'Late').length;
+  const brokenN = di.all.filter((e) => e.ev && e.ev.state === 'conflict').length;
+  const critN = di.cpm.list.length;
+  const finish = dr ? dr.live.end : leaves.reduce((m, x) => (x.finish && x.finish > m ? x.finish : m), '');
+  const nextMs = everyRow.filter((x) => x.taskId && typeOf(S, x.kind).milestone && x.finish && pd(x.finish) >= todayD).sort((a, b) => (a.finish < b.finish ? -1 : 1))[0];
+  const spiTone = evm.spi == null ? '' : evm.spi >= 0.95 ? 'good' : evm.spi >= 0.8 ? 'warn' : 'bad';
+  const nameOfPerson = (id) => { const p = S.people.find((q) => q.id === id); return p ? (p.name || '').trim().split(/\s+/)[0] : ''; };
   const parents = everyRow.filter((x) => x.type === 'Sum').map((x) => x.taskId);
   const itemCount = rows.filter((x) => x.type !== 'Phase').length;
   const flip = (id) => setShut((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -121,11 +145,13 @@ export default function Timeline() {
   const jumpToday = () => {
     if (ax.todayX == null || !box.current) return;
     const lw = parseFloat(getComputedStyle(box.current).getPropertyValue('--lw')) || 320;
-    box.current.scrollTo({ left: Math.max(0, lw + ax.todayX - box.current.clientWidth / 2), behavior: 'smooth' });
+    box.current.scrollTo({ left: Math.max(0, ax.todayX - (box.current.clientWidth - lw) / 2), behavior: 'smooth' });
   };
 
   // dependency arrows between the visible rows
   const G = 9;
+  // the baselined finish, as a dashed line at the end of that day
+  const blX = base && base.end && pd(base.end) >= ax.r0 && pd(base.end) <= ax.r1 ? ((pd(base.end) - ax.r0) / DAY + 1) * ax.ppd : null;
   const rowTop = (i) => (pos.tops[i] != null ? pos.tops[i] : i * MIN_H);
   const rowH = (i) => (pos.hs[i] != null ? pos.hs[i] : MIN_H);
   const chartH = rows.length ? rowTop(rows.length - 1) + rowH(rows.length - 1) : 0;
@@ -159,32 +185,63 @@ export default function Timeline() {
     <div className="card tl">
       <div className="tl-top">
         <h2>Timeline</h2>
-        <p className="hint">{itemCount} work item{itemCount === 1 ? '' : 's'} across {S.sprints.length} sprint{S.sprints.length === 1 ? '' : 's'}. The filled part of a bar is percent complete, red is late, and the red line is today.</p>
+        <p className="hint">{itemCount === everyRow.filter((x) => x.type !== 'Phase').length ? itemCount + ' work item' + (itemCount === 1 ? '' : 's') + ' across ' + S.sprints.length + ' sprint' + (S.sprints.length === 1 ? '' : 's') : 'Showing ' + itemCount + ' of ' + everyRow.filter((x) => x.type !== 'Phase').length + ' work items'}, as of {fdate(today())}. The filled part of a bar is percent complete; Float is in working days.</p>
+      </div>
+
+      <div className="tl-kpis">
+        <div className="tl-k">
+          <span className="l">Forecast finish</span>
+          <span className="v">{finish ? fdate(finish) : '–'}</span>
+          <span className={'s' + (dr && dr.dDays > 0 ? ' bad' : dr && dr.dDays < 0 ? ' good' : '')}>{base ? 'Baseline ' + fdate(base.end) + ' · ' + (dr.dDays ? signedDays(dr.dDays) : 'on the baseline') : 'No baseline set yet'}</span>
+        </div>
+        <div className="tl-k">
+          <span className="l">Progress</span>
+          <span className="v">{evm.hasPlan && evm.pctComplete != null ? pc(evm.pctComplete, 0) : '–'}</span>
+          <span className="s">{evm.hasPlan && evm.bac ? 'Planned by today ' + pc(evm.pv / evm.bac, 0) : 'Enter planned hours to measure'}</span>
+        </div>
+        <div className="tl-k">
+          <span className="l">Schedule performance</span>
+          <span className={'v ' + spiTone}>{evm.spi != null ? 'SPI ' + evm.spi.toFixed(2) : '–'}</span>
+          <span className="s">{evm.sv != null ? 'Schedule variance ' + signedMoney(Math.round(evm.sv), money) : 'Needs dated sprints and planned hours'}</span>
+        </div>
+        <div className="tl-k">
+          <span className="l">Critical path</span>
+          <span className="v">{critN ? critN + ' item' + (critN === 1 ? '' : 's') : '–'}</span>
+          <span className="s">{critN ? di.cpm.length + ' working days, ends ' + fdate(di.cpm.end) : di.all.length ? 'Linked work has float, none is critical' : 'Add dependencies to find it'}</span>
+        </div>
+        <div className="tl-k">
+          <span className="l">Needs attention</span>
+          <span className={'v ' + (lateN || brokenN ? 'bad' : 'good')}>{lateN + brokenN === 0 ? 'None' : lateN + ' late'}</span>
+          <span className="s">{brokenN ? brokenN + ' dependenc' + (brokenN === 1 ? 'y' : 'ies') + ' broken by the plan' : nextMs ? 'Next milestone: ' + nextMs.name + ', ' + fdate(nextMs.finish) : lateN ? 'past their due date' : 'Nothing late or broken'}</span>
+        </div>
       </div>
 
       <div className="tl-tools">
-        <div className="seg" role="group" aria-label="Zoom">
-          {SCALES.map(([id, l]) => (<button key={id} aria-pressed={ax.scale === id} onClick={() => set({ scale: id })}>{l}</button>))}
+        <div className="tl-grp">
+          <div className="seg" role="group" aria-label="Zoom">
+            {SCALES.map(([id, l]) => (<button key={id} aria-pressed={ax.scale === id} onClick={() => set({ scale: id })}>{l}</button>))}
+          </div>
+          <div className="seg" role="group" aria-label="Range">
+            {SCOPES.map(([id, l]) => (<button key={id} aria-pressed={tl.scope === id} onClick={() => setScope(id)}>{l}</button>))}
+          </div>
+          {tl.scope === 'sprint' && (
+            <select className="c" value={sp ? sp.id : ''} onChange={(e) => set({ sprintId: e.target.value })} aria-label="Sprint">
+              {S.sprints.map((s) => (<option key={s.id} value={s.id}>{s.name}{s.start && s.end ? ' · ' + fdate(s.start) + ' – ' + fdate(s.end) : ''}</option>))}
+              {!S.sprints.length && <option value="">No sprints</option>}
+            </select>
+          )}
+          {tl.scope === 'custom' && (
+            <>
+              <label className="tl-f">From<input className="c" type="date" value={tl.from} onChange={(e) => set({ from: e.target.value })} aria-label="From date" /></label>
+              <label className="tl-f">To<input className="c" type="date" value={tl.to} onChange={(e) => set({ to: e.target.value })} aria-label="To date" /></label>
+            </>
+          )}
         </div>
-        <div className="seg" role="group" aria-label="Range">
-          {SCOPES.map(([id, l]) => (<button key={id} aria-pressed={tl.scope === id} onClick={() => setScope(id)}>{l}</button>))}
+        <div className="tl-grp">
+          <button className="tl-chip" aria-pressed={showDeps} onClick={() => setShowDeps(!showDeps)}><i />Dependencies</button>
+          <button className="tl-chip" aria-pressed={showCrit} onClick={() => setShowCrit(!showCrit)}><i />Critical path</button>
+          <button className="btn" onClick={jumpToday} disabled={ax.todayX == null} title={ax.todayX == null ? 'Today is outside the range shown, so there is nothing to scroll to' : 'Scroll the chart to today'}>Today</button>
         </div>
-        {tl.scope === 'sprint' && (
-          <select className="c" value={sp ? sp.id : ''} onChange={(e) => set({ sprintId: e.target.value })} aria-label="Sprint">
-            {S.sprints.map((s) => (<option key={s.id} value={s.id}>{s.name}{s.start && s.end ? ' · ' + fdate(s.start) + ' – ' + fdate(s.end) : ''}</option>))}
-            {!S.sprints.length && <option value="">No sprints</option>}
-          </select>
-        )}
-        {tl.scope === 'custom' && (
-          <>
-            <label className="tl-f">From<input className="c" type="date" value={tl.from} onChange={(e) => set({ from: e.target.value })} aria-label="From date" /></label>
-            <label className="tl-f">To<input className="c" type="date" value={tl.to} onChange={(e) => set({ to: e.target.value })} aria-label="To date" /></label>
-          </>
-        )}
-        <span className="tl-sp" />
-        <button className="tl-chip" aria-pressed={showDeps} onClick={() => setShowDeps(!showDeps)}><i />Dependencies</button>
-        <button className="tl-chip" aria-pressed={showCrit} onClick={() => setShowCrit(!showCrit)}><i />Critical path</button>
-        <button className="btn" onClick={jumpToday} disabled={ax.todayX == null} title={ax.todayX == null ? 'Today is outside this range' : 'Scroll to today'}>Today</button>
       </div>
       {(ax.notice || hidden > 0) && (
         <p className="msg" style={{ marginBottom: 10 }}>{ax.notice} {hidden > 0 ? hidden + ' task' + (hidden > 1 ? 's' : '') + ' outside this range (or without dates) are hidden.' : ''}</p>
@@ -204,8 +261,7 @@ export default function Timeline() {
           <div className="g-row g-h h2">
             <div className="g-lab" />
             <div className="g-trk">
-              {ax.bot.map((c, i) => (<span key={i} className={'g-w ' + c.cls} style={{ left: c.l.toFixed(1) + 'px', width: c.w.toFixed(1) + 'px' }} title={c.title}>{c.label}</span>))}
-              {ax.todayX != null && <span className="g-tnow" style={{ left: ax.todayX.toFixed(1) + 'px' }}>Today</span>}
+              {ax.bot.map((c, i) => (<span key={i} className={'g-w ' + c.cls} style={{ left: c.l.toFixed(1) + 'px', width: c.w.toFixed(1) + 'px' }} title={c.title + (c.cls.includes('now') ? ' (today)' : '')} aria-current={c.cls.includes('now') ? 'date' : undefined}>{c.label}</span>))}
             </div>
           </div>
           <div className="g-row g-h h3">
@@ -223,13 +279,19 @@ export default function Timeline() {
           {rows.map((x, i) => {
             if (x.type === 'Phase') {
               const r = roll(S, x);
+              const sprintNow = S.sprints.find((q) => q.id === x.sprintId);
+              const bsAll = base && base.sprints ? base.sprints.find((q) => q.id === x.sprintId) : null;
+              const bs = bsAll && sprintNow && bsAll.start && bsAll.end && (bsAll.start !== sprintNow.start || bsAll.end !== sprintNow.end) ? bsAll : null;
               return (
                 <div key={i} className="g-row g-ph" data-r={i}>
                   <div className="g-lab" title={x.name}>
                     <span className="g-code">{x.id}</span>
                     <span className="g-name"><b>{x.name}</b><small>{r.n} item{r.n === 1 ? '' : 's'}{r.pct != null ? ' · ' + pc(r.pct, 0) + ' complete' : ''}</small></span>
                   </div>
-                  <div className="g-trk"><Bar s={r.s} f={r.f} pct={r.pct} cls="ph" ax={ax} tip={x.name} /></div>
+                  <div className="g-trk">
+                    <Bar s={r.s} f={r.f} pct={r.pct} cls="ph" ax={ax} tip={x.name} />
+                    {bs && <Ghost s={bs.start} f={bs.end} ax={ax} tip={'Baselined ' + fdate(bs.start) + ' – ' + fdate(bs.end)} />}
+                  </div>
                 </div>
               );
             }
@@ -248,7 +310,17 @@ export default function Timeline() {
                   )}
                   <TypeBadge type={ty} size={14} />
                   <span className="g-code">{x.wbs}</span>
-                  <span className="g-name">{x.name}</span>
+                  <span className="g-name">
+                    <span className="g-nm">{x.name}</span>
+                    <span className="g-meta">
+                      <span>{x.start || x.finish ? (x.start && x.finish && x.start !== x.finish ? fdate(x.start) + ' – ' + fdate(x.finish) : fdate(x.start || x.finish)) : 'No dates'}</span>
+                      {nz(x.hrs) > 0 && <span>{hrsf(x.hrs)} h</span>}
+                      {(x.assignees || []).length > 0 && <span>{(x.assignees || []).map(nameOfPerson).filter(Boolean).join(', ')}</span>}
+                      {!sum && st === 'Late' && <em className="g-tag bad">Late {Math.max(1, Math.round((todayD - pd(x.finish)) / DAY))} d</em>}
+                      {node && node.linked && node.critical && <em className="g-tag crit">Critical</em>}
+                      {node && node.linked && !node.critical && node.float > 0 && <em className="g-tag" title="Float: working days this can slip without moving the finish">Float {node.float} d</em>}
+                    </span>
+                  </span>
                 </div>
                 <div className="g-trk"><Bar s={x.start} f={x.finish} pct={x.pct} cls={(sum ? 'sum' : ty.milestone ? 'ms' : st === 'Done' ? 'done' : st === 'Late' ? 'late' : '') + (showCrit && node && node.critical ? ' crit' : '')} ax={ax} tip={x.name} note={cpNote(node)} /></div>
               </div>
@@ -266,8 +338,11 @@ export default function Timeline() {
               {arrows.map((a) => (<path key={a.id} className={a.cls} d={a.d} markerEnd={'url(#gd-' + (a.cls || 'n') + ')'}><title>{a.tip}</title></path>))}
             </svg>
           )}
-          {ax.todayX != null && (
-            <div className="g-layer t"><span className="g-today" style={{ left: ax.todayX.toFixed(1) + 'px' }} /></div>
+          {(ax.todayX != null || blX != null) && (
+            <div className="g-layer t">
+              {blX != null && <span className="g-bl" style={{ left: blX.toFixed(1) + 'px' }} title={'Baseline finish ' + fdate(base.end)}><b>Baseline finish</b></span>}
+              {ax.todayX != null && <span className="g-today" style={{ left: ax.todayX.toFixed(1) + 'px' }} />}
+            </div>
           )}
         </div>
       </div>
@@ -278,6 +353,9 @@ export default function Timeline() {
         <span><i className="k-bar late" />Late</span>
         <span><i className="k-sum" />Parent (spans its children)</span>
         <span><i className="k-ms" />Milestone</span>
+        {base && <span><i className="k-gh" />Sprint as baselined (shown when it moved)</span>}
+        {base && <span><i className="k-bl" />Baseline finish</span>}
+        <span><i className="k-td" />Today</span>
         {showCrit && <span><i className="k-bar crit" />Critical path (no float)</span>}
         {showDeps && <span><i className="k-ln" />Dependency</span>}
         {showDeps && <span><i className="k-ln met" />Satisfied</span>}
