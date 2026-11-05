@@ -149,29 +149,6 @@ svg .gs{font:11px var(--f-body)}
 .sep{border-top:1px solid var(--line);grid-column:1/-1}
 .stack{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--line);gap:2px}
 .stack>i{display:block;height:100%}
-.gantt{--cw:30px;--lw:250px;overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface);max-width:100%}
-.g-in{position:relative;min-width:calc(var(--lw) + var(--tw))}
-.g-row{display:flex;border-bottom:1px solid var(--line);height:34px;align-items:stretch}
-.g-row.g-h{height:26px;background:var(--row)}
-.g-lab{flex:none;width:var(--lw);position:sticky;left:0;z-index:3;background:var(--surface);padding:0 10px;display:flex;align-items:center;gap:6px;border-right:1px solid var(--line);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.g-h .g-lab{background:var(--row);color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
-.g-lab b{font-weight:600}
-.g-trk{position:relative;flex:none;width:var(--tw)}
-.g-trk.plain{background-image:none}
-.g-m,.g-w,.g-s{position:absolute;top:0;bottom:0;display:flex;align-items:center;justify-content:center;font:11px var(--f-mono);color:var(--muted);overflow:hidden;white-space:nowrap}
-.g-w{border-left:1px solid var(--line)}
-.g-w.we{opacity:.65}
-.g-s{top:4px;bottom:4px;border-radius:4px;background:var(--accent-soft);color:var(--accent);font:600 11px var(--f-body);justify-content:flex-start;padding:0 6px;text-overflow:ellipsis}
-.g-s.alt{background:var(--warn-bg);color:var(--warn)}
-.g-m{justify-content:flex-start;padding-left:6px;border-left:1px solid var(--line)}
-.g-w.alt{background:var(--line);opacity:.55}
-.g-w.now{color:var(--accent);font-weight:600;opacity:1}
-.g-bar{position:absolute;top:8px;height:18px;border-radius:4px;background:var(--accent-soft);border:1px solid var(--accent);overflow:hidden;min-width:6px}
-.g-bar>i{display:block;height:100%;background:var(--accent)}
-.g-bar.done{border-color:var(--good);background:var(--good-bg)}.g-bar.done>i{background:var(--good)}
-.g-bar.late{border-color:var(--bad);background:var(--bad-bg)}.g-bar.late>i{background:var(--bad)}
-.g-bar.ph{top:12px;height:10px;border-color:var(--muted);background:var(--line)}.g-bar.ph>i{background:var(--muted)}
-.g-today{position:absolute;top:0;bottom:0;width:2px;background:var(--bad);z-index:2}
 @media (prefers-reduced-motion:no-preference){.bar>i{transition:width .25s}.g-val{transition:stroke-dasharray .35s}}
 
 /* ================= App shell: sidebar + content ================= */
@@ -301,12 +278,6 @@ textarea.c.d-name{min-height:0;resize:none;margin:6px 0 14px;line-height:1.3;bor
 textarea.c.d-name:hover{border-color:var(--line)}
 
 /* gantt overlays (grid lines, weekends, today) */
-.g-layer{position:absolute;left:var(--lw);top:var(--hh);bottom:0;width:var(--tw);pointer-events:none;z-index:0}
-.g-layer.t{z-index:2}
-.g-gl{position:absolute;top:0;bottom:0;width:1px;background:var(--line)}
-.g-we{position:absolute;top:0;bottom:0;background:var(--row)}
-.g-bar.clipL{border-top-left-radius:0;border-bottom-left-radius:0;border-left-width:0}
-.g-bar.clipR{border-top-right-radius:0;border-bottom-right-radius:0;border-right-width:0}
 .btn:disabled{opacity:.5;cursor:default}
 .btn:disabled:hover{border-color:var(--line);color:var(--ink)}
 
@@ -379,11 +350,8 @@ textarea.c.d-name:hover{border-color:var(--line)}
   .tbl.rwd tfoot tr{display:flex;flex-wrap:wrap;gap:6px 18px;padding:8px 2px}
   .tbl.rwd tfoot td{display:block;width:auto;padding:0}
   .tbl.rwd td .bar{min-width:80px}
-  .g-trk .g-s{font-size:10px}
 }
 @media (max-width:600px){
-  .gantt{--lw:128px}
-  .g-lab{font-size:12px;padding-left:6px}
   .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
   .kpi{padding:12px}
   .kpi .v{font-size:19px}
@@ -597,12 +565,6 @@ label.fld{max-width:100%;min-width:0}
 @media (hover:none){.w-add,.w-open{opacity:1}.w-grip{opacity:.7}}
 
 /* Timeline tree */
-.g-exp{display:inline-block;width:16px;flex:none;font-size:11px;padding:0;text-align:center}
-.g-bar.sum{top:11px;height:10px;border-radius:2px;border-color:var(--ink);background:var(--line)}
-.g-bar.sum>i{background:var(--ink)}
-.g-bar.ms{top:7px;height:18px;width:18px!important;min-width:18px;border:0;background:var(--s4);transform:rotate(45deg) scale(.72);border-radius:2px}
-.g-bar.ms>i{display:none}
-.g-row.g-sum .g-lab{background:var(--row)}
 @media print{.w-add,.w-open,.w-grip{display:none}}
 
 /* ---- activity ---- */
