@@ -16,6 +16,17 @@ export default function BaselinePanel() {
   CR_STATUSES.forEach((s) => (cnt[s] = S.cr.filter((c) => c.status === s).length));
   const live = S.cr.filter((c) => !['Closed', 'Rejected'].includes(c.status));
   const maxB = Math.max(1, ...S.baselines.map((x) => x.bac));
+  // The table only shows totals, so say what moved when the totals still match (for example one work item replaced by another of the same size)
+  const nameOf = (code) => { const t = S.sprints.flatMap((sp) => sp.tasks).find((x) => x.code === code); return t ? code + ' ' + t.name : code; };
+  const reasons = [];
+  if (d && d.moved) {
+    if (d.added.length) reasons.push('Work items added since the baseline: ' + d.added.map(nameOf).join(', ') + '.');
+    if (d.removed.length) reasons.push('Work items removed since the baseline: ' + d.removed.join(', ') + '.');
+    if (d.addedSprints.length) reasons.push('Sprints added since the baseline: ' + d.addedSprints.join(', ') + '.');
+    if (d.outside.length) reasons.push('Sprint dates now reach outside the baselined dates: ' + d.outside.join(', ') + '.');
+    if (!reasons.length && Math.abs(d.dCost) > 0.5) reasons.push('The budget differs by a small amount that the table rounds.');
+    if (!reasons.length && Math.abs(d.dEffort) > 0.01) reasons.push('The planned effort differs by a fraction of an hour that the table rounds.');
+  }
 
   return (
     <div className="grid2e">
@@ -43,7 +54,16 @@ export default function BaselinePanel() {
                 </tbody>
               </table>
             </div>
-            {d.moved && !P.appr.length && <p className="msg" style={{ color: 'var(--bad)', marginTop: 8 }}>The plan differs from the baseline and no approved change request covers it.</p>}
+            {d.moved && !P.appr.length && (
+              <div className="msg" style={{ color: 'var(--bad)', marginTop: 8 }}>
+                <p style={{ margin: 0 }}>The plan differs from the baseline and no approved change request covers it.</p>
+                {reasons.length > 0 && (
+                  <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                    {reasons.map((r, i) => (<li key={i}>{r}</li>))}
+                  </ul>
+                )}
+              </div>
+            )}
             {P.appr.length > 0 && <p className="msg" style={{ marginTop: 8 }}>Approved, not yet in the baseline: {P.appr.map((c) => c.code).join(', ')} ({signedMoney(P.apprCost, money)}, {signedDays(P.apprDays)}).</p>}
             {S.baselines.length > 1 && (
               <>
