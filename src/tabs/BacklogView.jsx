@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../store/StoreContext';
 import { useTasks } from '../store/useTasks';
 import { Cell } from '../components/Field';
@@ -8,7 +8,7 @@ import { AddChildMenu, AssigneeMenu, PriorityMenu, TagMenu, TypeMenu } from '../
 import { RollCell } from '../components/OwnValues';
 import NameInput from '../components/NameInput';
 import { useUI } from '../components/UI';
-import { typeOf } from '../lib/tasks';
+import { allTags, hasTag, typeOf } from '../lib/tasks';
 import { hrsf, nz } from '../lib/format';
 import { flatTree, kidsMap, leafTasks, rootTasks, subtreeIds, withAncestors } from '../lib/hier';
 import TaskDrawer from './TaskDrawer';
@@ -170,6 +170,16 @@ export default function BacklogView() {
   const [q, setQ] = useState('');
   const [by, setBy] = useState('none');
   const [who, setWho] = useState('all');
+  const [fg, setFg] = useState('all'); // tag filter
+  const ui = useUI();
+  // "Filter by tag" in a tag's editor sets the Tag filter here too
+  useEffect(() => {
+    const f = (e) => e.detail && setFg(e.detail);
+    window.addEventListener('sc-tag-filter', f);
+    return () => window.removeEventListener('sc-tag-filter', f);
+  }, []);
+  // a tag that was renamed or deleted can no longer be filtered on
+  useEffect(() => { if (fg !== 'all' && fg !== 'none' && !allTags(S).some((g) => g.toLowerCase() === fg.toLowerCase())) setFg('all'); }, [S, fg]);
   const [open, setOpen] = useState(null);
   const [exp, setExp] = useState({});
   const [shut, setShut] = useState({});
@@ -179,14 +189,14 @@ export default function BacklogView() {
   const people = S.people.filter((p) => p.name);
 
   const kids = useMemo(() => kidsMap(c.tasks), [c]);
-  const filtering = !!q.trim() || who !== 'all';
-  // items matching the search and assignee filter; their parents stay visible so you can see where they live
+  const filtering = !!q.trim() || who !== 'all' || fg !== 'all';
+  // items matching the search, assignee and tag filters; their parents stay visible so you can see where they live
   const shown = useMemo(() => {
     if (!filtering) return new Set(c.tasks.map((t) => t.id));
     const ql = q.trim().toLowerCase();
-    const hit = c.tasks.filter((t) => (!ql || t.name.toLowerCase().includes(ql) || (t.tags || []).some((g) => g.toLowerCase().includes(ql.replace(/^#/, '')))) && (who === 'all' || (who === 'none' ? !(t.assignees || []).length : (t.assignees || []).includes(who)))).map((t) => t.id);
+    const hit = c.tasks.filter((t) => (!ql || t.name.toLowerCase().includes(ql) || (t.tags || []).some((g) => g.toLowerCase().includes(ql.replace(/^#/, '')))) && (fg === 'all' || (fg === 'none' ? !(t.tags || []).length : hasTag(t, fg))) && (who === 'all' || (who === 'none' ? !(t.assignees || []).length : (t.assignees || []).includes(who)))).map((t) => t.id);
     return withAncestors(c.tasks, hit);
-  }, [c, q, who, filtering]);
+  }, [c, q, who, fg, filtering]);
   const tasks = useMemo(() => c.tasks.filter((t) => shown.has(t.id)), [c, shown]);
 
   const leaves = leafTasks(c.tasks);
@@ -235,7 +245,7 @@ export default function BacklogView() {
       <p className="msg wbs-help">Click a name to edit it · Enter adds an item below · Tab / Shift+Tab indent and outdent · Alt+↑ / ↓ reorder · drag ⋮⋮ to reorder or drop onto an item to nest · ＋ adds a child item · Σ hours add up from the child items. Move a top-level item to a sprint with its children.</p>
 
       <div className="tools">
-        <input className="c" style={{ maxWidth: 240 }} type="search" placeholder="Search the backlog" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search the backlog" />
+        <input className="c" style={{ maxWidth: 190 }} type="search" placeholder="Search the backlog" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search the backlog" />
         <label className="fld" style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           Group by
           <select className="c" value={by} onChange={(e) => setBy(e.target.value)} style={{ width: 'auto' }} aria-label="Group by">
@@ -249,6 +259,14 @@ export default function BacklogView() {
             {people.map((x) => (<option key={x.id} value={x.id}>{x.name}</option>))}
           </select>
         </label>
+        <label className="fld" style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          Tag
+          <select className="c" value={fg} onChange={(e) => setFg(e.target.value)} style={{ width: 'auto' }} aria-label="Filter by tag">
+            <option value="all">All tags</option><option value="none">No tags</option>
+            {allTags(S).map((g) => (<option key={g} value={g}>{g}</option>))}
+          </select>
+        </label>
+        <button className="btn" onClick={() => ui.openTags()} title="Rename, recolor and delete the project's tags">Manage tags</button>
         <span style={{ flex: 1 }} />
         <button className="btn primary" onClick={() => setOpen(tk.add('backlog', { name: 'Untitled work item' }))}>+ Work item</button>
       </div>
