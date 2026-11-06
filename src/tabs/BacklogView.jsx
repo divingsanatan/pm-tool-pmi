@@ -262,7 +262,7 @@ export default function BacklogView() {
       </div>
 
       <div className="scroll">
-        <div className="tg sp bk wrapn">
+        <div className="tg sp bk wrapn no-tags">
           <div className="tg-row tg-h"><div className="h-wbs">WBS</div><div className="tg-name"><TriBox all={tasks.length > 0 && pick.chosen.length === tasks.length} some={pick.chosen.length > 0} onChange={(e) => pick.setMany(tasks.map((t) => t.id), e.target.checked)} label="Select all work items" />Name</div><div className="h-assignee">Assignee</div><div className="h-priority">Priority</div><div className="h-effort">Effort (h)</div><div className="h-move">Sprint</div><div className="h-open" /></div>
           {groups.map((g) => {
             const hide = shut[g.key];
