@@ -201,14 +201,14 @@ function CrGate({ o, onClose }) {
   );
 }
 
-export function Modal({ title, onClose, children, wide }) {
+export function Modal({ title, onClose, children, wide, top }) {
   useEffect(() => {
     const k = (e) => e.key === 'Escape' && onClose();
     document.addEventListener('keydown', k);
     return () => document.removeEventListener('keydown', k);
   }, [onClose]);
   return (
-    <div className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className={'modal-bg' + (top ? ' top' : '')} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal" role="dialog" aria-modal="true" aria-label={title} style={wide ? { width: 'min(720px, 100%)' } : undefined}>
         <div className="row sp" style={{ marginBottom: 10 }}>
           <h2 style={{ margin: 0 }}>{title}</h2>
@@ -305,7 +305,7 @@ export function UIProvider({ children }) {
         ))}
       </div>
       {dlg && (
-        <Modal title={dlg.title} onClose={() => setDlg(null)}>
+        <Modal title={dlg.title} onClose={() => setDlg(null)} top>
           <div className="hint" style={{ marginBottom: 16 }}>{dlg.body}</div>
           <div className="row" style={{ justifyContent: 'flex-end' }}>
             <button className="btn" onClick={() => setDlg(null)}>Cancel</button>
