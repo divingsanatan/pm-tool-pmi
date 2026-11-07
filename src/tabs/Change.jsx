@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '../store/StoreContext';
 import { useChange } from '../store/useChange';
 import { useUI } from '../components/UI';
@@ -8,6 +8,7 @@ import { fdate } from '../lib/dates';
 import { hrsf, money, nz, pc } from '../lib/format';
 import { reserves } from '../lib/calc';
 import { CR_STATUSES, crCls, currentBaseline, drift, pendingOf, signedDays, signedMoney, snapshot, stageOf } from '../lib/change';
+import { crJump } from '../lib/drafts';
 import ChangeDrawer from './ChangeDrawer';
 
 export default function Change() {
@@ -15,6 +16,8 @@ export default function Change() {
   const ch = useChange();
   const ui = useUI();
   const [open, setOpen] = useState(null);
+  // sent here from a draft sprint: open its change request so the details can be completed
+  useEffect(() => { if (crJump.id) { const k = crJump.id; crJump.id = null; setOpen(k); } }); // runs after every render, so it also works when this tab is already showing
   const [f, setF] = useState('All');
   const [note, setNote] = useState('');
 

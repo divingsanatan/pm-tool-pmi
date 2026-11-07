@@ -5,6 +5,7 @@ import Menu from './Menu';
 import { BacklogIcon, FolderIcon, SprintIcon } from './Bits';
 import { blankProject, isOpen } from '../lib/tasks';
 import { leafTasks } from '../lib/hier';
+import '../drafts.css';
 
 function InlineEdit({ value, onDone }) {
   const [v, setV] = useState(value);
@@ -63,6 +64,18 @@ export default function Sidebar({ onNavigate }) {
       confirm: 'Delete project',
       danger: true,
       onConfirm: () => updateW((w) => (w.projects = w.projects.filter((x) => x.id !== p.id))),
+    });
+  const delDraft = (p, d) =>
+    ui.ask({
+      title: 'Delete this draft sprint?',
+      body: `“${d.name}” is only a draft, so no work items are lost. Its change request stays as it is.`,
+      confirm: 'Delete draft',
+      danger: true,
+      onConfirm: () =>
+        updateW((w) => {
+          const pr = w.projects.find((x) => x.id === p.id);
+          pr.drafts = (pr.drafts || []).filter((x) => x.id !== d.id);
+        }),
     });
   const delSprint = (p, s) =>
     ui.ask({
@@ -145,6 +158,16 @@ export default function Sidebar({ onNavigate }) {
                       </div>
                     );
                   })}
+                  {(p.drafts || []).map((d) => (
+                    <div key={d.id} className={'sb-row kid' + (isCur && nav.view === 'draft' && nav.draftId === d.id ? ' on' : '')}>
+                      <button className="sb-main" title="Draft sprint: waiting for its change request to be approved" onClick={() => go({ projectId: p.id, view: 'draft', sprintId: null, draftId: d.id })}>
+                        <span className="sb-draft" aria-hidden="true" />
+                        <span className="sb-name dr">{d.name}</span>
+                        <span className="badge draft">Draft</span>
+                      </button>
+                      <Menu className="sb-act" label="⋯" title="Draft sprint actions" items={[{ label: 'Delete draft', danger: true, onClick: () => delDraft(p, d) }]} />
+                    </div>
+                  ))}
                   <div className={'sb-row kid' + (isCur && nav.view === 'sprint' && nav.sprintId === 'backlog' ? ' on' : '')}>
                     <button className="sb-main" onClick={() => go({ projectId: p.id, view: 'sprint', sprintId: 'backlog' })}>
                       <BacklogIcon />

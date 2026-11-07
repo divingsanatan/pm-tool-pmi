@@ -11,6 +11,7 @@ import { newSprint, uid } from '../lib/tasks';
 import { insertAt, sane, sprintClash } from '../lib/sprintGuard';
 import { calendarOf, sprintCalendar } from '../lib/offdays';
 import { blankCr, currentBaseline, sprintCrs } from '../lib/change';
+import { clashAll, crAllows, crJump } from '../lib/drafts';
 import { openCrs } from '../lib/deps';
 import './toast.css';
 
@@ -38,7 +39,10 @@ function SprintForm({ pid, opts = {}, onClose }) {
   const nameOk = f.name.trim() !== '';
   const num = (v) => v !== '' && !isNaN(parseFloat(v));
   const crOk = !base || (choice && choice !== NEW_CR) || (choice === NEW_CR && f.crTitle.trim() !== '' && num(f.crCost) && num(f.crDays));
-  const clash = orderOk ? sprintClash(p, '', f.start, f.end) : []; // sprints of one project cannot overlap
+  const clash = orderOk ? clashAll(p, '', f.start, f.end) : []; // sprints (and drafts, which become sprints) of one project cannot overlap
+  // After a baseline a new sprint is only a proposal until its change request is approved: it starts as a draft
+  const chosenCr = crs.find((c) => c.id === choice);
+  const isDraft = !!base && (choice === NEW_CR || !crAllows(chosenCr));
   const days = orderOk ? Math.round((pd(f.end) - pd(f.start)) / DAY) + 1 : null;
   // the project's weekly off days and holidays apply to every sprint; planned % counts working days only
   const sc = orderOk ? sprintCalendar({ start: f.start, end: f.end }, null, calendarOf(p)) : null;
@@ -49,6 +53,7 @@ function SprintForm({ pid, opts = {}, onClose }) {
   const save = () => {
     if (!ok) return;
     const id = uid();
+    let draftCr = '';
     updateW((w) => {
       const pr = w.projects.find((x) => x.id === pid);
       let crId = '';
@@ -63,12 +68,20 @@ function SprintForm({ pid, opts = {}, onClose }) {
           }));
         }
       }
+      if (isDraft) {
+        // a draft: kept apart from the real sprints until the request is approved; the user is taken to the request to complete it
+        if (!Array.isArray(pr.drafts)) pr.drafts = [];
+        pr.drafts.push({ id, name: f.name.trim(), start: f.start, end: f.end, plannedHours: hrs, crId });
+        draftCr = crId;
+        w.nav = { ...w.nav, projectId: pid, view: 'project', sprintId: null, tab: 'change' };
+        return;
+      }
       const sp = { ...newSprint(pr, id), name: f.name.trim(), start: f.start, end: f.end, plannedHours: hrs };
       if (crId) sp.crId = crId;
       pr.sprints.splice(insertAt(pr, f.start), 0, sp);
       w.nav = { ...w.nav, projectId: pid, view: 'sprint', sprintId: id };
     });
-    opts.onCreated && opts.onCreated(id);
+    if (draftCr) { crJump.id = draftCr; opts.onDraft && opts.onDraft(id); } else opts.onCreated && opts.onCreated(id);
     onClose();
   };
   const key = (e) => e.key === 'Enter' && e.target.tagName !== 'SELECT' && save();
@@ -95,8 +108,9 @@ function SprintForm({ pid, opts = {}, onClose }) {
       {base && (
         <div className="cr-box">
           <p className="hint" style={{ margin: '0 0 8px' }}>
-            <b>This project has a baseline ({base.version}).</b> A sprint added after it changes the approved plan, so it must be added through a change request.
-            {crs.length ? ' Pick an open request, or raise a new one.' : ' There is no open change request yet, so raise one now. You can complete its details and get it approved in Change control.'}
+            <b>This project has a baseline ({base.version}).</b> A sprint added after it changes the approved plan, so it needs a change request.
+            {crs.length ? ' Pick an open request, or raise a new one.' : ' There is no open change request yet, so raise one now.'}
+            {' '}Until the request is approved the sprint stays a <b>draft</b>: it is not part of the plan and cannot hold work items. When the request is approved it becomes a regular sprint; if it is not approved, you can delete the draft.
           </p>
           <label className="fld">Change request *
             <select className="c" value={choice} onChange={set('cr')} aria-invalid={!crOk || undefined}>
@@ -129,13 +143,14 @@ function SprintForm({ pid, opts = {}, onClose }) {
         {nameOk && orderOk && clash.length > 0 && 'Sprint dates cannot overlap another sprint. Change the start or end date.'}
         {nameOk && orderOk && !clash.length && !hoursOk && 'Enter the planned hours (more than 0).'}
         {nameOk && orderOk && !clash.length && hoursOk && !crOk && (choice === NEW_CR ? 'Enter the change request title, cost change and schedule change (0 is fine).' : 'Choose the change request this sprint belongs to.')}
+        {ok && isDraft && 'Draft sprint. It becomes a regular sprint when its change request is approved. '}
         {ok && days + ' calendar day' + (days === 1 ? '' : 's') + (offN ? ' − ' + offN + ' off (project calendar) = ' + workDays + ' working' : '') + ' · ' + hrsf(hrs) + ' planned hours'}
         {nameOk && orderOk && !clash.length && workDays === 0 && 'Every day would be off. Choose fewer off days.'}
       </div>
       {clash.length > 0 && <div className="banner" style={{ marginTop: 8 }}>These dates overlap {clash.map((s) => s.name + ' (' + s.start + ' to ' + s.end + ')').join(', ')}. Sprints in the same project cannot overlap, so this sprint cannot be created yet.</div>}
       <div className="row" style={{ justifyContent: 'flex-end', marginTop: 16 }}>
         <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn primary" disabled={!ok} onClick={save}>Create sprint</button>
+        <button className="btn primary" disabled={!ok} onClick={save}>{isDraft ? 'Create draft sprint' : 'Create sprint'}</button>
       </div>
     </div>
   );

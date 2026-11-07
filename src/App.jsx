@@ -11,6 +11,7 @@ import Stakeholders from './tabs/Stakeholders';
 import Raid from './tabs/Raid';
 import Change from './tabs/Change';
 import SprintView from './tabs/SprintView';
+import DraftSprint from './tabs/DraftSprint';
 import BacklogView from './tabs/BacklogView';
 import OutsideBanner from './components/OutsideBanner';
 
@@ -30,7 +31,11 @@ export default function App() {
           <button className="btn icon" onClick={() => setSb(true)} aria-label="Open menu">☰</button>
           <b>{S.meta.name}</b>
         </div>
-        {nav.view === 'sprint' ? (
+        {nav.view === 'draft' ? (
+          <div className="wrap" key={S.id + ':draft:' + nav.draftId}>
+            <DraftSprint />
+          </div>
+        ) : nav.view === 'sprint' ? (
           <div className="wrap" key={S.id + ':' + nav.sprintId}>
             {nav.sprintId === 'backlog' ? <BacklogView /> : <SprintView />}
           </div>

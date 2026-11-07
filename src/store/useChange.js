@@ -3,6 +3,7 @@ import { useStore } from './StoreContext';
 import { uid } from '../lib/tasks';
 import { DAY, addDays, pd, today } from '../lib/dates';
 import { nz } from '../lib/format';
+import { promoteFor } from '../lib/drafts';
 import { blankCr, currentBaseline, inNextBaseline, missing, reserveAfter, snapshot } from '../lib/change';
 
 const note = (c, text) => c.log.push({ on: today(), text });
@@ -59,7 +60,7 @@ export function useChange() {
       remove(id) {
         update((p) => {
           const c = p.cr.find((x) => x.id === id);
-          if (c && c.status === 'Draft') p.cr = p.cr.filter((x) => x.id !== id); // once submitted, a request stays on record
+          if (c && c.status === 'Draft') { p.cr = p.cr.filter((x) => x.id !== id); p.drafts = (p.drafts || []).filter((d) => d.crId !== id); } // once submitted, a request stays on record
         });
       },
       // Moves a request to another status, but only if its required items are complete
@@ -82,6 +83,15 @@ export function useChange() {
           if (to === 'Closed') c.closedOn = today();
           c.status = to;
           note(c, from + ' → ' + to);
+          if (to === 'Rejected') {
+            // a rejected request can never be reopened, so its draft sprints have no purpose left: they are discarded (the request keeps the record)
+            const gone = (p.drafts || []).filter((d) => d.crId === c.id);
+            if (gone.length) { p.drafts = p.drafts.filter((d) => d.crId !== c.id); note(c, 'Draft sprint(s) discarded: ' + gone.map((d) => d.name).join(', ')); }
+          }
+          if (to === 'Approved') {
+            const stuck = promoteFor(p, c.id); // the request's draft sprints become regular sprints
+            if (stuck.length) note(c, 'Draft sprint(s) not activated because their dates overlap another sprint: ' + stuck.join(', '));
+          }
         });
       },
       // Records the new baseline for an approved request and marks it implemented

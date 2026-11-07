@@ -227,6 +227,11 @@ export default function ChangeDrawer({ id, onClose }) {
               <span className="msg">{S.sprints.filter((sp) => sp.crId === cr.id).map((sp) => sp.name + ' (' + (sp.plannedHours != null ? sp.plannedHours + ' h planned' : 'no planned hours') + ')').join(', ')}. Their work items are listed above automatically.</span>
             </div>
           )}
+          {(S.drafts || []).some((d) => d.crId === cr.id) && (
+            <div className="fld" style={{ gridColumn: '1 / -1' }}>Draft sprints waiting for this request
+              <span className="msg">{(S.drafts || []).filter((d) => d.crId === cr.id).map((d) => d.name + ' (' + fdate(d.start) + ' – ' + fdate(d.end) + ', ' + nz(d.plannedHours) + ' h planned)').join(', ')}. They become regular sprints when this request is approved. If it is rejected, they are discarded; if it is deferred, they stay as drafts.</span>
+            </div>
+          )}
           {S.team.some((t) => t.crId === cr.id) && (
             <div className="fld" style={{ gridColumn: '1 / -1' }}>Resources claimed by this request
               <span className="msg">{S.team.filter((t) => t.crId === cr.id).map((t) => ((S.people.find((x) => x.id === t.person) || {}).name || 'Someone') + (t.crClaim ? ' (+' + money(t.crClaim) + ')' : '')).join(', ')}. Their cost is already in the labour budget; implementing the request makes it part of the baseline.</span>
@@ -376,7 +381,7 @@ export default function ChangeDrawer({ id, onClose }) {
           {st === 'Under review' && (
             <>
               {moveBtn('Deferred', 'Defer')}
-              {moveBtn('Rejected', 'Reject', 'btn danger', { title: 'Reject this change request?', body: 'A rejected request stays on record and cannot be reopened.', confirm: 'Reject', danger: true })}
+              {moveBtn('Rejected', 'Reject', 'btn danger', { title: 'Reject this change request?', body: 'A rejected request stays on record and cannot be reopened.' + ((S.drafts || []).some((d) => d.crId === cr.id) ? ' Its draft sprint(s) will be discarded.' : ''), confirm: 'Reject', danger: true })}
               {moveBtn('Approved', 'Approve', 'btn primary')}
             </>
           )}

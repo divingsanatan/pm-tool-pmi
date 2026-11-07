@@ -817,6 +817,7 @@ export function normalize(S) {
     S.reserve.management = lastB.reserve.mgmtPct;
   }
   if (!Array.isArray(S.cr)) S.cr = [];
+  if (!Array.isArray(S.drafts)) S.drafts = []; // draft sprints waiting for their change request (see lib/drafts.js)
   S.cr.forEach((c) => {
     if (!c.id) c.id = uid();
     ['affects', 'tasks', 'raid', 'informed', 'log'].forEach((k) => !Array.isArray(c[k]) && (c[k] = []));

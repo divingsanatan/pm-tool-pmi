@@ -72,6 +72,10 @@ export function fixNav(w) {
     n.view = 'project';
     n.sprintId = null;
   }
+  if (n.view === 'draft' && !(p.drafts || []).some((d) => d.id === n.draftId)) {
+    n.view = 'project';
+    n.draftId = null;
+  }
   if (!n.tab) n.tab = 'dash';
   if (!n.sprintView) n.sprintView = 'list';
   if (n.weeklyScope !== 'all') n.weeklyScope = 'project';

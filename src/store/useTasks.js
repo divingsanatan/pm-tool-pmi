@@ -247,7 +247,12 @@ export function useTasks() {
 
     // Every new sprint goes through the New sprint form (planned hours, and a change request once the project has a baseline).
     // The work items only move after the sprint exists, so cancelling the form changes nothing.
-    const newSprintFor = (pre, done) => uRef.current && uRef.current.openSprint && uRef.current.openSprint(sRef.current.id, { ...pre, onCreated: done });
+    const newSprintFor = (pre, done) => uRef.current && uRef.current.openSprint && uRef.current.openSprint(sRef.current.id, {
+        ...pre,
+        onCreated: done,
+        // after a baseline the new sprint is a draft until its change request is approved, so the work items stay where they are for now
+        onDraft: () => uRef.current.toast && uRef.current.toast({ id: 'draft-sprint', tone: 'info', ttl: 12000, text: 'Draft sprint created and its change request opened. The work items stay where they are until the request is approved; then move them into the new sprint.' }),
+      });
 
     // applies a start / due patch to the listed items, each pulled inside its own sprint
     const applyClamped = (p, ids, patch) =>
