@@ -166,12 +166,34 @@ export const closeChecks = (cr) => [chk('verified', 'Verification: the change wo
 /* ---------- workflow ---------- */
 export const NEXT = { Draft: ['Submitted'], Submitted: ['Under review', 'Draft'], 'Under review': ['Approved', 'Rejected', 'Deferred', 'Draft'], Deferred: ['Under review'], Approved: ['Implemented'], Implemented: ['Closed'], Rejected: [], Closed: [] };
 
+// Requests are handled in the order they were raised, so the baseline versions follow that order:
+//  - a request cannot be approved while an older one is still waiting for its decision (Submitted or Under review): approve, reject or defer the older one first
+//  - a request cannot be implemented while an older one is approved but not yet implemented: each new baseline is built on the one before it
+// Drafts, deferred, rejected and finished requests never hold anything up.
+const olderThan = (cr, S, statuses) => {
+  const list = (S && S.cr) || [];
+  const i = list.findIndex((x) => x.id === cr.id);
+  return i < 0 ? [] : list.slice(0, i).filter((x) => statuses.includes(x.status));
+};
+const codes = (l) => l.map((x) => x.code).join(', ');
+export function orderChecks(cr, to, S) {
+  if (to === 'Approved') {
+    const o = olderThan(cr, S, ['Submitted', 'Under review']);
+    return [chk('order', o.length ? 'Older requests decided first (' + codes(o) + ' still waiting for a decision: approve, reject or defer ' + (o.length > 1 ? 'them' : 'it') + ')' : 'Older requests decided first', !o.length)];
+  }
+  if (to === 'Implemented') {
+    const o = olderThan(cr, S, ['Approved']);
+    return [chk('order', o.length ? 'Older approved requests implemented first (' + codes(o) + ' not implemented yet)' : 'Older approved requests implemented first', !o.length)];
+  }
+  return [];
+}
+
 export function checksFor(cr, to, S) {
   if (to === 'Submitted') return raiseChecks(cr);
   if (to === 'Under review') return raiseChecks(cr).filter((c) => c.req).concat(impactChecks(cr));
-  if (to === 'Approved') return decisionChecks(cr, true);
+  if (to === 'Approved') return orderChecks(cr, to, S).concat(decisionChecks(cr, true));
   if (to === 'Rejected' || to === 'Deferred') return decisionChecks(cr, false);
-  if (to === 'Implemented') return implChecks(cr, S);
+  if (to === 'Implemented') return orderChecks(cr, to, S).concat(implChecks(cr, S));
   if (to === 'Closed') return closeChecks(cr);
   return [];
 }
