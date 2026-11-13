@@ -15,11 +15,11 @@ export function AssigneeMenu({ task, className = 'x ass-btn', label, size = 24 }
   const { S, setNav } = useStore();
   const tk = useTasks();
   const ids = task.assignees || [];
-  const items = S.people.map((p) => {
+  const items = S.people.filter((p) => !p.left || ids.includes(p.id)).map((p) => {
     // leave days are shown next to the name; choosing someone on leave raises a warning that can be overridden
     const lc = ids.includes(p.id) ? null : leaveCheck(S, p, task.start, task.due);
     const hint = lc && lc.lost.length ? (lc.block ? 'on leave ' : 'leave ') + rangeText(lc.lost) : '';
-    return { label: (p.name || '(unnamed)') + (hint ? ' · ' + hint : ''), active: ids.includes(p.id), keepOpen: true, onClick: () => tk.toggleAssignee(task.id, p.id) };
+    return { label: (p.name || '(unnamed)') + (p.left ? ' (left)' : '') + (hint ? ' · ' + hint : ''), active: ids.includes(p.id), keepOpen: true, onClick: () => tk.toggleAssignee(task.id, p.id) };
   });
   items.push(
     { sep: true },

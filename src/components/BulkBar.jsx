@@ -54,7 +54,7 @@ export default function BulkBar({ ids, container, onDone }) {
   const tasks = ids.map((id) => findTask(S, id)).filter(Boolean).map((f) => f.t);
   const n = ids.length;
 
-  const people = S.people.filter((p) => p.name).map((p) => {
+  const people = S.people.filter((p) => p.name && !p.left).map((p) => {
     const has = tasks.filter((t) => (t.assignees || []).includes(p.id)).length;
     return { label: p.name, active: has === tasks.length, hint: has && has < tasks.length ? 'some' : '', keepOpen: true, onClick: () => tk.assignMany(ids, p.id, has !== tasks.length) };
   });

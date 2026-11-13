@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import MembersPanel from './MembersPanel';
 import { ROLE_LABEL, canManageMembers, canSeeBudget, tabAllowed } from '../lib/access';
+import { leftWithWork } from '../lib/people';
 import { useStore } from '../store/StoreContext';
 import { curWeek, lastDay, nW, started, planBAC } from '../lib/calc';
 import { fdate, fsh, pd } from '../lib/dates';
@@ -45,6 +46,11 @@ export default function Header() {
         )}
       </div>
       {members && <MembersPanel onClose={() => setMembers(false)} />}
+      {canManageMembers(role) && leftWithWork(S).length > 0 && (
+        <div className="msg lateTxt" role="status" style={{ margin: '6px 0' }}>
+          {leftWithWork(S).map((x) => x.p.name + ' (' + x.n + ' open)').join(', ')} left the project but still own open work. <button className="btn" onClick={() => setNav({ tab: 'people' })}>Reassign on Stakeholders</button>
+        </div>
+      )}
       {role === 'viewer' && <div className="msg" role="status" style={{ margin: '6px 0' }}>You have view-only access to this project. Changes are not saved.</div>}
       <nav className="tabs" role="tablist">
         {TABS.filter(([id]) => tabAllowed(role, id)).map(([id, label]) => (

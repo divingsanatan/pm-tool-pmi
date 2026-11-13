@@ -3,6 +3,7 @@ import { useStore } from '../store/StoreContext';
 import { supabase } from '../lib/supabase';
 import { Modal } from './UI';
 import { uid } from '../lib/tasks';
+import { todayIso } from '../lib/people';
 import { ROLE_HINT, ROLE_LABEL, grantable } from '../lib/access';
 
 const clean = (e) => String(e || '').trim().toLowerCase();
@@ -71,7 +72,7 @@ export default function MembersPanel({ onClose }) {
       update((p) => {
         const same = p.people.find((x) => !x.dirId && clean(x.name) === clean(d.name));
         if (same) same.dirId = d.id;
-        else p.people.push({ id: uid(), dirId: d.id, name: d.name, role: d.role, cap: 1, rate: 0 });
+        else p.people.push({ id: uid(), dirId: d.id, name: d.name, role: d.role, cap: 1, rate: 0, joined: todayIso() });
       });
       if (em) {
         const g = await supabase.rpc('grant_access', { pid: S.id, mail: em, r: pick });

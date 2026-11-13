@@ -93,7 +93,7 @@ function RaidDrawer({ k, fresh, onClose }) {
   // the rich text keeps its html next to a plain copy; the plain copy is what lists and change requests show
   const setRich = (f) => ({ html, text }) => edit((o) => { o[f + 'Html'] = html; o[f] = text; });
   const ownerOpts = (() => {
-    const o = [['', '— none —']].concat(S.people.filter((p) => p.name).map((p) => [p.id, p.name]));
+    const o = [['', '— none —']].concat(S.people.filter((p) => p.name && (!p.left || p.id === r.owner)).map((p) => [p.id, p.name + (p.left ? ' (left)' : '')]));
     if (r.owner && !S.people.some((p) => p.id === r.owner)) o.push([r.owner, r.owner + ' (not on the stakeholder list)']);
     return o;
   })();

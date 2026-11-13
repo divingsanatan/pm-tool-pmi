@@ -26,7 +26,7 @@ export function projectGlance(S) {
   }
   const off = weekly + holiday, avail = n - off;
 
-  const team = S.people.filter((p) => onDeliveryTeam(S, p));
+  const team = S.people.filter((p) => !p.left && onDeliveryTeam(S, p));
   let leaveDays = 0, perDay = 0, cap = 0, custom = 0;
   team.forEach((p) => {
     const c = capacityOverPlan(S, p, win, set);

@@ -6,7 +6,8 @@ import { TriBox } from '../components/ListBits';
 import { Avatar, TypeBadge } from '../components/Bits';
 import { Fld } from '../components/Field';
 import { wkE, wkS, nW } from '../lib/calc';
-import { findTask, statusOf, typeOf, typesOf } from '../lib/tasks';
+import { allContainers, findTask, statusOf, typeOf, typesOf } from '../lib/tasks';
+import { shortDate } from '../lib/people';
 import { fdate } from '../lib/dates';
 import { CHECK_FILTERS, DEFAULT_RF, DEFAULT_RX, RACI_ROLES, RF_SCOPES, ROLE_INFO, matchesRx, raciInsights, raciIssue, roleName, rolesOf, rxActive, toggleRole, workItems } from '../lib/raci';
 import '../raci.css';
@@ -218,7 +219,9 @@ export default function Raci() {
   const [pop, setPop] = useState(null); // the role box open under one cell
 
   const { R, groups: scoped, shown: inScope, total } = workItems(S, rf);
-  const people = S.people;
+  const hadRole = (p) => allContainers(S).some((c) => c.tasks.some((t) => rolesOf((t.raci || {})[p.id]).length));
+  const people = S.people.filter((p) => !p.left || hadRole(p)); // someone who left stays visible only while they hold roles (history)
+  const livePeople = S.people.filter((p) => !p.left);
   const scopeItems = useMemo(() => scoped.flatMap((g) => g.tasks), [scoped]);
   const I = useMemo(() => raciInsights(S, scopeItems), [S, scopeItems]); // eslint-disable-line react-hooks/exhaustive-deps
   const counts = Object.fromEntries(CHECK_FILTERS.map(([id]) => [id, scopeItems.filter((t) => matchesRx(S, t, { ...rx, check: id })).length]));
@@ -361,7 +364,7 @@ export default function Raci() {
                         <input type="checkbox" className="tg-sel" checked={cols.has(p.id)} onChange={() => toggleCol(p.id)} aria-label={'Select stakeholder ' + p.name} />
                         <Avatar name={p.name} size={26} />
                         <span className="raci-name">{p.name}</span>
-                        {p.role ? <span className="raci-role">{p.role}</span> : null}
+                        {p.left ? <span className="raci-role">Left {shortDate(p.left)}</span> : p.role ? <span className="raci-role">{p.role}</span> : null}
                         <span className="rx-tally" aria-label={row.A + ' accountable, ' + row.R + ' responsible'}>A {row.A} · R {row.R}</span>
                       </label>
                     </th>
@@ -384,7 +387,7 @@ export default function Raci() {
 
       <Legend />
       {pop && popTask && popPerson && <RolePop pop={pop} task={popTask} person={popPerson} value={(popTask.raci || {})[pop.pid]} onToggle={(r) => toggleCell(pop.taskId, pop.pid, r)} onClear={() => clearCell(pop.taskId, pop.pid)} onClose={() => setPop(null)} />}
-      {assignTask && <AssignDialog ids={[assign]} items={scopeItems} people={people} onClose={() => setAssign(null)} />}
+      {assignTask && <AssignDialog ids={[assign]} items={scopeItems} people={livePeople} onClose={() => setAssign(null)} />}
     </div>
   );
 }

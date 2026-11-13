@@ -176,7 +176,7 @@ function LabourCrDialog({ who, amount, total, baseTotal, version, onConfirm, onC
 // Add someone from the stakeholder list to the labour budget (names are managed on the Stakeholders tab)
 function AddLabour({ onClose }) {
   const { S, update, setNav } = useStore();
-  const free = S.people.filter((p) => !S.team.some((t) => t.person === p.id));
+  const free = S.people.filter((p) => !p.left && !S.team.some((t) => t.person === p.id));
   const fmtCap = (e) => String(Math.round(nz(e.cap) * 1000) / 10);
   const [pid, setPid] = useState(free[0] ? free[0].id : '');
   const [rate, setRate] = useState(free[0] ? String(free[0].rate == null ? '' : free[0].rate) : '');

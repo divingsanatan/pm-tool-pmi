@@ -3,6 +3,7 @@ import { useStore } from '../store/StoreContext';
 import { supabase } from '../lib/supabase';
 import { Modal, useUI } from './UI';
 import { uid } from '../lib/tasks';
+import { shortDate, todayIso } from '../lib/people';
 import { ROLE_LABEL } from '../lib/access';
 
 const key = (x) => (x || '').trim().toLowerCase();
@@ -130,7 +131,7 @@ export default function DirectoryPanel({ onClose }) {
         const pr = w.projects.find((x) => x.id === p.id);
         const same = pr.people.find((x) => !x.dirId && key(x.name) === key(d.name)); // already there by name: link it, do not duplicate
         if (same) same.dirId = d.id;
-        else pr.people.push({ id: uid(), dirId: d.id, name: d.name, role: d.role, cap: 1, rate: 0 });
+        else pr.people.push({ id: uid(), dirId: d.id, name: d.name, role: d.role, cap: 1, rate: 0, joined: todayIso() });
       });
       return;
     }
@@ -193,7 +194,7 @@ export default function DirectoryPanel({ onClose }) {
                       return (
                         <div key={p.id} className="row" style={{ gap: 8, marginBottom: 4, alignItems: 'center' }}>
                           <label className="msg" style={{ display: 'inline-flex', gap: 6, alignItems: 'center', minWidth: 150 }}>
-                            <input type="checkbox" checked={on} onChange={() => toggle(d, p)} /> {p.meta.name}
+                            <input type="checkbox" checked={on} onChange={() => toggle(d, p)} /> {p.meta.name}{on && linked(d, p).left ? ' (left ' + shortDate(linked(d, p).left) + ')' : ''}
                           </label>
                           {on && d.email && !isAdmin && (
                             <select className="c" value={lg ? lg.role : ''} onChange={(e) => setLogin(d, p, e.target.value)} aria-label={'Login role of ' + d.name + ' on ' + p.meta.name}>

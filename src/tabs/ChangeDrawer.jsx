@@ -95,7 +95,7 @@ export default function ChangeDrawer({ id, onClose }) {
     <RichText key={cr.id + f} html={cr[f + 'Html']} text={cr[f]} label={label} rows={rows} disabled={disabled} placeholder={placeholder} onCommit={({ html, text }) => set({ [f]: text, [f + 'Html']: html })} />
   );
   const base = currentBaseline(S);
-  const people = [['', '— select —']].concat(S.people.filter((p) => p.name).map((p) => [p.id, p.name]));
+  const people = [['', '— select —']].concat(S.people.filter((p) => p.name && !p.left).map((p) => [p.id, p.name]));
   const who = (pid) => (S.people.find((p) => p.id === pid) || {}).name || '';
   const tasks = allContainers(S).flatMap((c) => c.tasks.map((t) => [t.id, t.code + ' · ' + t.name]));
   const raid = S.raid.map((r) => [r.key, (r.id || '(no ID)') + ' · ' + (r.desc || r.type)]);
