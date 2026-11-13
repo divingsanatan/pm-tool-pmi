@@ -34,6 +34,7 @@ const load = () => loadLocal() || toWorkspace(seedWorkspace());
 
 // Whatever this person may not change is put back: a Viewer's edits, projects created or deleted by someone who is not an Admin.
 function lockDown(prev, next, acc) {
+  if (acc && acc.admin) return next; // an Admin may change, create and delete anything
   const was = new Map(prev.projects.map((p) => [p.id, p]));
   next.projects = next.projects.map((p) => { const o = was.get(p.id); return !o ? null : canEdit(roleOf(acc, p.id)) ? p : o; }).filter(Boolean);
   prev.projects.forEach((o) => { if (!next.projects.some((p) => p.id === o.id)) next.projects.push(o); });
