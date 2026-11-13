@@ -6,6 +6,7 @@ import { BacklogIcon, FolderIcon, SprintIcon } from './Bits';
 import { blankProject, isOpen } from '../lib/tasks';
 import { leafTasks } from '../lib/hier';
 import DirectoryPanel from './DirectoryPanel';
+import ImportDialog from './ImportDialog';
 import { canSeeSettings, roleOf } from '../lib/access';
 import '../drafts.css';
 
@@ -37,6 +38,7 @@ export default function Sidebar({ onNavigate }) {
   const [closed, setClosed] = useState({});
   const [editing, setEditing] = useState(null);
   const [dir, setDir] = useState(false);
+  const [imp, setImp] = useState(null); // { pid, cid } while the CSV import is open
   const go = (patch) => {
     setNav(patch);
     onNavigate && onNavigate();
@@ -158,6 +160,7 @@ export default function Sidebar({ onNavigate }) {
                             title="Sprint actions"
                             items={[
                               { label: 'Rename', onClick: () => setEditing(sk) },
+                              { label: 'Import work items (CSV)…', onClick: () => setImp({ pid: p.id, cid: s.id }) },
                               { sep: true },
                               { label: 'Delete sprint', danger: true, onClick: () => delSprint(p, s) },
                             ]}
@@ -182,6 +185,7 @@ export default function Sidebar({ onNavigate }) {
                       <span className="sb-name">Backlog</span>
                       {p.backlog.tasks.length > 0 && <span className="badge">{p.backlog.tasks.length}</span>}
                     </button>
+                    {mayManage(p.id) && <Menu className="sb-act" label="⋯" title="Backlog actions" items={[{ label: 'Import work items (CSV)…', onClick: () => setImp({ pid: p.id, cid: 'backlog' }) }]} />}
                   </div>
                   {mayManage(p.id) && <button className="sb-add" onClick={() => addSprint(p.id)}>+ Add sprint</button>}
                 </div>
@@ -199,6 +203,7 @@ export default function Sidebar({ onNavigate }) {
         <span className="msg">{saved}</span>
       </div>
       {dir && <DirectoryPanel onClose={() => setDir(false)} />}
+      {imp && <ImportDialog pid={imp.pid} cid={imp.cid} onClose={() => setImp(null)} />}
     </aside>
   );
 }
