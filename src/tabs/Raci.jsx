@@ -1,17 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../store/StoreContext';
 import { useSelect } from '../lib/useSelect';
-import RaciBar, { AssignDialog } from '../components/RaciBulk';
+import RaciBar, { AssignDialog, applyRoles } from '../components/RaciBulk';
 import { TriBox } from '../components/ListBits';
 import { Avatar, TypeBadge } from '../components/Bits';
 import { Fld } from '../components/Field';
 import { wkE, wkS, nW } from '../lib/calc';
 import { findTask, statusOf, typeOf, typesOf } from '../lib/tasks';
 import { fdate } from '../lib/dates';
-import { CHECK_FILTERS, DEFAULT_RF, DEFAULT_RX, RACI_ROLES, RF_SCOPES, ROLE_INFO, matchesRx, raciInsights, raciIssue, rxActive, workItems } from '../lib/raci';
+import { CHECK_FILTERS, DEFAULT_RF, DEFAULT_RX, RACI_ROLES, RF_SCOPES, ROLE_INFO, matchesRx, raciInsights, raciIssue, roleName, rolesOf, rxActive, toggleRole, workItems } from '../lib/raci';
 import '../raci.css';
 
-const ROLES = ['', 'A', 'R', 'C', 'I'];
 const iso = (ms) => new Date(ms).toISOString().slice(0, 10);
 
 // true on phones and small tablets: the table turns into one card per work item
@@ -37,6 +36,39 @@ function Check({ roles, needs = true }) {
 
 function Role({ v, size }) {
   return <span className={'rx-role r-' + v + (size ? ' ' + size : '')} title={ROLE_INFO[v].name}>{v}</span>;
+}
+
+// Small box under a cell: switch A, R, C and I on or off, so one person can hold several roles on one work item.
+function RolePop({ pop, task, person, value, onToggle, onClear, onClose }) {
+  useEffect(() => {
+    const key = (e) => e.key === 'Escape' && onClose();
+    const away = (e) => { if (!e.target.closest || !e.target.closest('.rx-pop, .rc')) onClose(); };
+    document.addEventListener('keydown', key);
+    document.addEventListener('mousedown', away);
+    window.addEventListener('scroll', onClose, true);
+    window.addEventListener('resize', onClose);
+    return () => {
+      document.removeEventListener('keydown', key);
+      document.removeEventListener('mousedown', away);
+      window.removeEventListener('scroll', onClose, true);
+      window.removeEventListener('resize', onClose);
+    };
+  }, [onClose]);
+  const left = Math.max(8, Math.min(pop.x - 120, window.innerWidth - 248));
+  const style = pop.above ? { left, top: pop.top - 6, transform: 'translateY(-100%)' } : { left, top: pop.bottom + 6 };
+  const mine = rolesOf(value);
+  return (
+    <div className="rx-pop" style={style} role="dialog" aria-label={'Roles of ' + person.name + ' on ' + task.name}>
+      <div className="rx-pop-h"><b>{person.name}</b><span className="msg">{task.code}</span></div>
+      <div className="rx-seg">
+        {RACI_ROLES.map((r) => (
+          <button key={r} type="button" className={'rx-rb r-' + r} aria-pressed={mine.includes(r)} title={ROLE_INFO[r].name + ' · ' + ROLE_INFO[r].hint} onClick={() => onToggle(r)}>{r}</button>
+        ))}
+        <button type="button" className="rx-rb rx-none" aria-pressed={!mine.length} onClick={onClear}>None</button>
+      </div>
+      <p className="msg rx-pop-n">{mine.length ? roleName(value) : 'Pick every role that applies, for example A and R.'} Only one person can be A: choosing it moves A from the current owner, who stays R.</p>
+    </div>
+  );
 }
 
 /* ------------------------------ insight cards ------------------------------ */
@@ -183,6 +215,7 @@ export default function Raci() {
   const [fOpen, setFOpen] = useState(false);
   const [assign, setAssign] = useState(null); // work item id whose stakeholders are being edited
   const [cols, setCols] = useState(() => new Set()); // ticked stakeholder columns
+  const [pop, setPop] = useState(null); // the role box open under one cell
 
   const { R, groups: scoped, shown: inScope, total } = workItems(S, rf);
   const people = S.people;
@@ -198,13 +231,22 @@ export default function Raci() {
   const pick = useSelect(flat.map((t) => t.id), flat.map((t) => t.id), S.id);
   const pickedPeople = people.filter((p) => cols.has(p.id)).map((p) => p.id);
 
-  const cycle = (taskId, pid) =>
+  const openPop = (e, taskId, pid) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setPop((cur) => (cur && cur.taskId === taskId && cur.pid === pid ? null : { taskId, pid, x: r.left + r.width / 2, top: r.top, bottom: r.bottom, above: r.bottom + 190 > window.innerHeight }));
+  };
+  const toggleCell = (taskId, pid, letter) =>
     update((p) => {
-      const roles = findTask(p, taskId).t.raci;
-      const next = ROLES[(ROLES.indexOf(roles[pid] || '') + 1) % ROLES.length];
-      if (next) roles[pid] = next;
-      else delete roles[pid];
+      const f = findTask(p, taskId);
+      if (f) f.t.raci = applyRoles(f.t.raci, { [pid]: toggleRole((f.t.raci || {})[pid], letter) });
     });
+  const clearCell = (taskId, pid) =>
+    update((p) => {
+      const f = findTask(p, taskId);
+      if (f) f.t.raci = applyRoles(f.t.raci, { [pid]: '' });
+    });
+  const popTask = pop ? (findTask(S, pop.taskId) || {}).t : null;
+  const popPerson = pop ? people.find((x) => x.id === pop.pid) : null;
   const toggleCol = (pid) => setCols((c) => { const n = new Set(c); n.has(pid) ? n.delete(pid) : n.add(pid); return n; });
   const filterCheck = (id) => { setRx((c) => ({ ...c, check: id })); setFOpen(false); };
   const filterPerson = (pid, role) => setRx((c) => ({ ...c, person: pid, role, state: role === 'R' ? 'open' : c.state }));
@@ -220,7 +262,7 @@ export default function Raci() {
         <div>
           <h2>RACI chart</h2>
           <p className="hint">
-            Every work item from your sprints appears here automatically. Click a role to cycle A, R, C, I and empty, or press <b>Assign</b> to give one work item roles for many stakeholders at once. Tick work items and stakeholder columns to set roles in bulk. Each work item needs one A and at least one R. Work items are managed in the sprints and people on the <button className="linkbtn" onClick={() => setNav({ tab: 'people' })}>Stakeholders</button> tab.
+            Every work item from your sprints appears here automatically. Click a cell to switch A, R, C and I on or off for that person (one person can hold several roles on the same work item, for example A and R), or press <b>Assign</b> to set roles for many stakeholders at once. Tick work items and stakeholder columns to set roles in bulk. Each work item needs one A and at least one R. Work items are managed in the sprints and people on the <button className="linkbtn" onClick={() => setNav({ tab: 'people' })}>Stakeholders</button> tab.
           </p>
         </div>
       </div>
@@ -279,7 +321,7 @@ export default function Raci() {
                 </div>
                 {g.tasks.map((t) => {
                   const ty = typeOf(S, t.type), st = statusOf(S, t.status);
-                  const withRole = people.filter((p) => (t.raci || {})[p.id]);
+                  const withRole = people.filter((p) => rolesOf((t.raci || {})[p.id]).length);
                   return (
                     <article key={t.id} className={'rx-wi' + (pick.sel.has(t.id) ? ' sel' : '')} style={{ marginLeft: Math.min(g.depth.get(t.id) || 0, 3) * 10 }}>
                       <div className="rx-wi-top">
@@ -293,7 +335,7 @@ export default function Raci() {
                       <div className="rx-wi-st"><i className="rx-sdot" style={{ background: st.color || 'var(--muted)' }} />{st.label}</div>
                       <div className="rx-chips">
                         {withRole.length ? withRole.map((p) => (
-                          <span key={p.id} className={'rx-pchip r-' + t.raci[p.id]}><b>{t.raci[p.id]}</b>{p.name}</span>
+                          <span key={p.id} className={'rx-pchip r-' + rolesOf(t.raci[p.id])[0]}><b>{rolesOf(t.raci[p.id]).join('')}</b>{p.name}</span>
                         )) : <span className="msg">No stakeholders assigned yet</span>}
                       </div>
                       <button type="button" className="btn rx-assign" onClick={() => setAssign(t.id)}>{withRole.length ? 'Edit roles' : 'Assign stakeholders'}</button>
@@ -331,7 +373,7 @@ export default function Raci() {
             </thead>
             <tbody>
               {groups.map((g) => (
-                <RowsFor key={g.id} g={g} people={people} cols={colCount} colSet={cols} onCycle={cycle} sel={pick.sel} onSelect={pick.toggleOne} onGroup={pick.setMany} onAssign={setAssign} />
+                <RowsFor key={g.id} g={g} people={people} cols={colCount} colSet={cols} onPop={openPop} popKey={pop ? pop.taskId + '|' + pop.pid : ''} sel={pick.sel} onSelect={pick.toggleOne} onGroup={pick.setMany} onAssign={setAssign} />
               ))}
               {!groups.length && (<tr><td colSpan={colCount}><Empty total={total} rx={rx} reset={() => setRx({ ...DEFAULT_RX })} /></td></tr>)}
               {!people.length && groups.length > 0 && (<tr><td colSpan={colCount}><span className="cell msg">There are no stakeholders yet. Add them on the Stakeholders tab to start marking roles.</span></td></tr>)}
@@ -341,6 +383,7 @@ export default function Raci() {
       )}
 
       <Legend />
+      {pop && popTask && popPerson && <RolePop pop={pop} task={popTask} person={popPerson} value={(popTask.raci || {})[pop.pid]} onToggle={(r) => toggleCell(pop.taskId, pop.pid, r)} onClear={() => clearCell(pop.taskId, pop.pid)} onClose={() => setPop(null)} />}
       {assignTask && <AssignDialog ids={[assign]} items={scopeItems} people={people} onClose={() => setAssign(null)} />}
     </div>
   );
@@ -363,7 +406,7 @@ function Empty({ total, rx, reset }) {
   );
 }
 
-function RowsFor({ g, people, cols, colSet, onCycle, sel, onSelect, onGroup, onAssign }) {
+function RowsFor({ g, people, cols, colSet, onPop, popKey, sel, onSelect, onGroup, onAssign }) {
   const { S } = useStore();
   const all = g.tasks.length > 0 && g.tasks.every((t) => sel.has(t.id));
   const some = g.tasks.some((t) => sel.has(t.id));
@@ -395,9 +438,12 @@ function RowsFor({ g, people, cols, colSet, onCycle, sel, onSelect, onGroup, onA
             </td>
             {people.map((p) => {
               const v = (t.raci || {})[p.id] || '';
+              const rs = rolesOf(v);
               return (
                 <td key={p.id} className={'rx-cell' + (colSet.has(p.id) ? ' on' : '')}>
-                  <button type="button" className={'rc ' + (v ? 'r-' + v : 'rx-empty-cell')} onClick={() => onCycle(t.id, p.id)} title={v ? ROLE_INFO[v].name : 'No role. Click to set'} aria-label={p.name + ' role ' + (v || 'none') + ' on ' + t.name}>{v || '·'}</button>
+                  <button type="button" className={'rc ' + (rs.length === 0 ? 'rx-empty-cell' : rs.length === 1 ? 'r-' + rs[0] : 'multi') + (popKey === t.id + '|' + p.id ? ' open' : '')} onClick={(e) => onPop(e, t.id, p.id)} aria-haspopup="dialog" title={rs.length ? roleName(v) + '. Click to change' : 'No role. Click to set'} aria-label={p.name + ' role ' + (rs.length ? rs.join(' and ') : 'none') + ' on ' + t.name}>
+                    {rs.length === 0 ? '·' : rs.length === 1 ? rs[0] : rs.map((r) => <i key={r} className={'rm r-' + r}>{r}</i>)}
+                  </button>
                 </td>
               );
             })}

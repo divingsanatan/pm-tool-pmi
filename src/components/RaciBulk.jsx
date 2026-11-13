@@ -4,22 +4,26 @@ import { Modal, useUI } from './UI';
 import { Avatar } from './Bits';
 import { raciOkFor } from '../lib/calc';
 import { findTask } from '../lib/tasks';
-import { RACI_ROLES, ROLE_INFO } from '../lib/raci';
+import { RACI_ROLES, ROLE_INFO, hasRole, joinRoles, rolesOf, toggleRole } from '../lib/raci';
 
 export const ROLE_NAMES = Object.fromEntries(RACI_ROLES.map((r) => [r, ROLE_INFO[r].name]));
 
-// Applies { personId: 'A' | 'R' | 'C' | 'I' | '' } to one work item's roles. Only one person can be Accountable:
-// making someone A moves the previous A to Responsible (so they stay on the work item). An empty role removes the person.
+// Applies { personId: 'AR' | 'C' | '' ... } to one work item's roles. Each value is the FULL set of roles that person holds
+// on the work item (one or several letters); an empty value removes the person. Only one person can be Accountable:
+// making someone A takes A from the previous holder, who stays on the work item as Responsible.
 export function applyRoles(roles, changes) {
   const next = { ...(roles || {}) };
-  const newA = Object.keys(changes).filter((k) => changes[k] === 'A');
-  Object.entries(changes).forEach(([pid, role]) => {
-    if (role) next[pid] = role;
+  Object.entries(changes).forEach(([pid, v]) => {
+    const r = joinRoles(rolesOf(v));
+    if (r) next[pid] = r;
     else delete next[pid];
   });
+  const newA = Object.keys(changes).filter((k) => hasRole(changes[k], 'A'));
   if (newA.length) {
     const keep = newA[newA.length - 1];
-    Object.keys(next).forEach((k) => next[k] === 'A' && k !== keep && (next[k] = 'R'));
+    Object.keys(next).forEach((k) => {
+      if (k !== keep && hasRole(next[k], 'A')) next[k] = joinRoles(rolesOf(next[k]).filter((x) => x !== 'A').concat('R'));
+    });
   }
   return next;
 }
@@ -32,7 +36,7 @@ function RoleButtons({ value, onPick, name, allowClear = true, clearLabel = 'Non
           key={r}
           type="button"
           className={'rx-rb r-' + r}
-          aria-pressed={value === r}
+          aria-pressed={rolesOf(value).includes(r)}
           disabled={r === 'A' && disabledA}
           title={ROLE_INFO[r].name + ' · ' + ROLE_INFO[r].hint}
           onClick={() => onPick(r)}
@@ -64,22 +68,41 @@ export function AssignDialog({ ids, items, people, onClose }) {
   const shown = useMemo(() => people.filter((p) => !q.trim() || (p.name + ' ' + (p.role || '')).toLowerCase().includes(q.trim().toLowerCase())), [people, q]);
   const nameOf = (id) => (people.find((x) => x.id === id) || {}).name || 'Someone';
 
-  const setRole = (cur, pid, role) => {
+  // str = the full set of roles for that person ('' removes them, undefined = no change, many-item mode only)
+  const setRoles = (cur, pid, str) => {
     const n = { ...cur };
-    if (role === 'A') Object.keys(n).forEach((k) => k !== pid && n[k] === 'A' && (n[k] = single ? 'R' : undefined)); // one A: the old one becomes R (single) or is left unchanged (many)
-    Object.keys(n).forEach((k) => n[k] === undefined && delete n[k]);
-    if (single) n[pid] = role;
-    else if (n[pid] === role) delete n[pid];
-    else n[pid] = role;
+    if (typeof str === 'string' && hasRole(str, 'A'))
+      Object.keys(n).forEach((k) => {
+        if (k === pid || !hasRole(n[k], 'A')) return;
+        const rest = rolesOf(n[k]).filter((x) => x !== 'A');
+        if (single) n[k] = joinRoles(rest.concat('R')); // the old A stays on the work item as R
+        else if (rest.length) n[k] = joinRoles(rest);
+        else delete n[k];
+      });
+    if (str === undefined) delete n[pid];
+    else n[pid] = str;
     return n;
   };
-  const choose = (pid, role) => setPick((cur) => setRole(cur, pid, single && cur[pid] === role ? '' : role));
+  // a role button toggles that role on or off for the person, so one person can hold several roles
+  const choose = (pid, role) =>
+    setPick((cur) => {
+      if (role === '') return setRoles(cur, pid, single ? '' : cur[pid] === '' ? undefined : '');
+      const next = toggleRole(cur[pid] || '', role);
+      return setRoles(cur, pid, next === '' && !single ? undefined : next);
+    });
   const toggleMark = (pid) => setMarked((m) => { const n = new Set(m); n.has(pid) ? n.delete(pid) : n.add(pid); return n; });
   const markAll = (on) => setMarked(on ? new Set(shown.map((p) => p.id)) : new Set());
   const giveMarked = (role) =>
     setPick((cur) => {
       let n = { ...cur };
-      [...marked].forEach((pid) => { n = single || n[pid] !== role ? setRole(n, pid, role) : (delete n[pid], n); });
+      const ids = [...marked];
+      if (role === '') return ids.reduce((acc, pid) => setRoles(acc, pid, single ? '' : ''), n);
+      const all = ids.every((pid) => hasRole(n[pid], role)); // all already have it: take it off; otherwise give it to everyone
+      ids.forEach((pid) => {
+        const have = rolesOf(n[pid]);
+        const next = joinRoles(all ? have.filter((x) => x !== role) : have.concat(role));
+        n = setRoles(n, pid, next === '' && !single ? undefined : next);
+      });
       return n;
     });
   const fillInformed = () => setPick((cur) => Object.fromEntries(people.map((p) => [p.id, cur[p.id] || 'I'])));
@@ -89,8 +112,8 @@ export function AssignDialog({ ids, items, people, onClose }) {
   const after = (t) => (mode === 'copy' ? (src ? { ...src.raci } : t.raci) : applyRoles(t.raci, single ? Object.fromEntries(Object.entries(pick).map(([k, v]) => [k, v || ''])) : changes));
   const okAfter = tasks.filter((t) => raciOkFor(after(t))).length;
   const ready = mode === 'set' ? changed > 0 : !!src;
-  const aCount = Object.values(pick).filter((v) => v === 'A').length;
-  const rCount = Object.values(pick).filter((v) => v === 'R').length;
+  const aCount = Object.values(pick).filter((v) => hasRole(v, 'A')).length;
+  const rCount = Object.values(pick).filter((v) => hasRole(v, 'R')).length;
 
   const apply = () => {
     update((p) => {
@@ -121,8 +144,8 @@ export function AssignDialog({ ids, items, people, onClose }) {
         <>
           <p className="hint">
             {single
-              ? 'Give each stakeholder a role for this work item. Tick several people to give them the same role at once.'
-              : 'Roles you choose are applied to every selected work item. People left on “No change” keep what they have. Tick several people to give them the same role at once.'}
+              ? 'Give each stakeholder one or more roles for this work item (for example both A and R). Tap a role to switch it on or off. Tick several people to give them the same role at once.'
+              : 'Roles you choose are applied to every selected work item. People left on “No change” keep what they have. A person can hold several roles. Tick several people to give them the same role at once.'}
           </p>
 
           <div className="rx-tools">
@@ -191,6 +214,7 @@ export default function RaciBar({ ids, items, people, pickedPeople = [], shownId
   const { update } = useStore();
   const ui = useUI();
   const [open, setOpen] = useState(false);
+  const [replace, setReplace] = useState(false); // false: add the role to what they already have; true: replace their other roles
   const n = ids.length, k = pickedPeople.length;
   if (!n && !k) return null;
   const targets = n ? ids : shownIds;
@@ -202,12 +226,13 @@ export default function RaciBar({ ids, items, people, pickedPeople = [], shownId
     const go = () => update((p) => targets.forEach((id) => {
       const f = findTask(p, id);
       if (!f) return;
-      f.t.raci = applyRoles(f.t.raci, Object.fromEntries(pickedPeople.map((pid) => [pid, role])));
+      const cur = f.t.raci || {};
+      f.t.raci = applyRoles(cur, Object.fromEntries(pickedPeople.map((pid) => [pid, role === '' || replace ? role : joinRoles(rolesOf(cur[pid]).concat(role))])));
     }));
     if (!n || role === '') {
       ui.ask({
         title: (role ? 'Set ' + role + ' for ' : 'Remove ') + who + (role ? '' : ' from') + ' ' + (role ? 'on ' : '') + what + '?',
-        body: role ? who + ' will get the role ' + ROLE_INFO[role].name + ' on ' + what + '. Existing roles for ' + (k === 1 ? 'this person' : 'these people') + ' on those work items are replaced.' : 'Their roles on ' + what + ' will be removed.',
+        body: role ? who + ' will get the role ' + ROLE_INFO[role].name + ' on ' + what + (replace ? '. Their other roles on those work items are replaced.' : ', added to any roles they already have.') : 'All their roles on ' + what + ' will be removed.',
         confirm: role ? 'Apply ' + role : 'Remove',
         danger: !role,
         onConfirm: go,
@@ -235,6 +260,7 @@ export default function RaciBar({ ids, items, people, pickedPeople = [], shownId
           <div className="rx-sel-row">
             <span className="msg">Give {who} on {what}:</span>
             <RoleButtons value={null} name={who} onPick={run} clearLabel="Remove" disabledA={k > 1} />
+            <label className="rx-all" title="Off: the role is added to what they already have, so someone can be both A and R"><input type="checkbox" className="tg-sel" checked={replace} onChange={(e) => setReplace(e.target.checked)} /> Replace their other roles</label>
             {k > 1 && <span className="msg">A is off because only one person can be Accountable.</span>}
           </div>
         )}

@@ -33,7 +33,7 @@ export function gridInsights(S, tasks) {
   placed.forEach((p) => by[quadrantOf(p).id].push(p));
   const rolesBy = new Map(S.people.map((p) => {
     const r = { A: 0, R: 0, C: 0, I: 0, total: 0 };
-    tasks.forEach((t) => { const v = t.raci && t.raci[p.id]; if (v && r[v] !== undefined) { r[v] += 1; r.total += 1; } });
+    tasks.forEach((t) => { const v = t.raci && t.raci[p.id]; if (typeof v !== 'string') return; let any = false; ['A', 'R', 'C', 'I'].forEach((k) => { if (v.includes(k)) { r[k] += 1; any = true; } }); if (any) r.total += 1; });
     return [p.id, r];
   }));
   const key = by.closely.concat(by.satisfied); // the people with high power

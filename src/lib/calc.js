@@ -326,7 +326,8 @@ export const overdue = (r) => r.status !== 'Closed' && r.due && r.due < today();
 /* ---------- RACI ---------- */
 const raciOk = (roles) => {
   const v = Object.values(roles || {});
-  return v.filter((x) => x === 'A').length === 1 && v.filter((x) => x === 'R').length >= 1;
+  const has = (x, r) => typeof x === 'string' && x.includes(r); // a person can hold several roles, e.g. 'AR'
+  return v.filter((x) => has(x, 'A')).length === 1 && v.filter((x) => has(x, 'R')).length >= 1;
 };
 export const raciOkFor = raciOk;
 export function raciGaps(S) {

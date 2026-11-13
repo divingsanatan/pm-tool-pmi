@@ -73,13 +73,21 @@ export const ROLE_INFO = {
   C: { name: 'Consulted', hint: 'Gives input before decisions (two-way).' },
   I: { name: 'Informed', hint: 'Kept up to date (one-way).' },
 };
+// One stakeholder can hold several roles on one work item. They are stored as letters in the fixed order A R C I
+// ('AR' = Accountable and Responsible). Older data holds a single letter, which is still valid.
+export const ROLE_ORDER = ['A', 'R', 'C', 'I'];
+export const rolesOf = (v) => { const s = typeof v === 'string' ? v : ''; return ROLE_ORDER.filter((r) => s.includes(r)); };
+export const hasRole = (v, r) => rolesOf(v).includes(r);
+export const joinRoles = (list) => ROLE_ORDER.filter((r) => list.includes(r)).join('');
+export const toggleRole = (v, r) => { const a = rolesOf(v); return joinRoles(a.includes(r) ? a.filter((x) => x !== r) : a.concat(r)); };
+export const roleName = (v) => rolesOf(v).map((r) => ROLE_INFO[r].name).join(' + ');
 export const DEFAULT_RX = { q: '', check: 'all', state: 'all', type: 'all', person: '', role: '' };
 export const CHECK_FILTERS = [['all', 'All'], ['attention', 'Needs attention'], ['noA', 'No A'], ['multiA', 'Multiple A'], ['noR', 'No R'], ['ok', 'OK'], ['empty', 'No roles at all']];
 
 // what is wrong (if anything) with one work item's roles
 export function raciIssue(roles) {
   const v = Object.values(roles || {});
-  const A = v.filter((x) => x === 'A').length, R = v.filter((x) => x === 'R').length;
+  const A = v.filter((x) => hasRole(x, 'A')).length, R = v.filter((x) => hasRole(x, 'R')).length;
   if (A === 0) return 'noA';
   if (A > 1) return 'multiA';
   if (R < 1) return 'noR';
@@ -105,10 +113,10 @@ export function matchesRx(S, t, rx) {
   if (rx.check === 'multiA' && !(needs && issue === 'multiA')) return false;
   if (rx.check === 'noR' && !(needs && issue === 'noR')) return false;
   if (rx.check === 'ok' && !raciOkFor(roles)) return false;
-  if (rx.check === 'empty' && Object.keys(roles).length) return false;
+  if (rx.check === 'empty' && Object.values(roles).some((x) => rolesOf(x).length)) return false;
   if (rx.person) {
     const r = roles[rx.person];
-    if (!r || (rx.role && r !== rx.role)) return false;
+    if (!rolesOf(r).length || (rx.role && !hasRole(r, rx.role))) return false;
   }
   return true;
 }
@@ -131,17 +139,18 @@ export function raciInsights(S, items) {
       else if (issue === 'noA') noA += 1;
       else if (issue === 'multiA') multiA += 1;
       else noR += 1;
-      if (!Object.keys(roles).length) empty += 1;
+      if (!Object.values(roles).some((x) => rolesOf(x).length)) empty += 1;
     }
-    const cs = Object.values(roles).filter((x) => x === 'C').length;
+    const cs = Object.values(roles).filter((x) => hasRole(x, 'C')).length;
     if (cs >= 3) crowded += 1;
-    if (needs && open && !Object.values(roles).includes('I')) noneInformed += 1;
+    if (needs && open && !Object.values(roles).some((x) => hasRole(x, 'I'))) noneInformed += 1;
     Object.entries(roles).forEach(([pid, r]) => {
       const row = per.get(pid);
-      if (!row || !RACI_ROLES.includes(r)) return;
-      row[r] += 1;
+      const mine = rolesOf(r);
+      if (!row || !mine.length) return;
+      mine.forEach((x) => { row[x] += 1; });
       row.total += 1;
-      if (r === 'R' && open) row.openR += 1;
+      if (mine.includes('R') && open) row.openR += 1;
     });
   });
   const rows = [...per.values()];
