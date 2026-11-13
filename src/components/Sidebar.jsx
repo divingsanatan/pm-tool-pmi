@@ -5,6 +5,7 @@ import Menu from './Menu';
 import { BacklogIcon, FolderIcon, SprintIcon } from './Bits';
 import { blankProject, isOpen } from '../lib/tasks';
 import { leafTasks } from '../lib/hier';
+import DirectoryPanel from './DirectoryPanel';
 import { canSeeSettings, roleOf } from '../lib/access';
 import '../drafts.css';
 
@@ -35,6 +36,7 @@ export default function Sidebar({ onNavigate }) {
   const ui = useUI();
   const [closed, setClosed] = useState({});
   const [editing, setEditing] = useState(null);
+  const [dir, setDir] = useState(false);
   const go = (patch) => {
     setNav(patch);
     onNavigate && onNavigate();
@@ -191,10 +193,12 @@ export default function Sidebar({ onNavigate }) {
       </div>
 
       <div className="sb-foot">
+        {isAdmin && cloud && <button className="btn" onClick={() => setDir(true)}>Stakeholder directory</button>}
         {isAdmin && <button className="btn" onClick={() => { ui.openData(); onNavigate && onNavigate(); }}>Data</button>}
         {cloud && <button className="btn" onClick={cloud.signOut} title={cloud.email}>Sign out</button>}
         <span className="msg">{saved}</span>
       </div>
+      {dir && <DirectoryPanel onClose={() => setDir(false)} />}
     </aside>
   );
 }
