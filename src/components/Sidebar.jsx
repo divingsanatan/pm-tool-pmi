@@ -5,6 +5,7 @@ import Menu from './Menu';
 import { BacklogIcon, FolderIcon, SprintIcon } from './Bits';
 import { blankProject, isOpen } from '../lib/tasks';
 import { leafTasks } from '../lib/hier';
+import { canSeeSettings, roleOf } from '../lib/access';
 import '../drafts.css';
 
 function InlineEdit({ value, onDone }) {
@@ -28,7 +29,9 @@ function InlineEdit({ value, onDone }) {
 }
 
 export default function Sidebar({ onNavigate }) {
-  const { W, nav, updateW, setNav, saved, cloud } = useStore();
+  const { W, nav, updateW, setNav, saved, cloud, access } = useStore();
+  const isAdmin = !cloud || access.admin;
+  const mayManage = (pid) => !cloud || canSeeSettings(roleOf(access, pid)); // Admin and Project Manager
   const ui = useUI();
   const [closed, setClosed] = useState({});
   const [editing, setEditing] = useState(null);
@@ -95,7 +98,7 @@ export default function Sidebar({ onNavigate }) {
       <div className="sb-head">
         <span className="sb-logo" aria-hidden="true">S</span>
         <span className="sb-ws">Sprint Control</span>
-        <button className="btn icon" onClick={addProject} title="New project" aria-label="New project">+</button>
+        {isAdmin && <button className="btn icon" onClick={addProject} title="New project" aria-label="New project">+</button>}
       </div>
 
       <div className="sb-scroll">
@@ -116,18 +119,19 @@ export default function Sidebar({ onNavigate }) {
                     <span className="sb-name">{p.meta.name}</span>
                   </button>
                 )}
-                <button className="sb-act" title="Add sprint" aria-label="Add sprint" onClick={() => addSprint(p.id)}>+</button>
-                <Menu
-                  className="sb-act"
-                  label="⋯"
-                  title="Project actions"
-                  items={[
-                    { label: 'Rename', onClick: () => setEditing(key) },
-                    { label: 'Add sprint', onClick: () => addSprint(p.id) },
-                    { sep: true },
-                    { label: W.projects.length > 1 ? 'Delete project' : 'Delete project (keep at least one)', danger: true, disabled: W.projects.length < 2, onClick: () => delProject(p) },
-                  ]}
-                />
+                {mayManage(p.id) && <button className="sb-act" title="Add sprint" aria-label="Add sprint" onClick={() => addSprint(p.id)}>+</button>}
+                {mayManage(p.id) && (
+                  <Menu
+                    className="sb-act"
+                    label="⋯"
+                    title="Project actions"
+                    items={[
+                      { label: 'Rename', onClick: () => setEditing(key) },
+                      { label: 'Add sprint', onClick: () => addSprint(p.id) },
+                      ...(isAdmin ? [{ sep: true }, { label: W.projects.length > 1 ? 'Delete project' : 'Delete project (keep at least one)', danger: true, disabled: W.projects.length < 2, onClick: () => delProject(p) }] : []),
+                    ]}
+                  />
+                )}
               </div>
               {open && (
                 <div className="sb-kids">
@@ -145,16 +149,18 @@ export default function Sidebar({ onNavigate }) {
                             {n > 0 && <span className="badge">{n}</span>}
                           </button>
                         )}
-                        <Menu
-                          className="sb-act"
-                          label="⋯"
-                          title="Sprint actions"
-                          items={[
-                            { label: 'Rename', onClick: () => setEditing(sk) },
-                            { sep: true },
-                            { label: 'Delete sprint', danger: true, onClick: () => delSprint(p, s) },
-                          ]}
-                        />
+                        {mayManage(p.id) && (
+                          <Menu
+                            className="sb-act"
+                            label="⋯"
+                            title="Sprint actions"
+                            items={[
+                              { label: 'Rename', onClick: () => setEditing(sk) },
+                              { sep: true },
+                              { label: 'Delete sprint', danger: true, onClick: () => delSprint(p, s) },
+                            ]}
+                          />
+                        )}
                       </div>
                     );
                   })}
@@ -165,7 +171,7 @@ export default function Sidebar({ onNavigate }) {
                         <span className="sb-name dr">{d.name}</span>
                         <span className="badge draft">Draft</span>
                       </button>
-                      <Menu className="sb-act" label="⋯" title="Draft sprint actions" items={[{ label: 'Delete draft', danger: true, onClick: () => delDraft(p, d) }]} />
+                      {mayManage(p.id) && <Menu className="sb-act" label="⋯" title="Draft sprint actions" items={[{ label: 'Delete draft', danger: true, onClick: () => delDraft(p, d) }]} />}
                     </div>
                   ))}
                   <div className={'sb-row kid' + (isCur && nav.view === 'sprint' && nav.sprintId === 'backlog' ? ' on' : '')}>
@@ -175,17 +181,17 @@ export default function Sidebar({ onNavigate }) {
                       {p.backlog.tasks.length > 0 && <span className="badge">{p.backlog.tasks.length}</span>}
                     </button>
                   </div>
-                  <button className="sb-add" onClick={() => addSprint(p.id)}>+ Add sprint</button>
+                  {mayManage(p.id) && <button className="sb-add" onClick={() => addSprint(p.id)}>+ Add sprint</button>}
                 </div>
               )}
             </div>
           );
         })}
-        <button className="sb-add top" onClick={addProject}>+ New project</button>
+        {isAdmin && <button className="sb-add top" onClick={addProject}>+ New project</button>}
       </div>
 
       <div className="sb-foot">
-        <button className="btn" onClick={() => { ui.openData(); onNavigate && onNavigate(); }}>Data</button>
+        {isAdmin && <button className="btn" onClick={() => { ui.openData(); onNavigate && onNavigate(); }}>Data</button>}
         {cloud && <button className="btn" onClick={cloud.signOut} title={cloud.email}>Sign out</button>}
         <span className="msg">{saved}</span>
       </div>

@@ -5,7 +5,8 @@ import { fixNav, isV3, toWorkspace } from '../lib/migrate';
 import { stampDone } from '../lib/tasks';
 import { addActivity, autoEvents, diffProject, statusSnapshot } from '../lib/activity';
 import { supabase } from '../lib/supabase';
-import { createCloud, fetchCloud, markSynced, newSyncState, pushCloud, workspaceFromRows } from '../lib/cloud';
+import { claimInvites, createCloud, fetchCloud, markSynced, newSyncState, pushCloud, workspaceFromRows } from '../lib/cloud';
+import { NO_ACCESS, canEdit, roleOf } from '../lib/access';
 import { CloudImport, Splash } from '../components/CloudScreens';
 
 export const KEY = 'sprint-control-v3';
@@ -31,6 +32,14 @@ function loadLocal() {
 }
 const load = () => loadLocal() || toWorkspace(seedWorkspace());
 
+// Whatever this person may not change is put back: a Viewer's edits, projects created or deleted by someone who is not an Admin.
+function lockDown(prev, next, acc) {
+  const was = new Map(prev.projects.map((p) => [p.id, p]));
+  next.projects = next.projects.map((p) => { const o = was.get(p.id); return !o ? null : canEdit(roleOf(acc, p.id)) ? p : o; }).filter(Boolean);
+  prev.projects.forEach((o) => { if (!next.projects.some((p) => p.id === o.id)) next.projects.push(o); });
+  return next;
+}
+
 const curOf = (W) => W.projects.find((p) => p.id === W.nav.projectId) || W.projects[0];
 const Ctx = createContext(null);
 
@@ -44,6 +53,9 @@ export function StoreProvider({ children, cloud }) {
   const [status, setStatus] = useState(isCloud ? 'loading' : 'ready'); // loading | import | error | ready
   const [problem, setProblem] = useState('');
   const [conflict, setConflict] = useState(false);
+  const [access, setAccess] = useState(isCloud ? NO_ACCESS : { admin: true, roles: {} });
+  const acc = useRef(access);
+  acc.current = access;
 
   const by = useRef('You');
   by.current = cloud ? cloud.email || 'You' : 'You';
@@ -60,9 +72,12 @@ export function StoreProvider({ children, cloud }) {
     setStatus('loading');
     setProblem('');
     try {
-      const { rows, navRow } = await fetchCloud(supabase);
+      await claimInvites(supabase); // an invitation sent to this email becomes a membership
+      const { rows, navRow, access: a } = await fetchCloud(supabase, userId);
+      acc.current = a;
+      setAccess(a);
       if (!rows.length) {
-        setStatus('import');
+        setStatus(a.admin ? 'import' : 'noaccess');
         return;
       }
       const w = workspaceFromRows(rows, navRow);
@@ -77,7 +92,7 @@ export function StoreProvider({ children, cloud }) {
       setProblem((e && e.message) || 'Unknown error');
       setStatus('error');
     }
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     if (isCloud) loadCloud();
@@ -105,7 +120,7 @@ export function StoreProvider({ children, cloud }) {
     try {
       do {
         again.current = false;
-        await pushCloud(supabase, sync.current, userId, latest.current);
+        await pushCloud(supabase, sync.current, userId, latest.current, acc.current);
       } while (again.current);
       setSaved('Saved to cloud');
     } catch (e) {
@@ -156,10 +171,15 @@ export function StoreProvider({ children, cloud }) {
     const pull = async () => {
       if (off || halted.current) return;
       try {
-        const { rows, navRow } = await fetchCloud(supabase);
-        if (off || !rows.length) return;
+        const { rows, navRow, access: a } = await fetchCloud(supabase, userId);
+        if (off) return;
+        if (!rows.length) {
+          if (!a.admin) setStatus('noaccess'); // removed from every project
+          return;
+        }
         const st = sync.current.projects;
-        const same = rows.length === Object.keys(st).length && rows.every((r) => st[r.id] && st[r.id].rev === r.rev);
+        const roleSame = JSON.stringify(a) === JSON.stringify(acc.current);
+        const same = roleSame && rows.length === Object.keys(st).length && rows.every((r) => st[r.id] && st[r.id].rev === r.rev);
         if (same) return;
         if (!clean()) {
           wait = setTimeout(pull, 1500); // this device is saving or has unsaved edits: look again in a moment
@@ -170,6 +190,8 @@ export function StoreProvider({ children, cloud }) {
         w.nav = latest.current.nav;
         const next = fixNav(w);
         markSynced(sync.current, next, rows);
+        acc.current = a;
+        setAccess(a);
         setW(next);
         setSaved('Updated from another device');
       } catch (e) {
@@ -224,7 +246,7 @@ export function StoreProvider({ children, cloud }) {
       stampDone(before, p);
       normalize(p);
       addActivity(p, events.concat(autoEvents(p, snap)), at, who);
-      return next;
+      return lockDown(prev, next, acc.current);
     });
   }, []);
 
@@ -242,7 +264,7 @@ export function StoreProvider({ children, cloud }) {
       });
       next.projects.forEach(normalize);
       next.projects.forEach((pn) => addActivity(pn, found.get(pn.id), at, who));
-      return fixNav(next);
+      return fixNav(lockDown(prev, next, acc.current));
     });
   }, []);
 
@@ -253,13 +275,14 @@ export function StoreProvider({ children, cloud }) {
     setW((prev) => {
       const next = structuredClone(prev);
       addActivity(curOf(next), [{ cat, act: 'event', text }], at, who);
-      return next;
+      return lockDown(prev, next, acc.current);
     });
   }, []);
 
   const setNav = useCallback((patch) => setW((prev) => fixNav({ ...prev, nav: { ...prev.nav, ...patch } })), []);
 
   const replace = useCallback((next) => {
+    if (!acc.current.admin) return false; // replacing everything is for Admins only
     const w = toWorkspace(next);
     if (w) {
       addActivity(curOf(w), [{ cat: 'data', act: 'imported', text: 'The workspace data was replaced by an import or reset' }], new Date().toISOString(), by.current);
@@ -293,11 +316,22 @@ export function StoreProvider({ children, cloud }) {
       </Splash>
     );
   }
+  if (status === 'noaccess') {
+    return (
+      <Splash>
+        <h1>No projects yet</h1>
+        <div className="msg">Signed in as {cloud.email}. You have not been added to any project. Ask your Project Manager or Admin to invite this exact email address, then check again.</div>
+        <button className="btn primary" onClick={loadCloud}>Check again</button>
+        <button className="btn" onClick={cloud.signOut}>Sign out</button>
+      </Splash>
+    );
+  }
   if (status === 'import') return <CloudImport local={local} onStart={startCloud} email={cloud.email} signOut={cloud.signOut} />;
 
   const S = curOf(W);
+  const role = isCloud ? roleOf(access, S.id) || 'viewer' : 'admin';
   return (
-    <Ctx.Provider value={{ W, S, nav: W.nav, saved, cloud: cloud ? { email: cloud.email, signOut: cloud.signOut } : null, update, updateW, setNav, replace, setField, track }}>
+    <Ctx.Provider value={{ W, S, nav: W.nav, saved, role, access, cloud: cloud ? { email: cloud.email, userId, signOut: cloud.signOut } : null, update, updateW, setNav, replace, setField, track }}>
       {children}
       {conflict && (
         <div role="alert" style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 50, padding: '12px 16px', background: 'var(--bad-bg)', color: 'var(--bad)', display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', borderTop: '1px solid var(--bad)' }}>

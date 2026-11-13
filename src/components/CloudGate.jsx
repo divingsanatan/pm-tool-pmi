@@ -7,6 +7,10 @@ const signIn = async (email, password) => {
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   return error ? error.message : '';
 };
+const signInGoogle = async () => {
+  const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } });
+  return error ? error.message : '';
+};
 const signOut = () => supabase.auth.signOut();
 
 // Without Supabase settings: local-only mode, same as before.
@@ -23,7 +27,7 @@ export default function CloudGate({ children }) {
 
   if (!supabase) return <StoreProvider>{children}</StoreProvider>;
   if (session === undefined) return <Splash><div className="msg">Loading…</div></Splash>;
-  if (!session) return <Login onSignIn={signIn} />;
+  if (!session) return <Login onSignIn={signIn} onGoogle={signInGoogle} />;
   return (
     <StoreProvider key={session.user.id} cloud={{ userId: session.user.id, email: session.user.email, signOut }}>
       {children}

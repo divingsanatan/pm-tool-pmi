@@ -14,13 +14,14 @@ import SprintView from './tabs/SprintView';
 import DraftSprint from './tabs/DraftSprint';
 import BacklogView from './tabs/BacklogView';
 import OutsideBanner from './components/OutsideBanner';
+import { tabAllowed } from './lib/access';
 
 const VIEWS = { dash: Dashboard, time: Timeline, budget: Budget, people: Stakeholders, raci: Raci, raid: Raid, change: Change, activity: Activity };
 
 export default function App() {
-  const { S, nav } = useStore();
+  const { S, nav, role } = useStore();
   const [sb, setSb] = useState(false);
-  const View = VIEWS[nav.tab] || Dashboard;
+  const View = (tabAllowed(role, nav.tab) && VIEWS[nav.tab]) || Dashboard;
 
   return (
     <div className={'app' + (sb ? ' sb-open' : '')}>

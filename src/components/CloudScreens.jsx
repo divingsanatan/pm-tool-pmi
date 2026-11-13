@@ -12,7 +12,7 @@ export function Splash({ children }) {
   );
 }
 
-export function Login({ onSignIn }) {
+export function Login({ onSignIn, onGoogle }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -27,11 +27,27 @@ export function Login({ onSignIn }) {
     setBusy(false);
   };
 
+  const google = async () => {
+    setBusy(true);
+    setErr('');
+    const error = await onGoogle();
+    if (error) {
+      setErr(error);
+      setBusy(false);
+    }
+  };
+
   return (
     <div style={page}>
       <form className="panel" style={card} onSubmit={submit}>
         <h1>Sprint Control</h1>
         <div className="sub">Sign in to open your workspace.</div>
+        {onGoogle && (
+          <>
+            <button className="btn primary" type="button" disabled={busy} onClick={google}>Continue with Google</button>
+            <div className="msg" style={{ textAlign: 'center' }}>or use email and password</div>
+          </>
+        )}
         <input style={input} type="email" autoComplete="username" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required aria-label="Email" />
         <input style={input} type="password" autoComplete="current-password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required aria-label="Password" />
         <button className="btn primary" type="submit" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
