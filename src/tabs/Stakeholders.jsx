@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useStore } from '../store/StoreContext';
 import { useUI } from '../components/UI';
 import { Cell } from '../components/Field';
@@ -24,6 +24,16 @@ export default function Stakeholders() {
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
   const [msg, setMsg] = useState('');
+  const [dir, setDir] = useState(null); // the Admin's stakeholder directory (null while loading or when it is not available)
+  const [sel, setSel] = useState('');
+  const [busy, setBusy] = useState(false);
+  const NEW = '__new';
+  const loadDir = useCallback(async () => {
+    if (!cloud) return;
+    const r = await supabase.from('directory_people').select('id,name,role,email').order('name', { ascending: true });
+    setDir(r.error ? null : r.data || []);
+  }, [cloud]);
+  useEffect(() => { loadDir(); }, [loadDir]);
   const tasks = allContainers(S).flatMap((c) => c.tasks);
   const taken = (n, exceptId) => S.people.some((p) => p.id !== exceptId && key(p.name) === key(n));
 
@@ -35,6 +45,35 @@ export default function Stakeholders() {
     setName('');
     setRole('');
     setMsg('');
+  };
+  // Adds a person from the directory, or creates a new directory entry and adds that. Either way they are linked to the directory.
+  const addFromDirectory = async () => {
+    setMsg('');
+    setBusy(true);
+    try {
+      let d = dir.find((x) => x.id === sel);
+      if (sel === NEW) {
+        const n = name.trim();
+        if (!n) throw new Error('Enter the person’s name.');
+        if (taken(n)) throw new Error('“' + n + '” is already on this project.');
+        if (dir.some((x) => key(x.name) === key(n))) throw new Error('“' + n + '” is already in the directory. Choose them from the list.');
+        d = { id: uid(), name: n, role: role.trim(), email: '' };
+        const r = await supabase.rpc('directory_create', { did: d.id, nm: d.name, rl: d.role, mail: '' });
+        if (r.error) throw r.error;
+      }
+      if (!d) throw new Error('Choose a stakeholder first.');
+      update((p) => {
+        const same = p.people.find((x) => !x.dirId && key(x.name) === key(d.name));
+        if (same) same.dirId = d.id;
+        else p.people.push({ id: uid(), dirId: d.id, name: d.name, role: d.role, cap: 1, rate: 0, joined: todayIso() });
+      });
+      setSel(''); setName(''); setRole('');
+      setMsg(d.email ? d.name + ' is added. To let them sign in to this project, use People at the top right.' : '');
+      loadDir();
+    } catch (e) {
+      setMsg('Could not add: ' + (e.message || 'unknown error'));
+    }
+    setBusy(false);
   };
   const rename = (p, v) => {
     const n = v.trim();
@@ -75,11 +114,30 @@ export default function Stakeholders() {
     <div className="card">
       <h2>Stakeholders</h2>
       <p className="hint">The single list of people for this project. Pick them as assignees on work items, mark them in the RACI chart, and cost them in the Budget. Names can only be added or changed here.</p>
-      <div className="row" style={{ margin: '4px 0 12px', alignItems: 'flex-end' }} onKeyDown={(e) => e.key === 'Enter' && add()}>
+      {cloud && dir ? (
+        <div className="row" style={{ margin: '4px 0 12px', alignItems: 'flex-end' }}>
+          <label className="fld">Add a stakeholder
+            <select className="c" style={{ borderColor: 'var(--line)', minWidth: 240 }} value={sel} onChange={(e) => { setSel(e.target.value); setMsg(''); }} aria-label="Stakeholder from the directory">
+              <option value="">Choose from the directory…</option>
+              {dir.filter((d) => !S.people.some((x) => x.dirId === d.id)).map((d) => (<option key={d.id} value={d.id}>{d.name}{d.role ? ' · ' + d.role : ''}</option>))}
+              <option value={NEW}>+ Create a new stakeholder…</option>
+            </select>
+          </label>
+          {sel === NEW && (
+            <>
+              <label className="fld">Name<input className="c w-name" style={{ borderColor: 'var(--line)' }} value={name} onChange={(e) => { setName(e.target.value); setMsg(''); }} placeholder="Full name" aria-label="New stakeholder name" /></label>
+              <label className="fld">Role or title (optional)<input className="c w-md" style={{ borderColor: 'var(--line)' }} value={role} onChange={(e) => setRole(e.target.value)} placeholder="e.g. Product owner" aria-label="New stakeholder role" /></label>
+            </>
+          )}
+          <button className="btn primary" onClick={addFromDirectory} disabled={busy || !sel || (sel === NEW && !name.trim())}>+ Add stakeholder</button>
+        </div>
+      ) : (
+        <div className="row" style={{ margin: '4px 0 12px', alignItems: 'flex-end' }} onKeyDown={(e) => e.key === 'Enter' && add()}>
         <label className="fld">Name<input className="c w-name" style={{ borderColor: 'var(--line)' }} value={name} onChange={(e) => { setName(e.target.value); setMsg(''); }} placeholder="Full name" aria-label="New stakeholder name" /></label>
         <label className="fld">Role or title (optional)<input className="c w-md" style={{ borderColor: 'var(--line)' }} value={role} onChange={(e) => setRole(e.target.value)} placeholder="e.g. Product owner" aria-label="New stakeholder role" /></label>
         <button className="btn primary" onClick={add} disabled={!name.trim()}>+ Add stakeholder</button>
       </div>
+      )}
       {msg && <p className="msg lateTxt" style={{ marginBottom: 8 }}>{msg}</p>}
       <div className="scroll">
         <table className="tbl rwd">
