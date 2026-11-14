@@ -175,7 +175,7 @@ export default function DirectoryPanel({ onClose }) {
         </div>
       )}
       <div className="scroll">
-        <table className="tbl">
+        <table className="tbl dir-tbl">
           <thead><tr><th>Name</th><th>Role</th><th>Email (sign-in)</th><th>Status</th><th>Projects and login role</th><th /></tr></thead>
           <tbody>
             {rows.map((d) => {

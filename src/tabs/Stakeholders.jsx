@@ -153,7 +153,7 @@ export default function Stakeholders() {
                 <td data-l="Assigned" className="r mono"><span className="cell">{tasks.filter((t) => (t.assignees || []).includes(p.id)).length}</span></td>
                 <td data-l="RACI roles" className="r mono"><span className="cell">{tasks.filter((t) => t.raci && t.raci[p.id]).length}</span></td>
                 <td data-l="Labour budget"><span className="cell msg">{S.team.some((t) => t.person === p.id) ? 'Included' : '–'}</span></td>
-                <td data-l="">
+                <td data-l="" className="st-actions">
                   {p.left ? (
                     <>
                       {openAssigned(S, p.id).length > 0 && <button className="btn" onClick={() => setReassign(p)}>Reassign {openAssigned(S, p.id).length} open</button>}{' '}

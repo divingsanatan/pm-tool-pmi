@@ -9,6 +9,7 @@ import DirectoryPanel from './DirectoryPanel';
 import ImportDialog from './ImportDialog';
 import { canSeeSettings, roleOf } from '../lib/access';
 import '../drafts.css';
+import '../team.css';
 
 function InlineEdit({ value, onDone }) {
   const [v, setV] = useState(value);
@@ -197,10 +198,12 @@ export default function Sidebar({ onNavigate }) {
       </div>
 
       <div className="sb-foot">
-        {isAdmin && cloud && <button className="btn" onClick={() => setDir(true)}>Stakeholder directory</button>}
-        {isAdmin && <button className="btn" onClick={() => { ui.openData(); onNavigate && onNavigate(); }}>Data</button>}
-        {cloud && <button className="btn" onClick={cloud.signOut} title={cloud.email}>Sign out</button>}
-        <span className="msg">{saved}</span>
+        {isAdmin && cloud && <button className="btn sb-foot-wide" onClick={() => setDir(true)}>Stakeholder directory</button>}
+        <div className="sb-foot-row">
+          {!cloud && isAdmin && <button className="btn" onClick={() => { ui.openData(); onNavigate && onNavigate(); }}>Data</button>}
+          {cloud && <button className="btn" onClick={cloud.signOut} title={cloud.email}>Sign out</button>}
+          <span className="msg sb-saved" title={saved}>{saved}</span>
+        </div>
       </div>
       {dir && <DirectoryPanel onClose={() => setDir(false)} />}
       {imp && <ImportDialog pid={imp.pid} cid={imp.cid} onClose={() => setImp(null)} />}

@@ -1,0 +1,22 @@
+/* Sidebar footer: buttons never wrap their text; the save status sits on its own line */
+.sb-foot{flex-direction:column;align-items:stretch;justify-content:flex-start;gap:8px}
+.sb-foot .btn{white-space:nowrap}
+.sb-foot-wide{width:100%}
+.sb-foot-row{display:flex;align-items:center;gap:10px;min-width:0}
+.sb-saved{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto}
+
+/* Windows opened from the sidebar and header (stakeholder directory, People, CSV import) */
+.modal .tbl th,.modal .tbl td{vertical-align:top}
+.modal .tbl .c{min-width:110px;max-width:100%}
+.modal .row{align-items:flex-end}
+.dir-tbl{min-width:980px}
+.st-actions{white-space:nowrap}
+.st-actions .btn{white-space:nowrap}
+@media (max-width:700px){
+  .modal{padding:14px}
+  .modal .row .fld,.modal .row .fld .c{width:100%}
+  .modal .row .btn{flex:1 1 auto}
+  .modal .scroll .tbl{min-width:640px}
+  .modal .scroll .dir-tbl{min-width:980px}
+  .modal .hint{font-size:13px}
+}
