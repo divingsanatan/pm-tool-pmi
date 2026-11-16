@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import MembersPanel from './MembersPanel';
+import { ReportButton } from './ReportDialog';
 import { ROLE_LABEL, canManageMembers, canSeeBudget, tabAllowed } from '../lib/access';
 import { leftWithWork } from '../lib/people';
 import { useStore } from '../store/StoreContext';
@@ -38,12 +39,11 @@ export default function Header() {
           <h1>{title}</h1>
           <div className="sub">{sub}</div>
         </div>
-        {cloud && (
-          <div className="row">
-            <span className={'pill ' + (role === 'viewer' ? 'neutral' : 'good')} title="Your role on this project">{ROLE_LABEL[role]}</span>
-            {canManageMembers(role) && <button className="btn" onClick={() => setMembers(true)}>People</button>}
-          </div>
-        )}
+        <div className="row">
+          {cloud && <span className={'pill ' + (role === 'viewer' ? 'neutral' : 'good')} title="Your role on this project">{ROLE_LABEL[role]}</span>}
+          {cloud && canManageMembers(role) && <button className="btn" onClick={() => setMembers(true)}>People</button>}
+          <ReportButton />
+        </div>
       </div>
       {members && <MembersPanel onClose={() => setMembers(false)} />}
       {canManageMembers(role) && leftWithWork(S).length > 0 && (

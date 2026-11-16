@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ReportButton } from '../components/ReportDialog';
 import { dateCrOf, hoursCrOf, hoursLocked, inBaseline, sprintOverlaps } from '../lib/sprintGuard';
 import { useStore } from '../store/StoreContext';
 import { useTasks } from '../store/useTasks';
@@ -614,6 +615,7 @@ export default function SprintView() {
           </>
           <span className={'chip-d' + (missing ? ' warnc' : '')}>{missing} not est</span>
           {cr && <button className={'pill ' + crCls(cr.status)} onClick={() => setNav({ view: 'project', tab: 'change' })} title="Open change control">{cr.code} · {cr.status}</button>}
+          <ReportButton sprintId={c.id} />
         </div>
       </div>
 
