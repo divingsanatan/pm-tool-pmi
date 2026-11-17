@@ -4,7 +4,7 @@ import { useChange } from '../store/useChange';
 import { useUI } from '../components/UI';
 import { Area, Cell, SelectCell } from '../components/Field';
 import RichText from '../components/RichText';
-import { DAY, addDays, fdate, pd, today } from '../lib/dates';
+import { addDays, fdate, today } from '../lib/dates';
 import { newRaidId, reserves } from '../lib/calc';
 import { money, nz, pc } from '../lib/format';
 import { allContainers, uid } from '../lib/tasks';
@@ -117,7 +117,6 @@ export default function ChangeDrawer({ id, onClose }) {
     return { to, label, m, ok: !m.length };
   };
   const rec = st === 'Approved' ? reconcile(cr, S) : null;
-  const fit = st === 'Approved' ? implementPlan(cr, S) : null; // what implementing would do, including whether the sprint dates fit the approved finish
   const dp = deletePlan(S, cr); // what deleting this request would touch
   const visit = (tab) => {
     setNav({ view: 'project', tab });
@@ -338,23 +337,13 @@ export default function ChangeDrawer({ id, onClose }) {
                   <span>Expected new budget</span><span className="mono">{money(rec.expCost)}</span>
                   <span>Budget in the plan now</span><span className="mono">{money(rec.live.bac)}</span>
                   <span>Baseline finish</span><span className="mono">{fdate(rec.b.end)}</span>
-                  <span>Expected finish ({signedDays(nz(cr.apDays))})</span><span className="mono">{fdate(rec.expEnd)}</span>
                   <span>Finish in the plan now</span><span className="mono">{fdate(rec.live.end)}</span>
                 </div>
                 <p className="msg" style={{ margin: '8px 0 0', color: rec.mismatch ? 'var(--bad)' : 'var(--good)' }}>
                   {rec.mismatch
-                    ? 'The plan does not match the approval' + (Math.abs(rec.diffCost) > 1 ? ' (budget off by ' + money(Math.abs(rec.diffCost)) + ')' : '') + (rec.diffDays !== 0 ? ' (finish ' + Math.abs(rec.diffDays) + (Math.abs(rec.diffDays) === 1 ? ' day ' : ' days ') + (rec.diffDays > 0 ? 'after' : 'before') + ' the approved finish)' : '') + '. ' + (Math.abs(rec.diffCost) > 1 ? 'Update the budget, or explain the difference below.' : '')
-                    : 'The plan matches the approved impact.'}
+                    ? 'The budget in the plan does not match the approval (off by ' + money(Math.abs(rec.diffCost)) + '). Update the budget, or explain the difference below.'
+                    : 'The budget in the plan matches the approved cost.'}
                 </p>
-                {fit && !fit.fits && (
-                  <div className="msg" style={{ margin: '8px 0 0', color: 'var(--bad)' }}>
-                    <p style={{ margin: 0 }}><b>Implement is blocked.</b> The approved finish is {fdate(fit.expEnd)} (baseline {fit.prev.version} finish {fdate(fit.prev.end)} {signedDays(fit.apDays)}), but the sprint dates end on {fdate(fit.actualEnd)}. Either move the last sprint’s end date to {fdate(fit.expEnd)}, or correct the approved days to {signedDays(Math.round((pd(fit.actualEnd) - pd(fit.prev.end)) / DAY))}.</p>
-                    <div className="row" style={{ marginTop: 6 }}>
-                      <button className="btn" onClick={() => ch.editApproved(cr.id, { apDays: Math.round((pd(fit.actualEnd) - pd(fit.prev.end)) / DAY) })}>Use the plan’s finish: approved days {signedDays(Math.round((pd(fit.actualEnd) - pd(fit.prev.end)) / DAY))}</button>
-                      <button className="linkbtn" onClick={() => visit('time')}>Open the Timeline</button>
-                    </div>
-                  </div>
-                )}
                 {rec.mismatch && (
                   <label className="fld" style={{ marginTop: 8 }}>Why the plan differs from the approval
                     {rich('reconcile', 'Reconciliation note', 2, false)}
@@ -433,7 +422,7 @@ export default function ChangeDrawer({ id, onClose }) {
                     <p style={{ margin: '0 0 8px' }}>The new baseline is the current one ({pl.prev.version}) plus what was approved:</p>
                     <ul style={{ margin: '0 0 10px', paddingLeft: 18 }}>
                       <li>Budget at completion (work budget + contingency): {money(pl.prev.bac)} → <b>{money(pl.bac)}</b> ({signedMoney(pl.bac - pl.prev.bac, money)})</li>
-                      <li>Finish date: {fdate(pl.prev.end)} → <b>{fdate(pl.end)}</b> ({signedDays(pl.apDays)}, as approved; the sprint dates end there)</li>
+                      <li>Finish date (from the sprint dates): {fdate(pl.prev.end)} → <b>{fdate(pl.end)}</b></li>
                       {pl.res && pl.res.changed
                         ? <li>Reserves: contingency {money(pl.res.before.contingency)} → <b>{money(pl.res.contingency)}</b> ({signedMoney(pl.res.dCont, money)}), management reserve {money(pl.res.before.management)} → <b>{money(pl.res.management)}</b> ({signedMoney(pl.res.dMgmt, money)}). Total project budget {money(pl.res.totalBefore)} → <b>{money(pl.res.totalAfter)}</b></li>
                         : <li>Reserves: unchanged (locked).</li>}

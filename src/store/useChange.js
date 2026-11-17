@@ -4,7 +4,7 @@ import { uid } from '../lib/tasks';
 import { DAY, addDays, pd, today } from '../lib/dates';
 import { nz } from '../lib/format';
 import { promoteFor } from '../lib/drafts';
-import { baselinesOf, blankCr, crBlockers, currentBaseline, implementPlan, inNextBaseline, isNewestBaseline, missing, reserveAfter, snapshot } from '../lib/change';
+import { baselinesOf, blankCr, crBlockers, currentBaseline, inNextBaseline, isNewestBaseline, missing, reserveAfter, snapshot } from '../lib/change';
 import { allContainers } from '../lib/tasks';
 
 const note = (c, text) => c.log.push({ on: today(), text });
@@ -136,16 +136,14 @@ export function useChange() {
           const c = p.cr.find((x) => x.id === id);
           if (!c || c.status !== 'Approved' || missing(c, 'Implemented', p).length || !currentBaseline(p)) return;
           const prev = currentBaseline(p);
-          const pl = implementPlan(c, p);
-          if (!pl || !pl.fits) return; // the sprint dates must end on the approved finish first
           const apCost = nz(c.apCost), apDays = nz(c.apDays);
           // The approved cost and schedule change are added to the previous baseline:
           // BAC of the new baseline = (previous work budget + approved cost) + contingency; the management reserve stays outside it.
-          // Its finish is the previous finish + the approved days (the sprint dates have been checked to end there).
+          // Its finish is the real latest sprint end, not the previous finish plus the approved days.
           const res = reserveAfter(c, p, 'ap');
           const bac = res.bac;
           const snap = snapshot(p, (sp) => inNextBaseline(p, sp, c.id));
-          const end = pl.end;
+          const end = snap.end;
           // the approved cost goes into the plan's budget only when the user asked for it
           if (apCost && addBudgetLine === true && !p.lines.some((l) => l.crId === c.id))
             p.lines.push({ id: uid(), name: c.code + ' ' + (c.title || 'Change request'), amount: apCost, per: 'project' });

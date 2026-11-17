@@ -145,25 +145,19 @@ export function reconcile(cr, S) {
   const diffCost = live.bac - expCost;
   const actDays = Math.round((pd(live.end) - pd(b.end)) / DAY);
   const diffDays = actDays - nz(cr.apDays);
-  // the approved days decide the finish date (previous baseline finish + approved days), so the plan must end exactly there
-  const mismatch = Math.abs(diffCost) > 1 || diffDays !== 0;
+  // The finish date is not compared with the approved days: weekends, holidays, leave and gaps between sprints make days and dates differ.
+  const mismatch = Math.abs(diffCost) > 1; // only the budget is compared: holidays, leave and gaps between sprints make days and dates differ
   return { b, live, expCost, diffCost, actDays, diffDays, expEnd: addDays(b.end, nz(cr.apDays)), mismatch };
 }
 export function implChecks(cr, S) {
   const r = reconcile(cr, S);
   const c = cr.chk || {};
-  const pl = implementPlan(cr, S);
-  const list = [];
-  if (pl) {
-    const how = pl.off > 0 ? Math.abs(pl.off) + (Math.abs(pl.off) === 1 ? ' day' : ' days') + ' too late' : Math.abs(pl.off) + (Math.abs(pl.off) === 1 ? ' day' : ' days') + ' too early';
-    list.push(chk('fit', pl.fits ? 'Sprint dates end on the approved finish (' + fdate(pl.expEnd) + ')' : 'Sprint dates must end on the approved finish ' + fdate(pl.expEnd) + ' (the plan ends ' + fdate(pl.actualEnd) + ', ' + how + ')', pl.fits));
-  }
-  list.push(
+  const list = [
     chk('comms', 'Decision communicated to the requester and affected stakeholders', c.comms, false),
     chk('docs', 'Project plan documents updated (scope, schedule, budget, RACI)', c.docs, false),
     chk('raid', 'RAID log updated for new or changed risks', c.raid, false),
-    chk('wbs', 'Work items and budget changed to match the approval', c.wbs, false)
-  );
+    chk('wbs', 'Work items and budget changed to match the approval', c.wbs, false),
+  ];
   if (r && r.mismatch) list.push(chk('reconcile', 'Note explaining why the plan differs from the approved impact', filled(cr.reconcile), false));
   return list;
 }
@@ -235,12 +229,9 @@ export function implementPlan(cr, S) {
   const bac = res.bac;
   const liveBac = Math.round(projectBAC(S) * 100) / 100;
   const liveWork = Math.round(workBudget(S) * 100) / 100; // what the Budget tab's line items add up to, before reserves
-  // The approved days decide the finish date: previous baseline finish + approved days. The sprint dates of the plan must end exactly there
-  // (off = how many days the plan ends after the approved finish; negative = before it), and the request cannot be implemented until they do.
-  const expEnd = addDays(prev.end, apDays);
-  const actualEnd = scheduleEnd(S, S.sprints.filter((sp) => inNextBaseline(S, sp, cr.id)));
-  const off = Math.round((pd(actualEnd) - pd(expEnd)) / DAY);
-  return { prev, apCost, apDays, bac, end: expEnd, expEnd, actualEnd, off, fits: off === 0, liveBac, liveWork, needsBudget: apCost !== 0 && Math.abs(liveWork - res.work) > 1, res };
+  // The baseline records the real sprint dates of the plan (holidays, leave and gaps between sprints included); the approved days are a decision figure, not a date rule
+  const end = scheduleEnd(S, S.sprints.filter((sp) => inNextBaseline(S, sp, cr.id)));
+  return { prev, apCost, apDays, bac, end, liveBac, liveWork, needsBudget: apCost !== 0 && Math.abs(liveWork - res.work) > 1, res };
 }
 // A sprint belongs in the baseline made by request `crId` unless it is still waiting for some other request
 export const inNextBaseline = (S, sp, crId) => {
