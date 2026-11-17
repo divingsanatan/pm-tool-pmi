@@ -1,4 +1,4 @@
-import { DAY, addDays, pd, today } from './dates';
+import { DAY, addDays, fdate, pd, today } from './dates';
 import { nz } from './format';
 import { baseWork, labourOf, nW, personOf, projectBAC, projectEnd, reserves, weeklyBAC, workBudget } from './calc';
 import { uid } from './tasks';
@@ -145,19 +145,25 @@ export function reconcile(cr, S) {
   const diffCost = live.bac - expCost;
   const actDays = Math.round((pd(live.end) - pd(b.end)) / DAY);
   const diffDays = actDays - nz(cr.apDays);
-  // the plan runs in whole weeks, so a finish date within a week of the approved shift counts as matching
-  const mismatch = Math.abs(diffCost) > 1 || Math.abs(diffDays) > 6;
+  // the approved days decide the finish date (previous baseline finish + approved days), so the plan must end exactly there
+  const mismatch = Math.abs(diffCost) > 1 || diffDays !== 0;
   return { b, live, expCost, diffCost, actDays, diffDays, expEnd: addDays(b.end, nz(cr.apDays)), mismatch };
 }
 export function implChecks(cr, S) {
   const r = reconcile(cr, S);
   const c = cr.chk || {};
-  const list = [
+  const pl = implementPlan(cr, S);
+  const list = [];
+  if (pl) {
+    const how = pl.off > 0 ? Math.abs(pl.off) + (Math.abs(pl.off) === 1 ? ' day' : ' days') + ' too late' : Math.abs(pl.off) + (Math.abs(pl.off) === 1 ? ' day' : ' days') + ' too early';
+    list.push(chk('fit', pl.fits ? 'Sprint dates end on the approved finish (' + fdate(pl.expEnd) + ')' : 'Sprint dates must end on the approved finish ' + fdate(pl.expEnd) + ' (the plan ends ' + fdate(pl.actualEnd) + ', ' + how + ')', pl.fits));
+  }
+  list.push(
     chk('comms', 'Decision communicated to the requester and affected stakeholders', c.comms, false),
     chk('docs', 'Project plan documents updated (scope, schedule, budget, RACI)', c.docs, false),
     chk('raid', 'RAID log updated for new or changed risks', c.raid, false),
-    chk('wbs', 'Work items and budget changed to match the approval', c.wbs, false),
-  ];
+    chk('wbs', 'Work items and budget changed to match the approval', c.wbs, false)
+  );
   if (r && r.mismatch) list.push(chk('reconcile', 'Note explaining why the plan differs from the approved impact', filled(cr.reconcile), false));
   return list;
 }
@@ -229,9 +235,12 @@ export function implementPlan(cr, S) {
   const bac = res.bac;
   const liveBac = Math.round(projectBAC(S) * 100) / 100;
   const liveWork = Math.round(workBudget(S) * 100) / 100; // what the Budget tab's line items add up to, before reserves
-  // the baseline records the real sprint dates of the plan; the approved days are only what the request expected (checked in reconcile)
-  const end = scheduleEnd(S, S.sprints.filter((sp) => inNextBaseline(S, sp, cr.id)));
-  return { prev, apCost, apDays, bac, end, expEnd: addDays(prev.end, apDays), liveBac, liveWork, needsBudget: apCost !== 0 && Math.abs(liveWork - res.work) > 1, res };
+  // The approved days decide the finish date: previous baseline finish + approved days. The sprint dates of the plan must end exactly there
+  // (off = how many days the plan ends after the approved finish; negative = before it), and the request cannot be implemented until they do.
+  const expEnd = addDays(prev.end, apDays);
+  const actualEnd = scheduleEnd(S, S.sprints.filter((sp) => inNextBaseline(S, sp, cr.id)));
+  const off = Math.round((pd(actualEnd) - pd(expEnd)) / DAY);
+  return { prev, apCost, apDays, bac, end: expEnd, expEnd, actualEnd, off, fits: off === 0, liveBac, liveWork, needsBudget: apCost !== 0 && Math.abs(liveWork - res.work) > 1, res };
 }
 // A sprint belongs in the baseline made by request `crId` unless it is still waiting for some other request
 export const inNextBaseline = (S, sp, crId) => {
@@ -271,6 +280,46 @@ export function blankCr(S, id, fields = {}) {
     ...fields,
   };
 }
+
+/* ---------- deleting a baseline or a change request ---------- */
+// The baselines a request created (normally one)
+export const baselinesOf = (S, cr) => (S.baselines || []).filter((b) => b.id === cr.baselineId || (b.crId && b.crId === cr.id));
+// Only the newest baseline can be deleted: every later one is built on the one before it
+export const isNewestBaseline = (S, id) => !!(S.baselines && S.baselines.length) && S.baselines[S.baselines.length - 1].id === id;
+// Requests that sit on top of this one: a later request that is already Approved, Implemented or Closed, or a request whose baseline is newer than this one's
+export function crBlockers(S, cr) {
+  const list = S.cr || [];
+  const i = list.findIndex((x) => x.id === cr.id);
+  const out = list.slice(i + 1).filter((x) => ['Approved', 'Implemented', 'Closed'].includes(x.status));
+  const bl = S.baselines || [];
+  const mine = baselinesOf(S, cr);
+  if (mine.length) {
+    const first = Math.min(...mine.map((b) => bl.findIndex((x) => x.id === b.id)));
+    bl.slice(first + 1).filter((b) => !mine.some((m) => m.id === b.id)).forEach((b) => {
+      const c = list.find((x) => x.id === b.crId || x.baselineId === b.id);
+      if (c && c.id !== cr.id && !out.some((o) => o.id === c.id)) out.push(c);
+    });
+  }
+  return out;
+}
+// What deleting a request would touch, so the confirmation can say it before anything happens
+export function deletePlan(S, cr) {
+  const mine = baselinesOf(S, cr);
+  const keep = (S.baselines || []).filter((b) => !mine.some((m) => m.id === b.id));
+  const tasks = allContainersOf(S).flatMap((c) => c.tasks);
+  return {
+    blockers: crBlockers(S, cr),
+    baselines: mine,
+    becomes: mine.length ? keep[keep.length - 1] || null : null,
+    drafts: (S.drafts || []).filter((d) => d.crId === cr.id),
+    sprints: S.sprints.filter((sp) => sp.crId === cr.id),
+    unlocked: S.sprints.filter((sp) => sp.crId !== cr.id && (sp.dateCrId === cr.id || sp.hoursCrId === cr.id)),
+    lines: (S.lines || []).filter((l) => l.crId === cr.id),
+    labour: (S.team || []).filter((t) => t.crId === cr.id),
+    deps: tasks.reduce((n, t) => n + (t.deps || []).filter((d) => d.crId === cr.id).length, 0),
+  };
+}
+const allContainersOf = (S) => S.sprints.concat(S.backlog ? [S.backlog] : []);
 
 /* ---------- roll-ups for the dashboard and the Change tab ---------- */
 export function pendingOf(S) {

@@ -744,6 +744,17 @@ export function normalize(S) {
   if (!Array.isArray(S.raci)) S.raci = [];
   // change control: change requests and baseline versions
   if (!Array.isArray(S.baselines)) S.baselines = [];
+  // A request that says Implemented or Closed but whose baseline no longer exists (it was deleted) goes back to Approved,
+  // so its approved cost and days can be corrected and it can be implemented again.
+  (Array.isArray(S.cr) ? S.cr : []).forEach((c) => {
+    if (!['Implemented', 'Closed'].includes(c.status) || S.baselines.some((b) => b.id === c.baselineId || (b.crId && b.crId === c.id))) return;
+    c.status = 'Approved';
+    c.implementedOn = '';
+    c.closedOn = '';
+    c.baselineId = '';
+    if (!Array.isArray(c.log)) c.log = [];
+    c.log.push({ on: today(), text: 'Back to Approved: its baseline no longer exists (repaired automatically)' });
+  });
   // Contingency and management reserve: two built-in budget lines that cannot be deleted. Their percentages (of the work budget)
   // can change until a baseline exists; from then on they are locked to the baseline's values and amounts.
   if (!S.reserve || typeof S.reserve !== 'object') S.reserve = {};

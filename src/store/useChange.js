@@ -4,7 +4,8 @@ import { uid } from '../lib/tasks';
 import { DAY, addDays, pd, today } from '../lib/dates';
 import { nz } from '../lib/format';
 import { promoteFor } from '../lib/drafts';
-import { blankCr, currentBaseline, inNextBaseline, missing, reserveAfter, snapshot } from '../lib/change';
+import { baselinesOf, blankCr, crBlockers, currentBaseline, implementPlan, inNextBaseline, isNewestBaseline, missing, reserveAfter, snapshot } from '../lib/change';
+import { allContainers } from '../lib/tasks';
 
 const note = (c, text) => c.log.push({ on: today(), text });
 
@@ -20,7 +21,7 @@ export function useChange() {
           p.baselines.push({ id: uid(), version: 'v1.0', kind: 'Initial', date: today(), crId: '', crCode: '', note: (text || '').trim() || 'Original approved plan', ...snapshot(p) });
         });
       },
-      // Baselines can be corrected or removed. Removing one unlinks it from the change request that created it.
+      // Baselines can be corrected or removed.
       patchBaseline(id, patch) {
         update((p) => {
           const b = p.baselines.find((x) => x.id === id);
@@ -33,16 +34,22 @@ export function useChange() {
           if (b) Object.assign(b, snapshot(p), { date: today() });
         });
       },
+      // Only the newest baseline can be deleted (every later one is built on the one before it). The request that created it goes back
+      // to Approved, so its approved cost and days can be corrected and it can be implemented again; the previous version becomes current.
       removeBaseline(id) {
         update((p) => {
           const b = p.baselines.find((x) => x.id === id);
-          if (!b) return;
+          if (!b || !isNewestBaseline(p, id)) return;
           p.baselines = p.baselines.filter((x) => x.id !== id);
           p.cr.forEach((c) => {
-            if (c.baselineId === id) {
-              c.baselineId = '';
-              note(c, 'Baseline ' + b.version + ' was deleted');
-            }
+            if (c.baselineId !== id && !(b.crId && c.id === b.crId)) return;
+            c.baselineId = '';
+            if (['Implemented', 'Closed'].includes(c.status)) {
+              c.status = 'Approved';
+              c.implementedOn = '';
+              c.closedOn = '';
+              note(c, 'Baseline ' + b.version + ' was deleted: back to Approved');
+            } else note(c, 'Baseline ' + b.version + ' was deleted');
           });
         });
       },
@@ -57,10 +64,38 @@ export function useChange() {
           if (c) Object.assign(c, patch);
         });
       },
+      // Deletes a request in any status, unless another request sits on top of it (a later one already Approved, Implemented or Closed).
+      // Its baseline goes with it (the previous version becomes current). Sprints, the budget line and the labour claims it created stay in the plan
+      // but lose the link, so the Dashboard flags them as outside the baseline until they are removed or covered by another request.
       remove(id) {
         update((p) => {
           const c = p.cr.find((x) => x.id === id);
-          if (c && c.status === 'Draft') { p.cr = p.cr.filter((x) => x.id !== id); p.drafts = (p.drafts || []).filter((d) => d.crId !== id); } // once submitted, a request stays on record
+          if (!c || crBlockers(p, c).length) return;
+          const mine = baselinesOf(p, c);
+          p.baselines = p.baselines.filter((b) => !mine.some((m) => m.id === b.id));
+          p.drafts = (p.drafts || []).filter((d) => d.crId !== id);
+          p.sprints.forEach((sp) => {
+            if (sp.crId === id) delete sp.crId;
+            if (sp.dateCrId === id) sp.dateCrId = '';
+            if (sp.hoursCrId === id) sp.hoursCrId = '';
+          });
+          (p.lines || []).forEach((l) => { if (l.crId === id) l.crId = ''; });
+          (p.team || []).forEach((t) => { if (t.crId === id) { t.crId = ''; t.crClaim = 0; } });
+          allContainers(p).forEach((ct) => ct.tasks.forEach((t) => (t.deps || []).forEach((d) => { if (d.crId === id) d.crId = ''; })));
+          p.cr = p.cr.filter((x) => x.id !== id);
+        });
+      },
+      // While a request is Approved (not yet implemented) its approved cost and days can still be corrected; every change is written to its history
+      editApproved(id, patch) {
+        update((p) => {
+          const c = p.cr.find((x) => x.id === id);
+          if (!c || c.status !== 'Approved') return;
+          Object.keys(patch).forEach((k) => {
+            const was = c[k], to = patch[k];
+            if (was === to || (was == null && to == null)) return;
+            note(c, (k === 'apCost' ? 'Approved cost' : 'Approved schedule (days)') + ' changed ' + (was == null ? 'blank' : was) + ' → ' + (to == null ? 'blank' : to) + ' (before implementation)');
+          });
+          Object.assign(c, patch);
         });
       },
       // Moves a request to another status, but only if its required items are complete
@@ -101,14 +136,16 @@ export function useChange() {
           const c = p.cr.find((x) => x.id === id);
           if (!c || c.status !== 'Approved' || missing(c, 'Implemented', p).length || !currentBaseline(p)) return;
           const prev = currentBaseline(p);
+          const pl = implementPlan(c, p);
+          if (!pl || !pl.fits) return; // the sprint dates must end on the approved finish first
           const apCost = nz(c.apCost), apDays = nz(c.apDays);
-          // The approved cost and schedule change are added to the previous baseline. (Before, the new baseline was only a copy of the
-          // live plan, so a cost or schedule change that was approved but not typed in elsewhere never reached it.)
-          // BAC of the new baseline = (previous work budget + approved cost) + contingency; the management reserve stays outside it
+          // The approved cost and schedule change are added to the previous baseline:
+          // BAC of the new baseline = (previous work budget + approved cost) + contingency; the management reserve stays outside it.
+          // Its finish is the previous finish + the approved days (the sprint dates have been checked to end there).
           const res = reserveAfter(c, p, 'ap');
           const bac = res.bac;
           const snap = snapshot(p, (sp) => inNextBaseline(p, sp, c.id));
-          const end = snap.end; // the actual sprint dates, not the previous finish plus the approved days
+          const end = pl.end;
           // the approved cost goes into the plan's budget only when the user asked for it
           if (apCost && addBudgetLine === true && !p.lines.some((l) => l.crId === c.id))
             p.lines.push({ id: uid(), name: c.code + ' ' + (c.title || 'Change request'), amount: apCost, per: 'project' });

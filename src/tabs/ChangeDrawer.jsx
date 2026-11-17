@@ -4,11 +4,11 @@ import { useChange } from '../store/useChange';
 import { useUI } from '../components/UI';
 import { Area, Cell, SelectCell } from '../components/Field';
 import RichText from '../components/RichText';
-import { addDays, fdate, today } from '../lib/dates';
+import { DAY, addDays, fdate, pd, today } from '../lib/dates';
 import { newRaidId, reserves } from '../lib/calc';
 import { money, nz, pc } from '../lib/format';
 import { allContainers, uid } from '../lib/tasks';
-import { AREAS, CR_PRIORITIES, KINDS, NEXT, WORKFLOW, checksFor, crCls, currentBaseline, implementPlan, missing, reconcile, reserveAfter, signedDays, signedMoney, stageOf } from '../lib/change';
+import { AREAS, CR_PRIORITIES, KINDS, NEXT, WORKFLOW, checksFor, crCls, currentBaseline, deletePlan, implementPlan, missing, reconcile, reserveAfter, signedDays, signedMoney, stageOf } from '../lib/change';
 
 // A list of chosen items shown as chips, with a dropdown to add more
 function Picker({ ids, options, onChange, disabled, label, empty }) {
@@ -117,6 +117,8 @@ export default function ChangeDrawer({ id, onClose }) {
     return { to, label, m, ok: !m.length };
   };
   const rec = st === 'Approved' ? reconcile(cr, S) : null;
+  const fit = st === 'Approved' ? implementPlan(cr, S) : null; // what implementing would do, including whether the sprint dates fit the approved finish
+  const dp = deletePlan(S, cr); // what deleting this request would touch
   const visit = (tab) => {
     setNav({ view: 'project', tab });
     onClose();
@@ -291,10 +293,10 @@ export default function ChangeDrawer({ id, onClose }) {
                 {rich('rationale', 'Reason for the decision', 2, lockDec)}
               </label>
               <label className="fld">Approved cost impact
-                <Cell type="num" cls="n" value={cr.apCost} disabled={lockDec} onCommit={(v) => set({ apCost: v })} />
+                <Cell type="num" cls="n" value={cr.apCost} disabled={lockDec && st !== 'Approved'} onCommit={(v) => (st === 'Approved' ? ch.editApproved(cr.id, { apCost: v }) : set({ apCost: v }))} />
               </label>
               <label className="fld">Approved schedule impact (days)
-                <Cell type="num" cls="n" value={cr.apDays} disabled={lockDec} onCommit={(v) => set({ apDays: v })} />
+                <Cell type="num" cls="n" value={cr.apDays} disabled={lockDec && st !== 'Approved'} onCommit={(v) => (st === 'Approved' ? ch.editApproved(cr.id, { apDays: v }) : set({ apDays: v }))} />
               </label>
               <label className="fld">Implementation owner
                 <SelectCell value={cr.owner} options={people} disabled={lockOwn} onCommit={(v) => set({ owner: v })} />
@@ -341,9 +343,18 @@ export default function ChangeDrawer({ id, onClose }) {
                 </div>
                 <p className="msg" style={{ margin: '8px 0 0', color: rec.mismatch ? 'var(--bad)' : 'var(--good)' }}>
                   {rec.mismatch
-                    ? 'The plan does not match the approval (budget off by ' + money(Math.abs(rec.diffCost)) + ', finish off by ' + Math.abs(rec.diffDays) + ' days). Update the plan, or explain the difference below.'
-                    : 'The plan matches the approved impact. The plan runs in whole weeks, so a finish within a week of the expected date counts as matching.'}
+                    ? 'The plan does not match the approval' + (Math.abs(rec.diffCost) > 1 ? ' (budget off by ' + money(Math.abs(rec.diffCost)) + ')' : '') + (rec.diffDays !== 0 ? ' (finish ' + Math.abs(rec.diffDays) + (Math.abs(rec.diffDays) === 1 ? ' day ' : ' days ') + (rec.diffDays > 0 ? 'after' : 'before') + ' the approved finish)' : '') + '. ' + (Math.abs(rec.diffCost) > 1 ? 'Update the budget, or explain the difference below.' : '')
+                    : 'The plan matches the approved impact.'}
                 </p>
+                {fit && !fit.fits && (
+                  <div className="msg" style={{ margin: '8px 0 0', color: 'var(--bad)' }}>
+                    <p style={{ margin: 0 }}><b>Implement is blocked.</b> The approved finish is {fdate(fit.expEnd)} (baseline {fit.prev.version} finish {fdate(fit.prev.end)} {signedDays(fit.apDays)}), but the sprint dates end on {fdate(fit.actualEnd)}. Either move the last sprint’s end date to {fdate(fit.expEnd)}, or correct the approved days to {signedDays(Math.round((pd(fit.actualEnd) - pd(fit.prev.end)) / DAY))}.</p>
+                    <div className="row" style={{ marginTop: 6 }}>
+                      <button className="btn" onClick={() => ch.editApproved(cr.id, { apDays: Math.round((pd(fit.actualEnd) - pd(fit.prev.end)) / DAY) })}>Use the plan’s finish: approved days {signedDays(Math.round((pd(fit.actualEnd) - pd(fit.prev.end)) / DAY))}</button>
+                      <button className="linkbtn" onClick={() => visit('time')}>Open the Timeline</button>
+                    </div>
+                  </div>
+                )}
                 {rec.mismatch && (
                   <label className="fld" style={{ marginTop: 8 }}>Why the plan differs from the approval
                     {rich('reconcile', 'Reconciliation note', 2, false)}
@@ -369,10 +380,34 @@ export default function ChangeDrawer({ id, onClose }) {
         </ul>
         {cr.by && <p className="msg">Raised by {who(cr.by) || '(removed stakeholder)'}.</p>}
 
+        {dp.blockers.length > 0 && <p className="msg" style={{ color: 'var(--warn)' }}>This request cannot be deleted while {dp.blockers.map((c) => c.code + ' (' + c.status + ')').join(', ')} sit{dp.blockers.length > 1 ? '' : 's'} on top of it. Delete {dp.blockers.length > 1 ? 'those' : 'that one'} first.</p>}
         <div className="d-actions">
-          {st === 'Draft' && (
-            <button className="btn danger" onClick={() => ui.ask({ title: 'Delete draft?', body: 'This draft change request will be deleted. Submitted requests cannot be deleted.', confirm: 'Delete draft', danger: true, onConfirm: () => { ch.remove(cr.id); onClose(); } })}>Delete draft</button>
-          )}
+          <button
+            className="btn danger"
+            disabled={dp.blockers.length > 0}
+            title={dp.blockers.length ? 'Another request sits on top of this one' : ''}
+            onClick={() => ui.ask({
+              title: (st === 'Draft' ? 'Delete draft ' : 'Delete ') + cr.code + '?',
+              body: (
+                <>
+                  <p style={{ margin: '0 0 8px' }}>{cr.code}{cr.title ? ' “' + cr.title + '”' : ''} will be removed from the change log.{!['Draft', 'Submitted', 'Under review'].includes(st) ? ' Decided requests normally stay on record as the project’s history, so delete it only if it was raised by mistake. The deletion is kept in the Activity log.' : ''}</p>
+                  <ul style={{ margin: '0 0 8px', paddingLeft: 18 }}>
+                    {dp.baselines.length > 0 && <li>Its baseline <b>{dp.baselines.map((b) => b.version).join(', ')}</b> is deleted too.{dp.becomes ? ' Baseline ' + dp.becomes.version + ' (budget ' + money(dp.becomes.bac) + ', finish ' + fdate(dp.becomes.end) + ') becomes the current baseline again.' : ' No baseline will remain, so change control has nothing to measure against until you set one.'}</li>}
+                    {dp.drafts.length > 0 && <li>Draft sprint{dp.drafts.length > 1 ? 's' : ''} discarded: {dp.drafts.map((d) => d.name).join(', ')}.</li>}
+                    {dp.sprints.length > 0 && <li>Sprint{dp.sprints.length > 1 ? 's' : ''} {dp.sprints.map((x) => x.name).join(', ')} came from this request and stay in the plan. {dp.sprints.length > 1 ? 'They' : 'It'} will be flagged as outside the baseline until you remove {dp.sprints.length > 1 ? 'them' : 'it'} or cover {dp.sprints.length > 1 ? 'them' : 'it'} with another request.</li>}
+                    {dp.unlocked.length > 0 && <li>{dp.unlocked.map((x) => x.name).join(', ')}: dates or hours that were changed under this request stay as they are and are locked again.</li>}
+                    {dp.lines.length > 0 && <li>Budget line{dp.lines.length > 1 ? 's' : ''} {dp.lines.map((l) => '“' + l.name + '”').join(', ')} stay{dp.lines.length > 1 ? '' : 's'} in the Budget tab and will be flagged as extra budget until removed.</li>}
+                    {dp.labour.length > 0 && <li>Labour budget claimed through this request ({dp.labour.map((t) => (S.people.find((x) => x.id === t.person) || {}).name || 'someone').join(', ')}) is no longer covered by a request and will be flagged.</li>}
+                    {dp.deps > 0 && <li>{dp.deps} dependenc{dp.deps > 1 ? 'ies' : 'y'} lose{dp.deps > 1 ? '' : 's'} the link to this request.</li>}
+                  </ul>
+                  <p style={{ margin: 0 }}>This cannot be undone.</p>
+                </>
+              ),
+              confirm: st === 'Draft' ? 'Delete draft' : 'Delete request',
+              danger: true,
+              onConfirm: () => { ch.remove(cr.id); onClose(); },
+            })}
+          >{st === 'Draft' ? 'Delete draft' : 'Delete request'}</button>
           <span style={{ flex: 1 }} />
           {NEXT[st].includes('Draft') && moveBtn('Draft', 'Return to draft')}
           {st === 'Draft' && moveBtn('Submitted', 'Submit for review', 'btn primary')}
@@ -398,7 +433,7 @@ export default function ChangeDrawer({ id, onClose }) {
                     <p style={{ margin: '0 0 8px' }}>The new baseline is the current one ({pl.prev.version}) plus what was approved:</p>
                     <ul style={{ margin: '0 0 10px', paddingLeft: 18 }}>
                       <li>Budget at completion (work budget + contingency): {money(pl.prev.bac)} → <b>{money(pl.bac)}</b> ({signedMoney(pl.bac - pl.prev.bac, money)})</li>
-                      <li>Finish date (from the sprint dates): {fdate(pl.prev.end)} → <b>{fdate(pl.end)}</b>{pl.end !== pl.expEnd ? ' (the request expected ' + fdate(pl.expEnd) + ', ' + signedDays(pl.apDays) + ')' : ' (' + signedDays(pl.apDays) + ', as approved)'}</li>
+                      <li>Finish date: {fdate(pl.prev.end)} → <b>{fdate(pl.end)}</b> ({signedDays(pl.apDays)}, as approved; the sprint dates end there)</li>
                       {pl.res && pl.res.changed
                         ? <li>Reserves: contingency {money(pl.res.before.contingency)} → <b>{money(pl.res.contingency)}</b> ({signedMoney(pl.res.dCont, money)}), management reserve {money(pl.res.before.management)} → <b>{money(pl.res.management)}</b> ({signedMoney(pl.res.dMgmt, money)}). Total project budget {money(pl.res.totalBefore)} → <b>{money(pl.res.totalAfter)}</b></li>
                         : <li>Reserves: unchanged (locked).</li>}

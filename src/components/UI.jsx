@@ -5,12 +5,12 @@ import TypeManager from './TypeManager';
 import TagManager from './TagManager';
 import { useStore } from '../store/StoreContext';
 import { useCosts } from '../store/useCosts';
-import { DAY, pd, today } from '../lib/dates';
+import { DAY, fdate, pd, today } from '../lib/dates';
 import { hrsf } from '../lib/format';
 import { newSprint, uid } from '../lib/tasks';
 import { insertAt, sane, sprintClash } from '../lib/sprintGuard';
 import { calendarOf, sprintCalendar } from '../lib/offdays';
-import { blankCr, currentBaseline, sprintCrs } from '../lib/change';
+import { blankCr, currentBaseline, scheduleEnd, signedDays, sprintCrs } from '../lib/change';
 import { clashAll, crAllows, crJump } from '../lib/drafts';
 import { openCrs } from '../lib/deps';
 import './toast.css';
@@ -132,6 +132,15 @@ function SprintForm({ pid, opts = {}, onClose }) {
                   <input className="c" type="number" step="1" inputMode="numeric" placeholder="0 if none" value={f.crDays} onChange={set('crDays')} onKeyDown={key} />
                 </label>
               </div>
+              {orderOk && base.end && (() => {
+                const live = scheduleEnd(p), fin = f.end > live ? f.end : live, n = Math.round((pd(fin) - pd(base.end)) / DAY);
+                return (
+                  <p className="hint" style={{ margin: 0 }}>
+                    With these dates the plan finishes on {fdate(fin)}: {signedDays(n)} against baseline {base.version} ({fdate(base.end)}). The approved days must match this before the request can be implemented.
+                    {num(f.crDays) && parseInt(f.crDays, 10) !== n && <> <button type="button" className="linkbtn" onClick={() => setF({ ...f, crDays: String(n) })}>Use {signedDays(n)}</button></>}
+                  </p>
+                );
+              })()}
             </div>
           )}
         </div>
