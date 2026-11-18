@@ -7,7 +7,8 @@ import { Cell } from '../components/Field';
 import { fdate } from '../lib/dates';
 import { hrsf, money, nz, pc } from '../lib/format';
 import { reserves } from '../lib/calc';
-import { CR_STATUSES, crCls, currentBaseline, drift, pendingOf, signedDays, signedMoney, snapshot, stageOf } from '../lib/change';
+import { CR_STATUSES, crCls, currentBaseline, drift, pendingOf, signedDays, signedMoney, signedWorkDays, snapshot, stageOf } from '../lib/change';
+import { calendarOf, workDaysAfter } from '../lib/offdays';
 import { crJump } from '../lib/drafts';
 import ChangeDrawer from './ChangeDrawer';
 
@@ -69,8 +70,8 @@ export default function Change() {
           <Kpi l="Current baseline" v={base.version} s={'Set ' + fdate(base.date) + (base.crCode ? ' by ' + base.crCode : '')} />
           <Kpi l="Baseline BAC" v={money(base.bac)} s={d && Math.abs(d.dCost) > 0.5 ? 'Plan now ' + money(d.live.bac) + ' (' + signedMoney(d.dCost, money) + ')' : 'Plan matches'} />
           <Kpi l="Total project budget" v={money(bTotal)} s={br ? 'BAC (incl. contingency ' + money(br.contingency) + ') + management reserve ' + money(br.management) : 'BAC only'} />
-          <Kpi l="Awaiting decision" v={P.open.length} s={P.open.length ? signedMoney(P.openCost, money) + ' · ' + signedDays(P.openDays) + ' if all approved' : 'Nothing pending'} />
-          <Kpi l="Approved, not in baseline" v={P.appr.length} s={P.appr.length ? signedMoney(P.apprCost, money) + ' · ' + signedDays(P.apprDays) : 'None'} />
+          <Kpi l="Awaiting decision" v={P.open.length} s={P.open.length ? signedMoney(P.openCost, money) + ' · ' + signedWorkDays(P.openDays) + ' if all approved' : 'Nothing pending'} />
+          <Kpi l="Approved, not in baseline" v={P.appr.length} s={P.appr.length ? signedMoney(P.apprCost, money) + ' · ' + signedWorkDays(P.apprDays) : 'None'} />
         </section>
       )}
 
@@ -112,7 +113,7 @@ export default function Change() {
                     <td data-l="Raised by"><span className="cell">{who(c.by) || '–'}</span></td>
                     <td data-l="Raised"><span className="cell">{fdate(c.on)}</span></td>
                     <td data-l="Cost" className="r mono"><span className="cell">{money_ == null ? '–' : signedMoney(nz(money_), money)}</span></td>
-                    <td data-l="Days" className="r mono"><span className="cell">{days_ == null ? '–' : signedDays(nz(days_))}</span></td>
+                    <td data-l="Days" className="r mono"><span className="cell">{days_ == null ? '–' : signedWorkDays(nz(days_))}</span></td>
                     <td data-l="Next step"><span className="cell">{sg ? (<span className={'pill ' + (sg.done === sg.total ? 'good' : 'warn')}>{sg.to}: {sg.done}/{sg.total}</span>) : ''}</span></td>
                     <td data-l=""><button className="btn" onClick={() => setOpen(c.id)}>Open</button></td>
                   </tr>
@@ -135,6 +136,13 @@ export default function Change() {
             <tbody>
               {S.baselines.slice().reverse().map((b, i, arr) => {
                 const prev = arr[i + 1];
+                // The shift is the request's schedule change in working days (as approved), so the baseline and its request agree.
+                // The finish date can move by more calendar days: weekends, holidays and gaps between sprints sit in between.
+                const crOf = prev && b.crId ? S.cr.find((c) => c.id === b.crId) : null;
+                const dd = prev ? Math.round((Date.parse(b.end) - Date.parse(prev.end)) / 86400000) : 0;
+                const wdShift = !prev ? null : crOf && crOf.apDays != null ? nz(crOf.apDays) : dd >= 0 ? workDaysAfter(calendarOf(S), prev.end, b.end) : -workDaysAfter(calendarOf(S), b.end, prev.end);
+                const shiftTxt = wdShift == null ? '–' : signedWorkDays(wdShift);
+                const shiftTip = !prev ? '' : (crOf && crOf.apDays != null ? 'As approved in ' + crOf.code + '. ' : '') + 'The finish date moved ' + Math.abs(dd) + ' calendar day' + (Math.abs(dd) === 1 ? '' : 's') + ' (' + fdate(prev.end) + ' → ' + fdate(b.end) + '), which includes any weekend, holiday or gap between sprints.';
                 return (
                   <tr key={b.id}>
                     <td data-l="Version" className="mono"><span className="cell"><Cell value={b.version} cls="w-sm" label="Version name" onCommit={(v) => v.trim() && ch.patchBaseline(b.id, { version: v.trim() })} />{i === 0 && <span className="pill neutral">Current</span>}</span></td>
@@ -144,7 +152,7 @@ export default function Change() {
                     <td data-l="Change" className="r mono"><span className="cell">{prev ? signedMoney(b.bac - prev.bac, money) : '–'}</span></td>
                     <td data-l="Reserves" className="r mono"><span className="cell" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', whiteSpace: 'nowrap' }} title={b.reserve ? 'Contingency ' + money(b.reserve.contingency) + ' · management reserve ' + money(b.reserve.management) : ''}>{b.reserve ? money(nz(b.reserve.contingency) + nz(b.reserve.management)) : '–'}{b.reserve && <span className="msg" style={{ fontSize: 11 }}>{pc(b.reserve.contPct, 1)} + {pc(b.reserve.mgmtPct, 1)}</span>}</span></td>
                     <td data-l="Finish">{b.sprints && b.sprints.some((x) => x.start && x.end) ? (<span className="cell mono" title="Latest sprint end of this baseline">{fdate(b.end)}</span>) : (<Cell type="date" value={b.end} cls="w-date" label="Baseline finish date" onCommit={(v) => ch.patchBaseline(b.id, { end: v || b.end })} />)}</td>
-                    <td data-l="Shift" className="r mono"><span className="cell">{prev ? signedDays(Math.round((Date.parse(b.end) - Date.parse(prev.end)) / 86400000)) : '–'}</span></td>
+                    <td data-l="Shift" className="r mono"><span className="cell" title={shiftTip}>{shiftTxt}</span></td>
                     <td data-l="Work items" className="r mono"><span className="cell">{b.items}</span></td>
                     <td data-l="Effort (h)" className="r mono"><span className="cell">{hrsf(b.effort)}</span></td>
                     <td data-l="Note"><Cell value={b.note} cls="w-desc" label="Baseline note" placeholder="Note" onCommit={(v) => ch.patchBaseline(b.id, { note: v })} /></td>

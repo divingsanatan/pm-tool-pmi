@@ -1,4 +1,4 @@
-import { DAY, addDays, fdate, pd, today } from './dates';
+import { DAY, fdate, pd, today } from './dates';
 import { nz } from './format';
 import { baseWork, labourOf, nW, personOf, projectBAC, projectEnd, reserves, weeklyBAC, workBudget } from './calc';
 import { uid } from './tasks';
@@ -15,6 +15,8 @@ export const crCls = (s) => ({ Draft: 'neutral', Submitted: 'neutral', 'Under re
 const isoOf = (ms) => new Date(ms).toISOString().slice(0, 10);
 export const filled = (v) => (typeof v === 'string' ? v.trim().length > 0 : v != null && v !== '');
 export const signedMoney = (n, money) => (!n ? money(0) : (n > 0 ? '+' : '−') + money(Math.abs(n)));
+// Schedule figures of change requests are working days (weekly off days and holidays left out)
+export const signedWorkDays = (n) => (!n ? '0 working days' : (n > 0 ? '+' : '−') + Math.abs(n) + (Math.abs(n) === 1 ? ' working day' : ' working days'));
 export const signedDays = (n) => (!n ? '0 days' : (n > 0 ? '+' : '−') + Math.abs(n) + (Math.abs(n) === 1 ? ' day' : ' days'));
 
 /* ---------- baselines ---------- */
@@ -77,10 +79,11 @@ export function drift(S) {
   const removed = (b.codes || []).filter((c) => !now.has(c));
   const had = new Set((b.sprints || []).map((x) => x.id));
   const addedSprints = b.sprints ? S.sprints.filter((sp) => !had.has(sp.id)).map((sp) => sp.name) : [];
+  const dDays = Math.round((pd(live.end) - pd(b.end)) / DAY);
   const o = {
     b, live, added, removed, addedSprints,
     dCost: live.bac - b.bac,
-    dDays: Math.round((pd(live.end) - pd(b.end)) / DAY),
+    dDays, // calendar days the finish moved (a request's schedule change is in working days, so the two are shown differently)
     dItems: live.items - b.items,
     dEffort: live.effort - b.effort,
   };
@@ -147,7 +150,7 @@ export function reconcile(cr, S) {
   const diffDays = actDays - nz(cr.apDays);
   // The finish date is not compared with the approved days: weekends, holidays, leave and gaps between sprints make days and dates differ.
   const mismatch = Math.abs(diffCost) > 1; // only the budget is compared: holidays, leave and gaps between sprints make days and dates differ
-  return { b, live, expCost, diffCost, actDays, diffDays, expEnd: addDays(b.end, nz(cr.apDays)), mismatch };
+  return { b, live, expCost, diffCost, actDays, diffDays, mismatch };
 }
 export function implChecks(cr, S) {
   const r = reconcile(cr, S);
@@ -415,7 +418,7 @@ export function changeAlerts(S) {
     const bits = [];
     if (Math.abs(d.dCost) > 0.5) bits.push('budget ' + (d.dCost > 0 ? '+' : '−') + Math.round(Math.abs(d.dCost)).toLocaleString('en-US'));
     if (d.outside.length) bits.push('sprint dates outside the baseline: ' + d.outside.join(', '));
-    else if (d.dDays > 0) bits.push('finish ' + signedDays(d.dDays));
+    else if (d.dDays > 0) bits.push('finish ' + fdate(d.live.end) + ' (baseline ' + fdate(d.b.end) + ')');
     if (d.addedSprints.length) bits.push(d.addedSprints.length + ' sprint' + (d.addedSprints.length > 1 ? 's' : '') + ' added: ' + d.addedSprints.join(', '));
     if (d.added.length || d.removed.length) bits.push(d.added.length + ' work items added, ' + d.removed.length + ' removed');
     a.push({ cls: 'bad', text: 'The plan has moved away from baseline ' + b.version + (bits.length ? ' (' + bits.join(', ') + ')' : '') + ' with no approved change request. Raise a change request or revert the plan.' });

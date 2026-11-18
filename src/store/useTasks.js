@@ -7,7 +7,7 @@ import { leafTasks, pinStatus, rootTasks, subtreeIds } from '../lib/hier';
 import { cleanEffort, nz } from '../lib/format';
 import { DAY, fdate, pd } from '../lib/dates';
 import { blankCr, currentBaseline, sprintCrs } from '../lib/change';
-import { offDayInfo } from '../lib/offdays';
+import { calendarOf, offDayInfo, workDaysAfter } from '../lib/offdays';
 import { deleteDepNote, depsOfDeleted, dropDepRaid } from '../lib/deps';
 import { newLoadIssues } from '../lib/loadGuard';
 import { baselinedDates, clampDates, datePatchViolations, dateCrOf, gapWindow, hoursCrOf, hoursLocked, inWin, nextFreeDay, outsideBaseline, rollover, sane, sprintClash, sprintCovers, tasksOutside, windowOf } from '../lib/sprintGuard';
@@ -496,7 +496,7 @@ export function useTasks() {
         };
         const open = sprintCrs(S0).slice(-3).reverse();
         const lastEnd = [next.end].concat(S0.sprints.filter((x) => x.id !== cid && x.end).map((x) => x.end)).sort().pop();
-        const days = Math.max(0, Math.round((pd(lastEnd) - pd(b0.end)) / DAY));
+        const days = workDaysAfter(calendarOf(S0), b0.end, lastEnd); // working days added to the finish: weekly off days and holidays are left out
         const actions = [{
           label: 'Raise a new change request',
           primary: true,

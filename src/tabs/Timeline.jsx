@@ -192,7 +192,7 @@ export default function Timeline() {
         <div className="tl-k">
           <span className="l">Forecast finish</span>
           <span className="v">{finish ? fdate(finish) : '–'}</span>
-          <span className={'s' + (dr && dr.dDays > 0 ? ' bad' : dr && dr.dDays < 0 ? ' good' : '')}>{base ? 'Baseline ' + fdate(base.end) + ' · ' + (dr.dDays ? signedDays(dr.dDays) : 'on the baseline') : 'No baseline set yet'}</span>
+          <span className={'s' + (dr && dr.dDays > 0 ? ' bad' : dr && dr.dDays < 0 ? ' good' : '')}>{base ? 'Baseline ' + fdate(base.end) + ' · ' + (dr.dDays ? 'plan finishes ' + fdate(dr.live.end) : 'on the baseline') : 'No baseline set yet'}</span>
         </div>
         <div className="tl-k">
           <span className="l">Progress</span>

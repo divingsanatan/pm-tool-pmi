@@ -32,6 +32,31 @@ export function calendarOf(S) {
 }
 const NO_CAL = { weekly: [], holidays: [] };
 
+// Working days after `from` up to and including `to`, leaving out the project's weekly off days and holidays.
+// Used to suggest the schedule change of a request: 6 sprint days with a weekend in between are 6 working days, whatever the calendar gap.
+export function workDaysAfter(cal, from, to) {
+  if (!okDate(from) || !okDate(to) || pd(to) <= pd(from)) return 0;
+  const a = pd(from), n = Math.min(MAX_DAYS, Math.round((pd(to) - a) / DAY));
+  let w = 0;
+  for (let i = 1; i <= n; i++) {
+    const ms = a + i * DAY;
+    if (!cal.holidays.some((h) => ms >= h.a && ms <= h.b) && !cal.weekly.includes(new Date(ms).getUTCDay())) w++;
+  }
+  return w;
+}
+
+// The date reached by moving n working days from a date (negative n moves back), skipping the project's weekly off days and holidays
+export function addWorkDays(cal, from, n) {
+  if (!okDate(from) || !n) return from;
+  const step = n < 0 ? -1 : 1;
+  let left = Math.min(Math.abs(Math.round(n)), 2000), ms = pd(from), guard = 0;
+  while (left > 0 && guard++ < 8000) {
+    ms += step * DAY;
+    if (!cal.holidays.some((h) => ms >= h.a && ms <= h.b) && !cal.weekly.includes(new Date(ms).getUTCDay())) left--;
+  }
+  return iso(ms);
+}
+
 // The off days a sprint stores itself (sprint-specific), inside its own dates, sorted, without duplicates
 export function offDaysOf(sp) {
   if (!hasValidDates(sp) || !Array.isArray(sp.offDays)) return [];

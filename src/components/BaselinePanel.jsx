@@ -1,7 +1,7 @@
 import { useStore } from '../store/StoreContext';
 import { fdate } from '../lib/dates';
 import { hrsf, money } from '../lib/format';
-import { CR_STATUSES, crCls, currentBaseline, drift, pendingOf, signedDays, signedMoney } from '../lib/change';
+import { CR_STATUSES, crCls, currentBaseline, drift, pendingOf, signedDays, signedMoney, signedWorkDays } from '../lib/change';
 
 const tone = (n, bad = 1) => (!n ? undefined : { color: n * bad > 0 ? 'var(--bad)' : 'var(--good)' });
 
@@ -48,7 +48,7 @@ export default function BaselinePanel() {
                 <thead><tr><th>Measure</th><th className="r">Baseline</th><th className="r">Plan now</th><th className="r">Variance</th></tr></thead>
                 <tbody>
                   <tr><td><span className="cell">Budget at completion</span></td><td className="r mono"><span className="cell">{money(b.bac)}</span></td><td className="r mono"><span className="cell">{money(d.live.bac)}</span></td><td className="r mono"><span className="cell" style={tone(d.dCost)}>{signedMoney(d.dCost, money)}</span></td></tr>
-                  <tr><td><span className="cell">Finish date</span></td><td className="r mono"><span className="cell">{fdate(b.end)}</span></td><td className="r mono"><span className="cell">{fdate(d.live.end)}</span></td><td className="r mono"><span className="cell" style={tone(d.dDays)}>{signedDays(d.dDays)}</span></td></tr>
+                  <tr><td><span className="cell">Finish date</span></td><td className="r mono"><span className="cell">{fdate(b.end)}</span></td><td className="r mono"><span className="cell">{fdate(d.live.end)}</span></td><td className="r mono"><span className="cell" style={tone(d.dDays)}>{signedDays(d.dDays).replace(' day', ' calendar day')}</span></td></tr>
                   <tr><td><span className="cell">Work items</span></td><td className="r mono"><span className="cell">{b.items}</span></td><td className="r mono"><span className="cell">{d.live.items}</span></td><td className="r mono"><span className="cell">{d.dItems > 0 ? '+' : d.dItems < 0 ? '−' : ''}{Math.abs(d.dItems)}</span></td></tr>
                   <tr><td><span className="cell">Planned effort (h)</span></td><td className="r mono"><span className="cell">{hrsf(b.effort)}</span></td><td className="r mono"><span className="cell">{hrsf(d.live.effort)}</span></td><td className="r mono"><span className="cell">{d.dEffort > 0 ? '+' : d.dEffort < 0 ? '−' : ''}{hrsf(Math.abs(d.dEffort))}</span></td></tr>
                 </tbody>
@@ -64,7 +64,7 @@ export default function BaselinePanel() {
                 )}
               </div>
             )}
-            {P.appr.length > 0 && <p className="msg" style={{ marginTop: 8 }}>Approved, not yet in the baseline: {P.appr.map((c) => c.code).join(', ')} ({signedMoney(P.apprCost, money)}, {signedDays(P.apprDays)}).</p>}
+            {P.appr.length > 0 && <p className="msg" style={{ marginTop: 8 }}>Approved, not yet in the baseline: {P.appr.map((c) => c.code).join(', ')} ({signedMoney(P.apprCost, money)}, {signedWorkDays(P.apprDays)}).</p>}
             {S.baselines.length > 1 && (
               <>
                 <div className="flabel" style={{ margin: '14px 0 6px' }}>Budget by baseline version</div>
@@ -108,7 +108,7 @@ export default function BaselinePanel() {
                     <td><span className="cell">{c.title || '(untitled)'}</span></td>
                     <td><span className="cell"><span className={'pill ' + crCls(c.status)}>{c.status}</span></span></td>
                     <td className="r mono"><span className="cell">{signedMoney(fin ? c.apCost || 0 : c.cost || 0, money)}</span></td>
-                    <td className="r mono"><span className="cell">{signedDays(fin ? c.apDays || 0 : c.days || 0)}</span></td>
+                    <td className="r mono"><span className="cell">{signedWorkDays(fin ? c.apDays || 0 : c.days || 0)}</span></td>
                   </tr>
                 );
               })}

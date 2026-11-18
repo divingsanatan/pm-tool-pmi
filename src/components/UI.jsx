@@ -5,12 +5,12 @@ import TypeManager from './TypeManager';
 import TagManager from './TagManager';
 import { useStore } from '../store/StoreContext';
 import { useCosts } from '../store/useCosts';
-import { DAY, fdate, pd, today } from '../lib/dates';
+import { DAY, pd, today } from '../lib/dates';
 import { hrsf } from '../lib/format';
 import { newSprint, uid } from '../lib/tasks';
 import { insertAt, sane, sprintClash } from '../lib/sprintGuard';
 import { calendarOf, sprintCalendar } from '../lib/offdays';
-import { blankCr, currentBaseline, scheduleEnd, signedDays, sprintCrs } from '../lib/change';
+import { blankCr, currentBaseline, sprintCrs } from '../lib/change';
 import { clashAll, crAllows, crJump } from '../lib/drafts';
 import { openCrs } from '../lib/deps';
 import './toast.css';
@@ -25,6 +25,7 @@ export const useUI = () => useContext(Ctx);
 function SprintForm({ pid, opts = {}, onClose }) {
   const { W, updateW } = useStore();
   const p = W.projects.find((x) => x.id === pid);
+  const [daysTouched, setDaysTouched] = useState(false); // until the schedule change is typed, it follows the sprint's working days
   const [f, setF] = useState(() => {
     const d = newSprint(p);
     return { name: opts.name || d.name, start: opts.start || d.start, end: opts.end || d.end, hours: opts.hours ? String(opts.hours) : '', cr: '', crTitle: '', crCost: '', crDays: '' };
@@ -38,7 +39,6 @@ function SprintForm({ pid, opts = {}, onClose }) {
   const hoursOk = f.hours !== '' && !isNaN(hrs) && hrs > 0 && (!opts.minHours || hrs >= opts.minHours - 0.005);
   const nameOk = f.name.trim() !== '';
   const num = (v) => v !== '' && !isNaN(parseFloat(v));
-  const crOk = !base || (choice && choice !== NEW_CR) || (choice === NEW_CR && f.crTitle.trim() !== '' && num(f.crCost) && num(f.crDays));
   const clash = orderOk ? clashAll(p, '', f.start, f.end) : []; // sprints (and drafts, which become sprints) of one project cannot overlap
   // After a baseline a new sprint is only a proposal until its change request is approved: it starts as a draft
   const chosenCr = crs.find((c) => c.id === choice);
@@ -48,6 +48,9 @@ function SprintForm({ pid, opts = {}, onClose }) {
   const sc = orderOk ? sprintCalendar({ start: f.start, end: f.end }, null, calendarOf(p)) : null;
   const offN = sc ? sc.off : 0;
   const workDays = sc ? sc.work : null;
+  // Suggested schedule change: the sprint's working days (calendar days minus the project's weekly off days and holidays), never checked against dates
+  const crDaysV = daysTouched ? f.crDays : (workDays > 0 ? String(workDays) : '');
+  const crOk = !base || (choice && choice !== NEW_CR) || (choice === NEW_CR && f.crTitle.trim() !== '' && num(f.crCost) && num(crDaysV));
   const ok = nameOk && orderOk && !clash.length && hoursOk && crOk && (workDays == null || workDays > 0);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const save = () => {
@@ -62,7 +65,7 @@ function SprintForm({ pid, opts = {}, onClose }) {
         if (choice === NEW_CR) {
           crId = uid();
           pr.cr.push(blankCr(pr, crId, {
-            title: f.crTitle.trim(), cost: parseFloat(f.crCost), days: parseInt(f.crDays, 10),
+            title: f.crTitle.trim(), cost: parseFloat(f.crCost), days: parseInt(crDaysV, 10),
             kind: 'Enhancement or new requirement', affects: ['Scope', 'Schedule', 'Cost'],
             desc: 'Adds ' + f.name.trim() + ' (' + f.start + ' to ' + f.end + ', ' + hrsf(hrs) + ' planned hours) to the plan.',
           }));
@@ -128,19 +131,16 @@ function SprintForm({ pid, opts = {}, onClose }) {
                 <label className="fld" style={{ flex: 1, minWidth: 140 }}>Cost change *
                   <input className="c" type="number" step="any" inputMode="decimal" placeholder="0 if none" value={f.crCost} onChange={set('crCost')} onKeyDown={key} />
                 </label>
-                <label className="fld" style={{ flex: 1, minWidth: 140 }}>Schedule change (days) *
-                  <input className="c" type="number" step="1" inputMode="numeric" placeholder="0 if none" value={f.crDays} onChange={set('crDays')} onKeyDown={key} />
+                <label className="fld" style={{ flex: 1, minWidth: 140 }}>Schedule change (working days) *
+                  <input className="c" type="number" step="1" inputMode="numeric" placeholder="0 if none" value={crDaysV} onChange={(e) => { setDaysTouched(true); set('crDays')(e); }} onKeyDown={key} />
                 </label>
               </div>
-              {orderOk && base.end && (() => {
-                const live = scheduleEnd(p), fin = f.end > live ? f.end : live, n = Math.round((pd(fin) - pd(base.end)) / DAY);
-                return (
-                  <p className="hint" style={{ margin: 0 }}>
-                    With these dates the plan finishes on {fdate(fin)}: {signedDays(n)} against baseline {base.version} ({fdate(base.end)}). The approved days must match this before the request can be implemented.
-                    {num(f.crDays) && parseInt(f.crDays, 10) !== n && <> <button type="button" className="linkbtn" onClick={() => setF({ ...f, crDays: String(n) })}>Use {signedDays(n)}</button></>}
-                  </p>
-                );
-              })()}
+              {workDays > 0 && (
+                <p className="hint" style={{ margin: 0 }}>
+                  Suggested {workDays} working day{workDays === 1 ? '' : 's'}: this sprint’s {days} calendar day{days === 1 ? '' : 's'}{offN ? ' minus ' + offN + ' off day' + (offN === 1 ? '' : 's') + ' (weekly off days and holidays of the project calendar)' : ''}. Change it if a different figure is approved.
+                  {daysTouched && String(parseInt(f.crDays, 10)) !== String(workDays) && <> <button type="button" className="linkbtn" onClick={() => setDaysTouched(false)}>Use {workDays}</button></>}
+                </p>
+              )}
             </div>
           )}
         </div>

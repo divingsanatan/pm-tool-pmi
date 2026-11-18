@@ -8,6 +8,7 @@ import { addDays, fdate, today } from '../lib/dates';
 import { newRaidId, reserves } from '../lib/calc';
 import { money, nz, pc } from '../lib/format';
 import { allContainers, uid } from '../lib/tasks';
+import { addWorkDays, calendarOf } from '../lib/offdays';
 import { AREAS, CR_PRIORITIES, KINDS, NEXT, WORKFLOW, checksFor, crCls, currentBaseline, deletePlan, implementPlan, missing, reconcile, reserveAfter, signedDays, signedMoney, stageOf } from '../lib/change';
 
 // A list of chosen items shown as chips, with a dropdown to add more
@@ -75,6 +76,7 @@ function Checklist({ list }) {
 export default function ChangeDrawer({ id, onClose }) {
   const { S, setNav } = useStore();
   const ch = useChange();
+  const [apOpen, setApOpen] = useState(false); // shows the approved cost and days only when they differ from the assessment, or when asked
   const ui = useUI();
   const cr = S.cr.find((x) => x.id === id);
 
@@ -143,7 +145,8 @@ export default function ChangeDrawer({ id, onClose }) {
   const resNow = reserves(S); // the baseline's locked reserves
   const resPlan = base ? reserveAfter(cr, S, 'cost') : null; // what this request would make of them
   const newBac = resPlan ? resPlan.bac : null; // BAC after the change: new work budget + contingency
-  const newEnd = base ? addDays(base.end, nz(cr.days)) : null;
+  const newEnd = base ? addWorkDays(calendarOf(S), base.end, nz(cr.days)) : null; // counts working days: weekly off days and holidays are skipped
+  const wd = (n) => (!n ? '0 working days' : (n > 0 ? '+' : '−') + Math.abs(n) + (Math.abs(n) === 1 ? ' working day' : ' working days'));
 
   return (
     <>
@@ -252,7 +255,7 @@ export default function ChangeDrawer({ id, onClose }) {
           <label className="fld">Cost change (money, negative saves) · required
             <Cell type="num" cls="n" value={cr.cost} placeholder="0" disabled={lockImp} onCommit={(v) => set({ cost: v })} />
           </label>
-          <label className="fld">Schedule change (days, negative is earlier) · required
+          <label className="fld">Schedule change (working days, negative is earlier) · required
             <Cell type="num" cls="n" value={cr.days} placeholder="0" disabled={lockImp} onCommit={(v) => set({ days: v })} />
           </label>
           {base && (
@@ -264,7 +267,7 @@ export default function ChangeDrawer({ id, onClose }) {
                 <Cell type="num" cls="n" value={cr.reMgmt == null ? null : Math.round(cr.reMgmt * 1000) / 10} placeholder={String(Math.round(resNow.mgmtPct * 1000) / 10)} disabled={lockImp} label="New management reserve percent" onCommit={(v) => set({ reMgmt: v == null || v === '' || isNaN(parseFloat(v)) ? null : Math.min(1, Math.max(0, parseFloat(v) / 100)) })} />
               </label>
               <p className="msg" style={{ gridColumn: '1 / -1', margin: 0 }}>
-                If approved as assessed: budget {money(base.bac)} → <b>{money(newBac)}</b> ({signedMoney(newBac - base.bac, money)}), finish {fdate(base.end)} → <b>{fdate(newEnd)}</b> ({signedDays(nz(cr.days))}).
+                If approved as assessed: budget {money(base.bac)} → <b>{money(newBac)}</b> ({signedMoney(newBac - base.bac, money)}), finish {fdate(base.end)} → <b>{fdate(newEnd)}</b> ({wd(nz(cr.days))}, skipping weekly off days and holidays).
                 {resPlan && resPlan.changed
                   ? <> Reserves: contingency {money(resPlan.before.contingency)} → <b>{money(resPlan.contingency)}</b> ({signedMoney(resPlan.dCont, money)}), management reserve {money(resPlan.before.management)} → <b>{money(resPlan.management)}</b> ({signedMoney(resPlan.dMgmt, money)}). Total project budget {money(resPlan.totalBefore)} → <b>{money(resPlan.totalAfter)}</b>.</>
                   : <> The reserves stay as they are (contingency {money(resNow.contingency)}, management reserve {money(resNow.management)}).</>}
@@ -291,12 +294,30 @@ export default function ChangeDrawer({ id, onClose }) {
               <label className="fld" style={{ gridColumn: '1 / -1' }}>Reason for the decision
                 {rich('rationale', 'Reason for the decision', 2, lockDec)}
               </label>
-              <label className="fld">Approved cost impact
-                <Cell type="num" cls="n" value={cr.apCost} disabled={lockDec && st !== 'Approved'} onCommit={(v) => (st === 'Approved' ? ch.editApproved(cr.id, { apCost: v }) : set({ apCost: v }))} />
-              </label>
-              <label className="fld">Approved schedule impact (days)
-                <Cell type="num" cls="n" value={cr.apDays} disabled={lockDec && st !== 'Approved'} onCommit={(v) => (st === 'Approved' ? ch.editApproved(cr.id, { apDays: v }) : set({ apDays: v }))} />
-              </label>
+              {(() => {
+                // The cost and schedule are entered once, in the impact assessment. The decision only repeats them when they are approved differently.
+                const same = nz(cr.apCost == null ? cr.cost : cr.apCost) === nz(cr.cost) && nz(cr.apDays == null ? cr.days : cr.apDays) === nz(cr.days);
+                const canEditAp = !lockDec || st === 'Approved';
+                const back = () => (st === 'Approved' ? ch.editApproved(cr.id, { apCost: cr.cost, apDays: cr.days }) : set({ apCost: cr.cost, apDays: cr.days }));
+                if (same && !apOpen) {
+                  return (
+                    <div className="fld" style={{ gridColumn: '1 / -1' }}>Approved impact
+                      <p className="msg" style={{ margin: '2px 0 0' }}>Approved as assessed: {signedMoney(nz(cr.cost), money)} and {wd(nz(cr.days))}. {canEditAp && <button type="button" className="linkbtn" onClick={() => setApOpen(true)}>Approve different figures</button>}</p>
+                    </div>
+                  );
+                }
+                return (
+                  <>
+                    <label className="fld">Approved cost impact
+                      <Cell type="num" cls="n" value={cr.apCost} disabled={!canEditAp} onCommit={(v) => (st === 'Approved' ? ch.editApproved(cr.id, { apCost: v }) : set({ apCost: v }))} />
+                    </label>
+                    <label className="fld">Approved schedule impact (working days)
+                      <Cell type="num" cls="n" value={cr.apDays} disabled={!canEditAp} onCommit={(v) => (st === 'Approved' ? ch.editApproved(cr.id, { apDays: v }) : set({ apDays: v }))} />
+                    </label>
+                    {canEditAp && <div style={{ gridColumn: '1 / -1' }}><button type="button" className="linkbtn" onClick={() => { back(); setApOpen(false); }}>Use the assessed figures instead</button></div>}
+                  </>
+                );
+              })()}
               <label className="fld">Implementation owner
                 <SelectCell value={cr.owner} options={people} disabled={lockOwn} onCommit={(v) => set({ owner: v })} />
               </label>
