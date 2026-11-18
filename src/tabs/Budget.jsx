@@ -8,6 +8,7 @@ import '../capacity.css';
 import { calendarHours, planWindow } from '../lib/capacity';
 import { ITER_UNIT, baseLine, baseOf, costBy, labourOf, labourTotal, lastDay, ledgerTotal, lineOnce, lineRecurring, lineState, lineTotal, maxIter, personOf, planBAC, projectBAC, reserves, suggestIter } from '../lib/calc';
 import LineCrDialog from './LineCrDialog';
+import StrayCrLines from '../components/StrayCrLines';
 import { addLineViaCr, changeLineViaCr, dropPendingLine, lineEditable, revertLine, syncClaim } from '../lib/lineChange';
 import { fdate, fsh, today } from '../lib/dates';
 import { hrsf, money, nz, pc } from '../lib/format';
@@ -449,6 +450,7 @@ export default function Budget() {
         </div>
       </div>
 
+      <StrayCrLines />
       <div className="card">
         <div className="row sp">
           <div>

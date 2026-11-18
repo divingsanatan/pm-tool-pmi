@@ -79,11 +79,24 @@ export function useChange() {
             if (sp.dateCrId === id) sp.dateCrId = '';
             if (sp.hoursCrId === id) sp.hoursCrId = '';
           });
-          (p.lines || []).forEach((l) => { if (l.crId === id) l.crId = ''; });
+          p.lines = (p.lines || []).filter((l) => l.fromCr !== id); // the budget line made when it was implemented goes with it
+          p.lines.forEach((l) => { if (l.crId === id) { l.crId = ''; l.crClaim = 0; } }); // lines it changed stay, no longer claimed by a request
           (p.team || []).forEach((t) => { if (t.crId === id) { t.crId = ''; t.crClaim = 0; } });
           allContainers(p).forEach((ct) => ct.tasks.forEach((t) => (t.deps || []).forEach((d) => { if (d.crId === id) d.crId = ''; })));
           p.cr = p.cr.filter((x) => x.id !== id);
         });
+      },
+      // Budget lines left behind by requests that were deleted or duplicated: remove them (also from the newest baseline's copy of the lines, where the same mistake was frozen) or keep them
+      removeLines(ids) {
+        update((p) => {
+          const gone = new Set(ids);
+          p.lines = p.lines.filter((l) => !gone.has(l.id));
+          const b = currentBaseline(p);
+          if (b && Array.isArray(b.lines)) b.lines = b.lines.filter((l) => !gone.has(l.id));
+        });
+      },
+      keepLines(ids) {
+        update((p) => { p.lines.forEach((l) => { if (ids.includes(l.id)) l.keep = true; }); });
       },
       // While a request is Approved (not yet implemented) its approved cost and days can still be corrected; every change is written to its history
       editApproved(id, patch) {
@@ -145,8 +158,13 @@ export function useChange() {
           const snap = snapshot(p, (sp) => inNextBaseline(p, sp, c.id));
           const end = snap.end;
           // the approved cost goes into the plan's budget only when the user asked for it
-          if (apCost && addBudgetLine === true && !p.lines.some((l) => l.crId === c.id))
-            p.lines.push({ id: uid(), name: c.code + ' ' + (c.title || 'Change request'), amount: apCost, per: 'project' });
+          // The line remembers which request made it (fromCr), so it is never added twice and goes with the request if that is deleted.
+          // (It is not crId: that link belongs to lines a request changes after the baseline, and it would move the request's own cost.)
+          if (apCost && addBudgetLine === true) {
+            const mine = p.lines.find((l) => l.fromCr === c.id);
+            if (mine) mine.amount = apCost; // the approved cost was corrected before implementing again
+            else p.lines.push({ id: uid(), name: c.code + ' ' + (c.title || 'Change request'), amount: apCost, per: 'project', fromCr: c.id });
+          }
           const version = 'v1.' + p.baselines.length;
           const bid = uid();
           p.baselines.push({

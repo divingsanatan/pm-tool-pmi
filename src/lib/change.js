@@ -308,10 +308,17 @@ export function deletePlan(S, cr) {
     drafts: (S.drafts || []).filter((d) => d.crId === cr.id),
     sprints: S.sprints.filter((sp) => sp.crId === cr.id),
     unlocked: S.sprints.filter((sp) => sp.crId !== cr.id && (sp.dateCrId === cr.id || sp.hoursCrId === cr.id)),
-    lines: (S.lines || []).filter((l) => l.crId === cr.id),
+    made: (S.lines || []).filter((l) => l.fromCr === cr.id), // budget lines created when it was implemented: they are removed with it
+    lines: (S.lines || []).filter((l) => l.crId === cr.id && l.fromCr !== cr.id), // lines it changed: they stay, unlinked
     labour: (S.team || []).filter((t) => t.crId === cr.id),
     deps: tasks.reduce((n, t) => n + (t.deps || []).filter((d) => d.crId === cr.id).length, 0),
   };
+}
+// Budget lines that look left behind by a request that was deleted or duplicated: made by a request that no longer exists,
+// or named like one ("CR-01 ...") with no request behind them. The Budget tab offers to remove them (never done silently).
+export function strayCrLines(S) {
+  const ids = new Set((S.cr || []).map((c) => c.id));
+  return (S.lines || []).filter((l) => !l.keep && ((l.fromCr && !ids.has(l.fromCr)) || (!l.fromCr && !l.crId && /^CR-\d+\s/.test(l.name || ''))));
 }
 const allContainersOf = (S) => S.sprints.concat(S.backlog ? [S.backlog] : []);
 

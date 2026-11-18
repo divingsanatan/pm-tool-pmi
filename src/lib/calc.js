@@ -755,6 +755,14 @@ export function normalize(S) {
     if (!Array.isArray(c.log)) c.log = [];
     c.log.push({ on: today(), text: 'Back to Approved: its baseline no longer exists (repaired automatically)' });
   });
+  // Budget lines made by implementing a request used to carry no link to it. Link the first matching line of each implemented request
+  // (same name and amount), so deleting the request removes it; any further identical lines are offered for removal on the Budget tab.
+  (Array.isArray(S.cr) ? S.cr : []).forEach((c) => {
+    if (!['Implemented', 'Closed'].includes(c.status) || !nz(c.apCost) || (S.lines || []).some((l) => l.fromCr === c.id)) return;
+    const nm = c.code + ' ' + (c.title || 'Change request');
+    const l = (S.lines || []).find((x) => !x.fromCr && !x.crId && x.name === nm && Math.abs(nz(x.amount) - nz(c.apCost)) < 0.005);
+    if (l) l.fromCr = c.id;
+  });
   // Contingency and management reserve: two built-in budget lines that cannot be deleted. Their percentages (of the work budget)
   // can change until a baseline exists; from then on they are locked to the baseline's values and amounts.
   if (!S.reserve || typeof S.reserve !== 'object') S.reserve = {};
