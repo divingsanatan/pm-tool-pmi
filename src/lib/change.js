@@ -144,13 +144,15 @@ export function reconcile(cr, S) {
   const b = currentBaseline(S);
   if (!b) return null;
   const live = snapshot(S);
-  const expCost = b.bac + nz(cr.apCost);
-  const diffCost = live.bac - expCost;
+  const res = reserveAfter(cr, S, 'ap');
+  const expCost = res.bac; // expected cost baseline after the change: new amount + its contingency
+  const liveWork = Math.round(workBudget(S) * 100) / 100; // what the Budget tab's line items add up to, before reserves
+  const diffCost = liveWork - res.work; // compared on the amount: the reserves follow from it
   const actDays = Math.round((pd(live.end) - pd(b.end)) / DAY);
   const diffDays = actDays - nz(cr.apDays);
   // The finish date is not compared with the approved days: weekends, holidays, leave and gaps between sprints make days and dates differ.
   const mismatch = Math.abs(diffCost) > 1; // only the budget is compared: holidays, leave and gaps between sprints make days and dates differ
-  return { b, live, expCost, diffCost, actDays, diffDays, mismatch };
+  return { b, live, res, expCost, liveWork, expWork: res.work, diffCost, actDays, diffDays, mismatch };
 }
 export function implChecks(cr, S) {
   const r = reconcile(cr, S);
@@ -202,26 +204,36 @@ export function checksFor(cr, to, S) {
 }
 // What implementing an approved request will do: the new baseline is the current one plus the approved cost and days.
 // needsBudget is true when the plan's budget (Budget tab) does not already include the approved cost.
-// The reserves after a change request: a percentage the request sets is applied to the work budget of the new baseline;
-// a reserve it leaves blank is carried over unchanged. basis 'cost' = the requested cost change (planning), 'ap' = the approved one.
+// The reserves after a change request. The work budget moves by the cost change and both reserves follow their percentages,
+// so a request that adds budget also adds its share of contingency and management reserve. A percentage the request sets replaces the
+// baseline's; a percentage it leaves blank keeps the baseline's. basis 'cost' = the requested cost change (planning), 'ap' = the approved one.
 export function reserveAfter(cr, S, basis = 'ap') {
   const prev = currentBaseline(S);
   if (!prev) return null;
   const R = reserves(S); // the baseline's own (locked) reserves
   const r2 = (n) => Math.round(n * 100) / 100;
-  // the work budget moves by the cost change; BAC is that work budget plus the contingency; the management reserve sits on top of BAC
-  const work = r2(baseWork(prev) + nz(basis === 'ap' ? cr.apCost : cr.cost));
+  const workBefore = r2(baseWork(prev));
+  const work = r2(workBefore + nz(basis === 'ap' ? cr.apCost : cr.cost));
   const has = (v) => v != null && !isNaN(v);
   const contPct = has(cr.reCont) ? cr.reCont : R.contPct;
   const mgmtPct = has(cr.reMgmt) ? cr.reMgmt : R.mgmtPct;
-  const contingency = has(cr.reCont) ? r2(work * cr.reCont) : R.contingency;
-  const management = has(cr.reMgmt) ? r2(work * cr.reMgmt) : R.management;
+  const contingency = r2(work * contPct);
+  const management = r2(work * mgmtPct);
   const bac = r2(work + contingency);
   return {
-    changed: has(cr.reCont) || has(cr.reMgmt), work, bac, contPct, mgmtPct, contingency, management,
+    changed: Math.abs(contingency - R.contingency) > 0.004 || Math.abs(management - R.management) > 0.004,
+    workBefore, work, bacBefore: r2(prev.bac), bac, contPct, mgmtPct, contingency, management,
     dCont: r2(contingency - R.contingency), dMgmt: r2(management - R.management),
     before: R, totalBefore: r2(prev.bac + R.management), totalAfter: r2(bac + management),
   };
+}
+
+// The figures of a stored baseline, split the way the history table shows them
+export function baselineFigures(b) {
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const contingency = nz(b.reserve && b.reserve.contingency), management = nz(b.reserve && b.reserve.management);
+  const work = r2(nz(b.bac) - contingency);
+  return { work, contingency, management, bac: r2(nz(b.bac)), total: r2(nz(b.bac) + management), contPct: b.reserve ? b.reserve.contPct : null, mgmtPct: b.reserve ? b.reserve.mgmtPct : null };
 }
 
 export function implementPlan(cr, S) {

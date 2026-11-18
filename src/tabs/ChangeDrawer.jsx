@@ -5,6 +5,7 @@ import { useUI } from '../components/UI';
 import { Area, Cell, SelectCell } from '../components/Field';
 import RichText from '../components/RichText';
 import { addDays, fdate, today } from '../lib/dates';
+import BudgetBreakdown from '../components/BudgetBreakdown';
 import { newRaidId, reserves } from '../lib/calc';
 import { money, nz, pc } from '../lib/format';
 import { allContainers, uid } from '../lib/tasks';
@@ -260,18 +261,17 @@ export default function ChangeDrawer({ id, onClose }) {
           </label>
           {base && (
             <>
-              <label className="fld">Contingency reserve % · leave blank to keep {pc(resNow.contPct, 1)}
+              <label className="fld">Contingency reserve % of the amount · blank keeps {pc(resNow.contPct, 1)}
                 <Cell type="num" cls="n" value={cr.reCont == null ? null : Math.round(cr.reCont * 1000) / 10} placeholder={String(Math.round(resNow.contPct * 1000) / 10)} disabled={lockImp} label="New contingency reserve percent" onCommit={(v) => set({ reCont: v == null || v === '' || isNaN(parseFloat(v)) ? null : Math.min(1, Math.max(0, parseFloat(v) / 100)) })} />
               </label>
-              <label className="fld">Management reserve % · leave blank to keep {pc(resNow.mgmtPct, 1)}
+              <label className="fld">Management reserve % of the amount · blank keeps {pc(resNow.mgmtPct, 1)}
                 <Cell type="num" cls="n" value={cr.reMgmt == null ? null : Math.round(cr.reMgmt * 1000) / 10} placeholder={String(Math.round(resNow.mgmtPct * 1000) / 10)} disabled={lockImp} label="New management reserve percent" onCommit={(v) => set({ reMgmt: v == null || v === '' || isNaN(parseFloat(v)) ? null : Math.min(1, Math.max(0, parseFloat(v) / 100)) })} />
               </label>
-              <p className="msg" style={{ gridColumn: '1 / -1', margin: 0 }}>
-                If approved as assessed: budget {money(base.bac)} → <b>{money(newBac)}</b> ({signedMoney(newBac - base.bac, money)}), finish {fdate(base.end)} → <b>{fdate(newEnd)}</b> ({wd(nz(cr.days))}, skipping weekly off days and holidays).
-                {resPlan && resPlan.changed
-                  ? <> Reserves: contingency {money(resPlan.before.contingency)} → <b>{money(resPlan.contingency)}</b> ({signedMoney(resPlan.dCont, money)}), management reserve {money(resPlan.before.management)} → <b>{money(resPlan.management)}</b> ({signedMoney(resPlan.dMgmt, money)}). Total project budget {money(resPlan.totalBefore)} → <b>{money(resPlan.totalAfter)}</b>.</>
-                  : <> The reserves stay as they are (contingency {money(resNow.contingency)}, management reserve {money(resNow.management)}).</>}
-              </p>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <p className="msg" style={{ margin: '0 0 4px' }}>If approved as assessed. The reserves follow their percentages, so adding budget adds its share of contingency and management reserve:</p>
+                <BudgetBreakdown res={resPlan} />
+                <p className="msg" style={{ margin: '6px 0 0' }}>Finish {fdate(base.end)} → <b>{fdate(newEnd)}</b> ({wd(nz(cr.days))}, skipping weekly off days and holidays).</p>
+              </div>
             </>
           )}
           {[['iScope', 'Scope impact'], ['iQuality', 'Quality impact'], ['iResources', 'Resource impact'], ['iRisk', 'Risk impact (new or changed risks)'], ['alt', 'Alternatives considered'], ['noop', 'If the change is not made']].map(([k, l]) => (
@@ -352,18 +352,16 @@ export default function ChangeDrawer({ id, onClose }) {
             )}
             {rec && (
               <div className="d-panel" style={{ marginTop: 10 }}>
+                <BudgetBreakdown res={rec.res} />
                 <div className="totals">
-                  <span>Baseline {rec.b.version} budget</span><span className="mono">{money(rec.b.bac)}</span>
-                  <span>Approved cost impact</span><span className="mono">{signedMoney(nz(cr.apCost), money)}</span>
-                  <span>Expected new budget</span><span className="mono">{money(rec.expCost)}</span>
-                  <span>Budget in the plan now</span><span className="mono">{money(rec.live.bac)}</span>
+                  <span>Amount in the Budget tab now (expected {money(rec.expWork)})</span><span className="mono">{money(rec.liveWork)}</span>
                   <span>Baseline finish</span><span className="mono">{fdate(rec.b.end)}</span>
                   <span>Finish in the plan now</span><span className="mono">{fdate(rec.live.end)}</span>
                 </div>
                 <p className="msg" style={{ margin: '8px 0 0', color: rec.mismatch ? 'var(--bad)' : 'var(--good)' }}>
                   {rec.mismatch
-                    ? 'The budget in the plan does not match the approval (off by ' + money(Math.abs(rec.diffCost)) + '). Update the budget, or explain the difference below.'
-                    : 'The budget in the plan matches the approved cost.'}
+                    ? 'The amount in the Budget tab does not match the approved cost (off by ' + money(Math.abs(rec.diffCost)) + '). Update the budget, or explain the difference below.'
+                    : 'The amount in the Budget tab matches the approved cost.'}
                 </p>
                 {rec.mismatch && (
                   <label className="fld" style={{ marginTop: 8 }}>Why the plan differs from the approval
@@ -443,11 +441,12 @@ export default function ChangeDrawer({ id, onClose }) {
                   <>
                     <p style={{ margin: '0 0 8px' }}>The new baseline is the current one ({pl.prev.version}) plus what was approved:</p>
                     <ul style={{ margin: '0 0 10px', paddingLeft: 18 }}>
-                      <li>Budget at completion (work budget + contingency): {money(pl.prev.bac)} → <b>{money(pl.bac)}</b> ({signedMoney(pl.bac - pl.prev.bac, money)})</li>
+                      <li>Amount (work budget): {money(pl.res.workBefore)} → <b>{money(pl.res.work)}</b> ({signedMoney(pl.res.work - pl.res.workBefore, money)})</li>
+                      <li>Contingency reserve ({pc(pl.res.contPct, 1)}): {money(pl.res.before.contingency)} → <b>{money(pl.res.contingency)}</b> ({signedMoney(pl.res.dCont, money)})</li>
+                      <li>Cost baseline (BAC, amount + contingency): {money(pl.prev.bac)} → <b>{money(pl.bac)}</b> ({signedMoney(pl.bac - pl.prev.bac, money)})</li>
+                      <li>Management reserve ({pc(pl.res.mgmtPct, 1)}): {money(pl.res.before.management)} → <b>{money(pl.res.management)}</b> ({signedMoney(pl.res.dMgmt, money)})</li>
+                      <li>Total budget: {money(pl.res.totalBefore)} → <b>{money(pl.res.totalAfter)}</b> ({signedMoney(pl.res.totalAfter - pl.res.totalBefore, money)})</li>
                       <li>Finish date (from the sprint dates): {fdate(pl.prev.end)} → <b>{fdate(pl.end)}</b></li>
-                      {pl.res && pl.res.changed
-                        ? <li>Reserves: contingency {money(pl.res.before.contingency)} → <b>{money(pl.res.contingency)}</b> ({signedMoney(pl.res.dCont, money)}), management reserve {money(pl.res.before.management)} → <b>{money(pl.res.management)}</b> ({signedMoney(pl.res.dMgmt, money)}). Total project budget {money(pl.res.totalBefore)} → <b>{money(pl.res.totalAfter)}</b></li>
-                        : <li>Reserves: unchanged (locked).</li>}
                     </ul>
                     {pl.needsBudget
                       ? <p style={{ margin: '0 0 8px' }}>Your Budget tab’s work budget currently totals <b>{money(pl.liveWork)}</b>, which does not include the approved {signedMoney(pl.apCost, money)}. Should the app add it as a cost line named “{cr.code} {cr.title || 'Change request'}”?</p>

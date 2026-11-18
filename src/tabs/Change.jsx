@@ -7,7 +7,8 @@ import { Cell } from '../components/Field';
 import { fdate } from '../lib/dates';
 import { hrsf, money, nz, pc } from '../lib/format';
 import { reserves } from '../lib/calc';
-import { CR_STATUSES, crCls, currentBaseline, drift, pendingOf, signedDays, signedMoney, signedWorkDays, snapshot, stageOf } from '../lib/change';
+import { CR_STATUSES, crCls, currentBaseline, drift, pendingOf, signedDays, signedMoney, signedWorkDays, snapshot, stageOf, baselineFigures } from '../lib/change';
+import '../breakdown.css';
 import { calendarOf, workDaysAfter } from '../lib/offdays';
 import { crJump } from '../lib/drafts';
 import ChangeDrawer from './ChangeDrawer';
@@ -127,15 +128,16 @@ export default function Change() {
 
       <section className="card">
         <h2>Baseline history</h2>
-        <p className="hint">Each version is a frozen copy of scope, schedule and cost. A new version appears when an approved change is implemented. You can correct a version’s name, date, budget, finish and note here, delete a version, or re-capture the latest one from the plan as it is now.</p>
+        <p className="hint">Each version is a frozen copy of scope, schedule and cost. A new version appears when an approved change is implemented. You can correct a version’s name, date, amount, finish and note here, delete the newest version, or re-capture it from the plan as it is now.</p>
         <div className="scroll">
-          <table className="tbl rwd">
+          <table className="tbl rwd bl">
             <thead>
-              <tr><th>Version</th><th>Date</th><th>Source</th><th className="r">Budget</th><th className="r">Change</th><th className="r">Reserves</th><th>Finish</th><th className="r">Shift</th><th className="r">Work items</th><th className="r">Effort (h)</th><th>Note</th><th></th></tr>
+              <tr><th>Version</th><th>Date</th><th>Source</th><th className="r" title="The work budget">Amount</th><th className="r" title="Contingency and management reserve">Reserves</th><th className="r" title="Amount plus both reserves">Total budget</th><th className="r" title="Total budget compared with the version before">Change</th><th>Finish</th><th className="r" title="Schedule change as approved, in working days">Shift</th><th>Note</th><th></th></tr>
             </thead>
             <tbody>
               {S.baselines.slice().reverse().map((b, i, arr) => {
                 const prev = arr[i + 1];
+                const f = baselineFigures(b), pf = prev ? baselineFigures(prev) : null;
                 // The shift is the request's schedule change in working days (as approved), so the baseline and its request agree.
                 // The finish date can move by more calendar days: weekends, holidays and gaps between sprints sit in between.
                 const crOf = prev && b.crId ? S.cr.find((c) => c.id === b.crId) : null;
@@ -144,17 +146,29 @@ export default function Change() {
                 const shiftTxt = wdShift == null ? '–' : signedWorkDays(wdShift);
                 const shiftTip = !prev ? '' : (crOf && crOf.apDays != null ? 'As approved in ' + crOf.code + '. ' : '') + 'The finish date moved ' + Math.abs(dd) + ' calendar day' + (Math.abs(dd) === 1 ? '' : 's') + ' (' + fdate(prev.end) + ' → ' + fdate(b.end) + '), which includes any weekend, holiday or gap between sprints.';
                 return (
-                  <tr key={b.id}>
+                  <tr key={b.id} className={i === 0 ? 'bl-current' : ''}>
                     <td data-l="Version" className="mono"><span className="cell"><Cell value={b.version} cls="w-sm" label="Version name" onCommit={(v) => v.trim() && ch.patchBaseline(b.id, { version: v.trim() })} />{i === 0 && <span className="pill neutral">Current</span>}</span></td>
                     <td data-l="Date"><Cell type="date" value={b.date} cls="w-date" label="Baseline date" onCommit={(v) => ch.patchBaseline(b.id, { date: v || b.date })} /></td>
-                    <td data-l="Source"><span className="cell">{b.crCode || 'Original plan'}</span></td>
-                    <td data-l="Budget"><Cell type="num" value={b.bac} cls="w-md n" label="Baseline budget" onCommit={(v) => ch.patchBaseline(b.id, { bac: v == null ? 0 : v })} /></td>
-                    <td data-l="Change" className="r mono"><span className="cell">{prev ? signedMoney(b.bac - prev.bac, money) : '–'}</span></td>
-                    <td data-l="Reserves" className="r mono"><span className="cell" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', whiteSpace: 'nowrap' }} title={b.reserve ? 'Contingency ' + money(b.reserve.contingency) + ' · management reserve ' + money(b.reserve.management) : ''}>{b.reserve ? money(nz(b.reserve.contingency) + nz(b.reserve.management)) : '–'}{b.reserve && <span className="msg" style={{ fontSize: 11 }}>{pc(b.reserve.contPct, 1)} + {pc(b.reserve.mgmtPct, 1)}</span>}</span></td>
+                    <td data-l="Source"><span className="cell" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}><span className={'chip' + (b.crCode ? ' chg' : '')}>{b.crCode || 'Original plan'}</span>{crOf && crOf.title && <small className="msg" style={{ fontSize: 11 }}>{crOf.title}</small>}</span></td>
+                    <td data-l="Amount"><Cell type="num" value={f.work} cls="w-md n" label="Amount (work budget)" onCommit={(v) => ch.patchBaseline(b.id, { bac: Math.round(((v == null ? 0 : v) + f.contingency) * 100) / 100 })} /></td>
+                    <td data-l="Reserves" className="r mono">
+                      <span className="cell stack" title={b.reserve ? 'Contingency ' + money(f.contingency) + ' + management reserve ' + money(f.management) : ''}>
+                        {b.reserve ? money(f.contingency + f.management) : '–'}
+                        {b.reserve && <small>contingency {money(f.contingency)} ({pc(f.contPct, 1)})</small>}
+                        {b.reserve && <small>management {money(f.management)} ({pc(f.mgmtPct, 1)})</small>}
+                      </span>
+                    </td>
+                    <td data-l="Total budget" className="r mono">
+                      <span className="cell stack" title="Amount + contingency + management reserve"><b>{money(f.total)}</b><small>BAC {money(f.bac)}</small></span>
+                    </td>
+                    <td data-l="Change" className="r mono">
+                      <span className="cell stack">
+                        {pf ? <span className={f.total - pf.total >= 0.005 ? 'up' : f.total - pf.total <= -0.005 ? 'down' : ''}>{signedMoney(f.total - pf.total, money)}</span> : '–'}
+                        {pf && <small>amount {signedMoney(f.work - pf.work, money)} · reserves {signedMoney(f.contingency + f.management - pf.contingency - pf.management, money)}</small>}
+                      </span>
+                    </td>
                     <td data-l="Finish">{b.sprints && b.sprints.some((x) => x.start && x.end) ? (<span className="cell mono" title="Latest sprint end of this baseline">{fdate(b.end)}</span>) : (<Cell type="date" value={b.end} cls="w-date" label="Baseline finish date" onCommit={(v) => ch.patchBaseline(b.id, { end: v || b.end })} />)}</td>
                     <td data-l="Shift" className="r mono"><span className="cell" title={shiftTip}>{shiftTxt}</span></td>
-                    <td data-l="Work items" className="r mono"><span className="cell">{b.items}</span></td>
-                    <td data-l="Effort (h)" className="r mono"><span className="cell">{hrsf(b.effort)}</span></td>
                     <td data-l="Note"><Cell value={b.note} cls="w-desc" label="Baseline note" placeholder="Note" onCommit={(v) => ch.patchBaseline(b.id, { note: v })} /></td>
                     <td data-l="">
                       <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
@@ -169,6 +183,7 @@ export default function Change() {
             </tbody>
           </table>
         </div>
+        <p className="bl-legend"><b>Amount</b> is the work budget. <b>Reserves</b> are contingency (for identified risks) plus management reserve (held outside the baseline). <b>Total budget</b> = amount + reserves; <b>BAC</b> = amount + contingency, what progress is measured against. <b>Change</b> compares the total with the version before.</p>
       </section>
 
       {open && <ChangeDrawer id={open} onClose={() => setOpen(null)} />}
