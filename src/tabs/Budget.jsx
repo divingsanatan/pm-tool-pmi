@@ -266,11 +266,88 @@ function AddLabour({ onClose }) {
   );
 }
 
+// After a baseline the labour figures are locked. This is the only way to change a stakeholder's rate, capacity or hours:
+// a change that keeps the labour budget inside the baseline is applied after confirming; one that takes it above the baseline needs a change request.
+function LabourChange({ i, win, onClose }) {
+  const { S, update } = useStore();
+  const t = S.team[i];
+  const per = t ? personOf(S, t.person) : null;
+  const L = t && per ? labourOf(S, t, win) : null;
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const [rate, setRate] = useState(L ? String(L.rate) : '');
+  const [cap, setCap] = useState(L ? String(Math.round(L.cap * 10000) / 100) : '');
+  const [hrs, setHrs] = useState(L ? String(r2(L.total)) : '');
+  const [asking, setAsking] = useState(false);
+  if (!L) return null;
+  const num = (v) => (v === '' || isNaN(parseFloat(v)) ? null : parseFloat(v));
+  const rt = num(rate), cp = num(cap), h = num(hrs);
+  const ok = rt != null && rt >= 0 && cp != null && cp >= 0 && h != null && h >= 0;
+  const dirty = ok && (Math.abs(rt - L.rate) > 0.0005 || Math.abs(cp / 100 - L.cap) > 0.00005 || Math.abs(h - L.total) > 0.005);
+  // the change itself, run on the project (or on a copy of it to see what it would do)
+  const run = (p) => {
+    const tt = p.team[i];
+    const pp = p.people.find((x) => x.id === tt.person);
+    pp.rate = rt;
+    if (Math.abs(cp / 100 - L.capAuto) < 0.00005) delete tt.cap; else tt.cap = cp / 100; // the suggested value is kept as "follows the allocation"
+    if (Math.abs(h - L.auto.hours) < 0.005) delete tt.hours; else tt.hours = h; // the calendar value is kept as "follows the calendar"
+  };
+  let trial = null, c2 = null, L2 = null;
+  if (dirty) {
+    trial = structuredClone(S);
+    run(trial);
+    c2 = labourControl(trial);
+    L2 = labourOf(trial, trial.team[i], win);
+  }
+  const untracked = dirty && c2 && c2.reason === 'untracked';
+  const needsCr = !!(dirty && c2 && c2.active && c2.needsCr);
+  const who = per.name || 'this stakeholder';
+  if (asking && needsCr) {
+    return (
+      <LabourCrDialog
+        who={who} amount={c2.short} total={c2.nowTotal} baseTotal={c2.baseTotal} version={c2.b.version}
+        onCancel={() => setAsking(false)}
+        onConfirm={(choice) => {
+          update((p) => { run(p); claimLabour(p, choice, c2.short, who, [{ i, claim: c2.short }]); });
+          onClose();
+        }}
+      />
+    );
+  }
+  return (
+    <Modal title={'Change labour: ' + who} onClose={onClose}>
+      <div className="form">
+        <p className="hint" style={{ margin: 0 }}>The labour budget is locked by the baseline. A change that keeps it inside the baseline is applied after you confirm. A change that takes it above the baseline needs a change request.</p>
+        <div className="row" style={{ gap: 12, alignItems: 'flex-start' }}>
+          <label className="fld" style={{ flex: 1, minWidth: 120 }}>Hourly rate<input className="c" type="number" min="0" step="any" value={rate} onChange={(e) => setRate(e.target.value)} /></label>
+          <label className="fld" style={{ flex: 1, minWidth: 120 }}>Capacity for project (%)<input className="c" type="number" min="0" step="any" value={cap} onChange={(e) => setCap(e.target.value)} /></label>
+          <label className="fld" style={{ flex: 1, minWidth: 120 }}>Total available hrs<input className="c" type="number" min="0" step="any" value={hrs} onChange={(e) => setHrs(e.target.value)} /></label>
+        </div>
+        <p className="msg" style={{ margin: 0 }}>Now: {money(L.cost)} ({hrsf(L.avail)} h at {money(L.rate)}).{dirty && L2 ? ' After: ' + money(L2.cost) + ' (' + hrsf(L2.avail) + ' h at ' + money(L2.rate) + ').' : ''}</p>
+        {dirty && c2 && c2.active && (
+          <div className={'banner ' + (needsCr ? 'bad' : 'good')} style={{ margin: 0 }}>
+            <span>{needsCr
+              ? <>The labour budget would be <b>{money(c2.nowTotal)}</b> against <b>{money(c2.baseTotal)}</b> in baseline {c2.b.version}: <b>{money(c2.short)}</b> above it, which needs a change request.</>
+              : <>The labour budget would be <b>{money(c2.nowTotal)}</b>, inside baseline {c2.b.version} ({money(c2.baseTotal)}), so no change request is needed.</>}</span>
+          </div>
+        )}
+        {untracked && <div className="banner warn" style={{ margin: 0 }}><span>Baseline {c2.b.version} did not record who was in the labour budget, so a change cannot be checked against it yet. Use “Record the current team as the baseline team” at the top of this section first.</span></div>}
+        <div className="row" style={{ justifyContent: 'flex-end' }}>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          {needsCr
+            ? <button className="btn primary" disabled={!dirty} onClick={() => setAsking(true)}>Continue to change request</button>
+            : <button className="btn primary" disabled={!dirty || untracked} onClick={() => { update(run); onClose(); }}>Apply change</button>}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function LabourRegister() {
   const { S, update, setNav } = useStore();
   const ui = useUI();
   const [adding, setAdding] = useState(false);
   const [claiming, setClaiming] = useState(false);
+  const [editing, setEditing] = useState(null); // index of the team row being changed through the locked-labour dialog
   const ctl = labourControl(S);
   const rowCtl = Object.fromEntries((ctl.rows || []).map((r) => [r.i, r]));
   const crOf = (id) => S.cr.find((c) => c.id === id);
@@ -317,6 +394,7 @@ function LabourRegister() {
         </div>
         <button className="btn primary" onClick={() => setAdding(true)}>+ Add stakeholder</button>
       </div>
+      {base && <p className="msg" style={{ margin: '8px 0 0' }}>🔒 Locked by baseline {base.version}. Rates, capacity and hours cannot be typed in any more: use “Change…” on a row. A change that takes the labour budget above the baseline needs a change request.</p>}
       {ctl.reason === 'untracked' && (
         <div className="banner warn" style={{ margin: '10px 0' }}>
           <span>Baseline {ctl.b.version} did not record who was in the labour budget, so new stakeholders cannot be told apart yet.</span>
@@ -341,20 +419,20 @@ function LabourRegister() {
                 <td data-l="Stakeholder">{base
                   ? <span className="cell" title="The team is locked by the baseline. Add a stakeholder through a change request.">{per.name || '(unnamed)'}</span>
                   : <SelectCell value={t.person} options={S.people.filter((x) => x.id === t.person || !used.has(x.id)).map((x) => [x.id, x.name || '(unnamed)'])} cls="w-md" onCommit={(v) => update((s) => { s.team[i].person = v; })} />}</td>
-                <td data-l="Hourly rate"><Cell value={per.rate} type="num" cls="w-md n" label="Hourly rate" onCommit={(v) => setPerson(per.id, { rate: v == null ? 0 : v })} /></td>
+                <td data-l="Hourly rate">{base ? <span className="cell n mono" title="Locked by the baseline. Use Change…">{money(per.rate)}</span> : <Cell value={per.rate} type="num" cls="w-md n" label="Hourly rate" onCommit={(v) => setPerson(per.id, { rate: v == null ? 0 : v })} />}</td>
                 <td data-l="Capacity %">
-                  <Cell value={L.cap} type="pct" cls="w-md n" label="Capacity for this project in percent" onCommit={(v) => setTeam(i, v == null ? { cap: undefined } : { cap: Math.max(0, v) })} />
+                  {base ? <span className="cell n mono" title="Locked by the baseline. Use Change…">{pc(L.cap, 0)}</span> : <Cell value={L.cap} type="pct" cls="w-md n" label="Capacity for this project in percent" onCommit={(v) => setTeam(i, v == null ? { cap: undefined } : { cap: Math.max(0, v) })} />}
                   <div className={'inh' + (L.capManual ? ' own' : '')} title="The stakeholder's allocation % (Stakeholders tab) is only a suggestion here. Type a value to use your own; it is never changed by the allocation or by assigned work items.">
                     {L.capManual
-                      ? <>own value · allocation {pc(L.capAuto, 0)} <button type="button" className="linkbtn" onClick={() => setTeam(i, { cap: undefined })}>reset</button></>
+                      ? <>own value · allocation {pc(L.capAuto, 0)} {!base && <button type="button" className="linkbtn" onClick={() => setTeam(i, { cap: undefined })}>reset</button>}</>
                       : <>suggested from allocation %</>}
                   </div>
                 </td>
                 <td data-l="Total available hrs">
-                  <Cell value={L.total} type="num" cls="w-md n" label="Total available hours on the project, before capacity" onCommit={(v) => setTeam(i, v == null || Math.abs(v - L.auto.hours) < 0.005 ? { hours: undefined } : { hours: Math.max(0, v) })} />
+                  {base ? <span className="cell n mono" title="Locked by the baseline. Use Change…">{hrsf(L.total)}</span> : <Cell value={L.total} type="num" cls="w-md n" label="Total available hours on the project, before capacity" onCommit={(v) => setTeam(i, v == null || Math.abs(v - L.auto.hours) < 0.005 ? { hours: undefined } : { hours: Math.max(0, v) })} />}
                   <div className={'inh' + (L.manual ? ' own' : '')} title={L.auto.cal + ' sprint days − ' + L.auto.teamOff + ' team off days − ' + L.auto.leave + ' leave days = ' + L.auto.days + ' days × ' + hrsf(L.auto.hpd) + ' h'}>
                     {L.manual
-                      ? <>adjusted · calendar {hrsf(L.auto.hours)} h ({L.diff > 0 ? '+' : ''}{hrsf(L.diff)}) <button type="button" className="linkbtn" onClick={() => useCalendar([i])}>reset</button></>
+                      ? <>adjusted · calendar {hrsf(L.auto.hours)} h ({L.diff > 0 ? '+' : ''}{hrsf(L.diff)}) {!base && <button type="button" className="linkbtn" onClick={() => useCalendar([i])}>reset</button>}</>
                       : <>from calendar · {hrsf(L.auto.days)} d × {hrsf(L.auto.hpd)} h</>}
                   </div>
                 </td>
@@ -373,7 +451,7 @@ function LabourRegister() {
                     })()}
                   </td>
                 )}
-                <td data-l="">{canRemove(i)
+                <td data-l="">{base && <button className="btn" onClick={() => setEditing(i)} title="Change this stakeholder's rate, capacity or hours. Above the baseline it needs a change request.">Change…</button>}{canRemove(i)
                   ? <button className="x" onClick={() => removeRow(i)} aria-label="Remove from the labour budget" title={base ? 'Take out again: their change request has not been decided yet' : 'Remove from the labour budget (they stay in RACI)'}>✕</button>
                   : <button className="x" disabled aria-label="Locked by the baseline" title={lockWhy} style={{ opacity: 0.45, cursor: 'not-allowed' }}>🔒</button>}</td>
               </tr>
@@ -387,10 +465,11 @@ function LabourRegister() {
       {adjusted.length > 0 && (
         <p className="msg" style={{ marginTop: 8 }}>
           {adjusted.length} stakeholder{adjusted.length === 1 ? ' has' : 's have'} adjusted hours that differ from the Stakeholders calendar.{' '}
-          <button type="button" className="linkbtn" onClick={() => ui.ask({ title: 'Use calendar hours for everyone?', body: 'Total available hours for ' + adjusted.map((r) => r.per.name || '(unnamed)').join(', ') + ' will follow the Stakeholders calendar again, so the labour cost changes' + (ctl.active ? ' and may need a change request against baseline ' + ctl.b.version : '') + '.', confirm: 'Use calendar', onConfirm: () => useCalendar(adjusted.map((r) => r.i)) })}>Use calendar hours for all</button>
+          {!base && (<button type="button" className="linkbtn" onClick={() => ui.ask({ title: 'Use calendar hours for everyone?', body: 'Total available hours for ' + adjusted.map((r) => r.per.name || '(unnamed)').join(', ') + ' will follow the Stakeholders calendar again, so the labour cost changes' + (ctl.active ? ' and may need a change request against baseline ' + ctl.b.version : '') + '.', confirm: 'Use calendar', onConfirm: () => useCalendar(adjusted.map((r) => r.i)) })}>Use calendar hours for all</button>)}
         </p>
       )}
       {adding && <AddLabour onClose={() => setAdding(false)} />}
+      {editing != null && <LabourChange i={editing} win={win} onClose={() => setEditing(null)} />}
       {claiming && ctl.active && (
         <LabourCrDialog
           who={ctl.claimRows.map((r) => r.name).join(', ') || 'the extra labour'}
