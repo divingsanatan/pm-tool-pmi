@@ -265,7 +265,7 @@ export function describeDep(S, e) {
   const bits = [e.pred ? r.label : 'External', nat + ' dependency'];
   if (lag) bits.push(lag);
   if (e.cross) bits.push(e.pc.name + ' → ' + e.sc.name);
-  const free = e.dep.free ? ' Added after the baseline without a change request' + (e.dep.free.on ? ' on ' + fdate(e.dep.free.on) : '') + ': soft logic with no effect on any baselined date or cost.' : '';
+  const free = e.dep.free ? ' Added or changed after the baseline without a change request' + (e.dep.free.on ? ' on ' + fdate(e.dep.free.on) : '') + ': soft logic with no effect on any baselined date or cost.' : '';
   return head + ' ' + bits.join(' · ') + '.' + free;
 }
 const dueFor = (e) => (e.pred ? ((REL[e.dep.type] || REL.FS).from === 'finish' ? fDate(e.pred) : sDate(e.pred)) : e.dep.due || '');

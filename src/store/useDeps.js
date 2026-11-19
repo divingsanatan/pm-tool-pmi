@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react';
 import { useStore } from './StoreContext';
 import { useUI } from '../components/UI';
-import { checkAdd, depImpact, depLocked, hasBaseline } from '../lib/deps';
+import { checkAdd, depImpact, depLocked, depStrict, hasBaseline } from '../lib/deps';
 import { blankCr } from '../lib/change';
 import { findTask, uid } from '../lib/tasks';
 import { today } from '../lib/dates';
@@ -66,16 +66,21 @@ export function useDeps() {
         const f = findTask(sRef.current, succId);
         const d = f && (f.t.deps || []).find((x) => x.id === depId);
         const real = d && CR_FIELDS.some((k) => k in patch && String(patch[k]) !== String(d[k] ?? (k === 'lagCal' ? 'work' : '')));
-        const apply = (choice) => update((p) => {
+        const apply = (choice, free) => update((p) => {
           const g = findTask(p, succId);
           const x = g && (g.t.deps || []).find((y) => y.id === depId);
           if (!x) return;
           Object.assign(x, patch);
+          if (free && !x.crId) x.free = { on: today() }; // changed after the baseline without a change request: recorded in its RAID entry
           if (choice) x.crId = crFor(p, choice, 'Dependency changed: ' + nameOf(succId) + (x.pred ? ' and ' + nameOf(x.pred) : '')).id;
         });
-        const stillFree = d && d.free && real && depImpact(sRef.current, succId, { ...d, ...patch }).free;
+        // soft logic between two work items can be changed without a request while it moves no baselined date or cost
+        const stillFree = !!(d && real && d.pred && d.nature === 'discretionary' && depImpact(sRef.current, succId, { ...d, ...patch }).free);
         if (d && real && depLocked(sRef.current, d) && !stillFree) {
           gate({ body: 'This dependency is part of the approved baseline. Changing its relationship, lag or nature changes the schedule logic, so it needs a change request.', confirm: 'Change dependency', title: 'Dependency change: ' + nameOf(succId), onPick: apply });
+        } else if (d && real && stillFree && depLocked(sRef.current, d)) {
+          apply(null, true);
+          say({ id: 'dep', tone: 'info', text: 'Dependency changed without a change request: soft logic with no date or cost impact. It is recorded in the RAID log.', ttl: 8000 });
         } else apply(null);
       },
       remove(succId, depId) {
@@ -95,7 +100,9 @@ export function useDeps() {
           });
           say({ id: 'dep', tone: 'info', text: 'Dependency removed. Its RAID entry was closed and kept for the record.', ttl: 6000 });
         };
-        if (d && depLocked(sRef.current, d) && !d.free) {
+        // removing soft logic between two work items needs no request either (the strict rule switches this off)
+        const softOut = !!(d && d.pred && d.nature === 'discretionary' && !depStrict(sRef.current));
+        if (d && depLocked(sRef.current, d) && !softOut) {
           gate({ body: 'This dependency is part of the approved baseline. Removing it changes the schedule logic, so it needs a change request.', confirm: 'Remove dependency', title: 'Remove dependency: ' + nameOf(succId), onPick: run });
         } else run(null);
       },

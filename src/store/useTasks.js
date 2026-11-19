@@ -8,7 +8,7 @@ import { cleanEffort, nz } from '../lib/format';
 import { DAY, fdate, pd } from '../lib/dates';
 import { blankCr, currentBaseline, sprintCrs } from '../lib/change';
 import { calendarOf, offDayInfo, workDaysAfter } from '../lib/offdays';
-import { deleteDepNote, depsOfDeleted, dropDepRaid } from '../lib/deps';
+import { deleteDepNote, depsOfDeleted, dropDepRaid, hasBaseline } from '../lib/deps';
 import { newLoadIssues } from '../lib/loadGuard';
 import { baselinedDates, clampDates, datePatchViolations, dateCrOf, gapWindow, hoursCrOf, hoursLocked, inWin, nextFreeDay, outsideBaseline, rollover, sane, sprintClash, sprintCovers, tasksOutside, windowOf } from '../lib/sprintGuard';
 
@@ -882,6 +882,7 @@ export function useTasks() {
                 const copy = structuredClone(t);
                 copy.id = uid();
                 copy.code = 'T-' + n;
+                if (hasBaseline(p)) copy.deps = []; // after the baseline a dependency is added on purpose, so a copy does not inherit them
                 map.set(t.id, copy.id);
                 return copy;
               });

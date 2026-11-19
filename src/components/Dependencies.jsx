@@ -234,7 +234,8 @@ export function DepRow({ e, side = 'succ', onOpen, showSprint = true }) {
         {e.pred && lag !== 0 && <span className="dp-tag">{Math.abs(lag)} {e.dep.lagCal === 'cal' ? 'calendar' : 'working'} day{Math.abs(lag) === 1 ? '' : 's'} {lag > 0 ? 'lag' : 'lead'}</span>}
         {cp && cp.linked && <span className={'dp-tag ' + (cp.critical || cp.float < 0 ? 'bad' : '')} title="Critical Path Method, in working days">{cp.critical ? 'Critical path' : 'Float ' + cp.float + ' working day' + (cp.float === 1 ? '' : 's')}</span>}
         {cr && <span className="dp-tag" title={'Raised under ' + cr.code + ' (' + cr.status + ')'}>{cr.code}</span>}
-        {locked && <span className="dp-tag lock" title="Part of the approved baseline: changing or removing it needs a change request">🔒 Baseline</span>}
+        {e.dep.free && !e.dep.crId && <span className="dp-tag" title={'Added or changed after the baseline without a change request' + (e.dep.free.on ? ' on ' + fdate(e.dep.free.on) : '') + ': soft logic with no effect on any baselined date or cost.'}>No baseline impact</span>}
+        {locked && !e.dep.free && <span className="dp-tag lock" title={e.dep.nature === 'discretionary' && e.pred ? 'Part of the approved baseline. As soft logic it can be changed or removed without a change request while no baselined date or cost moves; anything else needs one.' : 'Part of the approved baseline: changing or removing it needs a change request'}>🔒 Baseline</span>}
         {e.raid && <button type="button" className="dp-tag link" onClick={toRaid} title="Open its entry in the RAID log">RAID {e.raid.id}</button>}
       </div>
       {c && (
