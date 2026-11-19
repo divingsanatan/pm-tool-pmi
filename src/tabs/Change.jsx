@@ -128,7 +128,7 @@ export default function Change() {
 
       <section className="card">
         <h2>Baseline history</h2>
-        <p className="hint">Each version is a frozen copy of scope, schedule and cost. A new version appears when an approved change is implemented. You can correct a version’s name, date, amount, finish and note here, delete the newest version, or re-capture it from the plan as it is now.</p>
+        <p className="hint">Each version is a frozen copy of scope, schedule and cost. A new version appears when an approved change is implemented. You can correct a version’s name, date, finish and note here (the amount is set by the plan and its change requests), delete the newest version, or re-capture it from the plan as it is now.</p>
         <div className="scroll">
           <table className="tbl rwd bl">
             <thead>
@@ -150,19 +150,19 @@ export default function Change() {
                     <td data-l="Version" className="mono"><span className="cell"><Cell value={b.version} cls="w-sm" label="Version name" onCommit={(v) => v.trim() && ch.patchBaseline(b.id, { version: v.trim() })} />{i === 0 && <span className="pill neutral">Current</span>}</span></td>
                     <td data-l="Date"><Cell type="date" value={b.date} cls="w-date" label="Baseline date" onCommit={(v) => ch.patchBaseline(b.id, { date: v || b.date })} /></td>
                     <td data-l="Source"><span className="cell" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}><span className={'chip' + (b.crCode ? ' chg' : '')}>{b.crCode || 'Original plan'}</span>{crOf && crOf.title && <small className="msg" style={{ fontSize: 11 }}>{crOf.title}</small>}</span></td>
-                    <td data-l="Amount"><Cell type="num" value={f.work} cls="w-md n" label="Amount (work budget)" onCommit={(v) => ch.patchBaseline(b.id, { bac: Math.round(((v == null ? 0 : v) + f.contingency) * 100) / 100 })} /></td>
+                    <td data-l="Amount" className="r mono"><span className="cell bl-amt" title="The work budget. It comes from the plan and approved change requests, so it cannot be edited here.">{money(f.work)}</span></td>
                     <td data-l="Reserves" className="r mono">
-                      <span className="cell stack" title={b.reserve ? 'Contingency ' + money(f.contingency) + ' + management reserve ' + money(f.management) : ''}>
+                      <span className="cell bstack" title={b.reserve ? 'Contingency ' + money(f.contingency) + ' + management reserve ' + money(f.management) : ''}>
                         {b.reserve ? money(f.contingency + f.management) : '–'}
                         {b.reserve && <small>contingency {money(f.contingency)} ({pc(f.contPct, 1)})</small>}
                         {b.reserve && <small>management {money(f.management)} ({pc(f.mgmtPct, 1)})</small>}
                       </span>
                     </td>
                     <td data-l="Total budget" className="r mono">
-                      <span className="cell stack" title="Amount + contingency + management reserve"><b>{money(f.total)}</b><small>BAC {money(f.bac)}</small></span>
+                      <span className="cell bstack" title="Amount + contingency + management reserve"><b>{money(f.total)}</b><small>BAC {money(f.bac)}</small></span>
                     </td>
                     <td data-l="Change" className="r mono">
-                      <span className="cell stack">
+                      <span className="cell bstack">
                         {pf ? <span className={f.total - pf.total >= 0.005 ? 'up' : f.total - pf.total <= -0.005 ? 'down' : ''}>{signedMoney(f.total - pf.total, money)}</span> : '–'}
                         {pf && <small>amount {signedMoney(f.work - pf.work, money)} · reserves {signedMoney(f.contingency + f.management - pf.contingency - pf.management, money)}</small>}
                       </span>

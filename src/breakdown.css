@@ -13,10 +13,30 @@
 /* baseline history indicators */
 .bl tr.bl-current>td{background:rgba(70,130,200,.07)}
 .bl tr.bl-current>td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
-.bl .stack{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25}
-.bl .stack small{color:var(--muted);font-size:11px;white-space:nowrap}
+.bl .bstack{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25;height:auto;overflow:visible;background:none;border-radius:0;gap:1px}
+.bl .bstack small{display:block;color:var(--muted);font-size:11px;white-space:nowrap}
 .bl .chip{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:600;background:rgba(127,127,127,.15);color:var(--muted)}
 .bl .chip.chg{background:rgba(70,130,200,.18);color:var(--accent)}
 .bl .up{color:var(--accent)}.bl .down{color:var(--good)}
 .bl-legend{margin:8px 0 0;font-size:12px;color:var(--muted)}
 .bl-legend b{color:inherit}
+/* baseline history: readable rows, no clipped text, clean scroll on tablets, labelled cards on phones */
+.bl{min-width:1040px}
+.bl td{padding:8px 4px;vertical-align:middle}
+.bl td.r .cell,.bl .bl-amt{white-space:nowrap}
+.bl td[data-l="Shift"] .cell{white-space:nowrap}
+.bl .w-desc{min-width:170px}
+.bl .w-date{width:132px;min-width:132px}
+.bl .linkbtn{white-space:nowrap}
+.bl .pill{white-space:nowrap;margin-left:6px}
+.bl td[data-l="Source"] .cell small{max-width:180px;white-space:normal}
+.bl .bl-amt{font-weight:600}
+@media (max-width:720px){
+  .bl{min-width:0}
+  .bl td{padding:3px 0}
+  .bl td[data-l="Source"] .cell small{max-width:none;text-align:right}
+  .bl td .c{flex:1 1 140px}
+  .bl .bstack{align-items:flex-end;text-align:right}
+  .bl tr.bl-current>td:first-child{box-shadow:none}
+  .bl tr.bl-current{border-color:var(--accent)!important;box-shadow:inset 3px 0 0 var(--accent)}
+}
