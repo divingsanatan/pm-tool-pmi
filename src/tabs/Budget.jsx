@@ -6,14 +6,15 @@ import { Modal, useUI } from '../components/UI';
 import WeeksControl from '../components/WeeksControl';
 import '../capacity.css';
 import { calendarHours, planWindow } from '../lib/capacity';
-import { ITER_UNIT, baseLine, baseOf, costBy, labourOf, labourTotal, lastDay, ledgerTotal, lineOnce, lineRecurring, lineState, lineTotal, maxIter, personOf, planBAC, projectBAC, reserves, suggestIter } from '../lib/calc';
+import { ITER_UNIT, baseLine, baseOf, costBy, labourOf, labourTotal, lastDay, ledgerTotal, lineOnce, lineRecurring, lineState, lineTotal, maxIter, personOf, planBAC, projectBAC, reserves, suggestIter, workBudget } from '../lib/calc';
 import LineCrDialog from './LineCrDialog';
 import StrayCrLines from '../components/StrayCrLines';
 import { addLineViaCr, changeLineViaCr, dropPendingLine, lineEditable, revertLine, syncClaim } from '../lib/lineChange';
 import { fdate, fsh, today } from '../lib/dates';
 import { hrsf, money, nz, pc } from '../lib/format';
 import { parseCosts } from '../lib/parse';
-import { claimLabour, crCls, currentBaseline, labourControl, labourCrs, recordBaselineTeam } from '../lib/change';
+import { baselineFigures, claimLabour, crCls, currentBaseline, labourControl, labourCrs, recordBaselineTeam, signedMoney, signedWorkDays } from '../lib/change';
+import '../breakdown.css';
 
 const BASES = [['week', 'Per week'], ['month', 'Per month'], ['sprint', 'Per sprint'], ['project', 'One-time']];
 const VIEWS = [['entries', 'Entries'], ['week', 'By week'], ['month', 'By month'], ['sprint', 'By sprint'], ['element', 'By element']];
@@ -406,6 +407,94 @@ function LabourRegister() {
   );
 }
 
+
+// How the budget was built at the first baseline and how every approved change request moved it, one row per baseline.
+function BudgetHistory({ lab }) {
+  const { S, setNav } = useStore();
+  const bs = S.baselines || [];
+  if (!bs.length) return null;
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const rows = bs.map((b) => {
+    const f = baselineFigures(b);
+    const known = Array.isArray(b.labour); // older baselines did not record the team
+    const labour = known ? r2(nz(b.labourCost)) : null;
+    return { b, f, labour, other: known ? r2(f.work - labour) : null };
+  });
+  const first = rows[0], cur = rows[rows.length - 1];
+  const liveWork = r2(workBudget(S)), liveLab = r2(lab);
+  const gap = r2(liveWork - cur.f.work);
+  const crOf = (id) => S.cr.find((c) => c.id === id);
+  const d = (now, was) => (was == null || now == null ? null : r2(now - was));
+  // an amount with the change since the baseline before, in small type underneath
+  const amt = (v, dv, note) => (
+    <span className="cell bstack">
+      {v == null ? '–' : money(v)}
+      {note && <small>{note}</small>}
+      {dv != null && Math.abs(dv) >= 0.005 && <small className={dv > 0 ? 'up' : 'down'}>{signedMoney(dv, money)}</small>}
+    </span>
+  );
+  const bar = (r) => {
+    const parts = [[r.labour == null ? r.f.work : r.labour, 'l', r.labour == null ? 'Work budget' : 'Team labour'], [Math.max(0, r.other || 0), 'o', 'Other line items and approved changes'], [r.f.contingency, 'c', 'Contingency reserve'], [r.f.management, 'm', 'Management reserve']];
+    const tot = parts.reduce((a, x) => a + x[0], 0) || 1;
+    return (
+      <span className="bh-bar" aria-hidden="true" title={parts.filter((x) => x[0]).map((x) => x[2] + ' ' + money(x[0])).join(' · ')}>
+        {parts.filter((x) => x[0] > 0).map((x) => (<i key={x[1]} className={x[1]} style={{ width: (x[0] / tot) * 100 + '%' }} />))}
+      </span>
+    );
+  };
+  return (
+    <div className="card">
+      <h2>Budget history by baseline</h2>
+      <p className="hint">Each row is a frozen baseline: the first one is the original plan, every later one comes from an implemented change request. The small figure under an amount is how much it changed since the baseline before. Team labour is the labour cost recorded in that baseline; other line items is the rest of the work budget (budget line items and approved change requests).</p>
+      <div className="scroll">
+        <table className="tbl rwd bl">
+          <thead>
+            <tr><th>Baseline</th><th>Source</th><th className="r" title="Labour cost of the team recorded in that baseline">Team labour</th><th className="r" title="Work budget minus team labour: budget line items and approved change requests">Other line items</th><th className="r" title="Team labour plus other line items">Work budget</th><th className="r">Contingency</th><th className="r" title="Work budget plus contingency: what progress is measured against">BAC</th><th className="r">Management reserve</th><th className="r" title="BAC plus management reserve">Total budget</th><th className="r" title="Total budget compared with the baseline before, and with the first baseline">Change</th></tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const prev = i ? rows[i - 1] : null;
+              const { b, f } = r;
+              const c = b.crId ? crOf(b.crId) : null;
+              const dTot = prev ? r2(f.total - prev.f.total) : null;
+              const since = i > 1 ? r2(f.total - first.f.total) : null;
+              return (
+                <tr key={b.id} className={i === rows.length - 1 ? 'bl-current' : ''}>
+                  <td data-l="Baseline" className="mono"><span className="cell bstack" style={{ alignItems: 'flex-start' }}><span>{b.version}{i === rows.length - 1 && <span className="pill neutral">Current</span>}</span><small>{fdate(b.date)}</small></span></td>
+                  <td data-l="Source"><span className="cell" style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-start' }}>
+                    {b.crCode ? <button type="button" className="chip chg" onClick={() => setNav({ tab: 'change' })} title="Open Change control">{b.crCode}</button> : <span className="chip">Original plan</span>}
+                    {(c && c.title) || (!c && b.note) ? <small className="msg" style={{ fontSize: 11 }}>{(c && c.title) || b.note}</small> : null}
+                    {prev && <small className="msg" style={{ fontSize: 11 }}>approved {signedMoney(nz(b.approvedCost), money)} · {signedWorkDays(nz(b.approvedDays))}</small>}
+                  </span></td>
+                  <td data-l="Team labour" className="r mono">{r.labour == null ? <span className="cell msg" title="This baseline did not record the team">not recorded</span> : amt(r.labour, d(r.labour, prev && prev.labour))}</td>
+                  <td data-l="Other line items" className="r mono">{r.other == null ? <span className="cell msg">–</span> : amt(r.other, d(r.other, prev && prev.other))}</td>
+                  <td data-l="Work budget" className="r mono">{amt(f.work, d(f.work, prev && prev.f.work))}</td>
+                  <td data-l="Contingency" className="r mono">{amt(f.contingency, d(f.contingency, prev && prev.f.contingency), f.contPct == null ? '' : pc(f.contPct, 1) + ' of work')}</td>
+                  <td data-l="BAC" className="r mono">{amt(f.bac, d(f.bac, prev && prev.f.bac))}</td>
+                  <td data-l="Management reserve" className="r mono">{amt(f.management, d(f.management, prev && prev.f.management), f.mgmtPct == null ? '' : pc(f.mgmtPct, 1) + ' of work')}</td>
+                  <td data-l="Total budget" className="r mono"><span className="cell bstack"><b>{money(f.total)}</b>{bar(r)}</span></td>
+                  <td data-l="Change" className="r mono"><span className="cell bstack">{dTot == null ? <span className="msg">start</span> : <span className={dTot >= 0.005 ? 'up' : dTot <= -0.005 ? 'down' : ''}>{signedMoney(dTot, money)}</span>}{prev && prev.f.total > 0 && <small>{(dTot >= 0 ? '+' : '') + Math.round((dTot / prev.f.total) * 1000) / 10}%</small>}{since != null && <small>{signedMoney(since, money)} since {first.b.version}</small>}</span></td>
+                </tr>
+              );
+            })}
+            <tr className="bl-now">
+              <td data-l="Baseline" className="mono"><span className="cell">Plan now<span className="pill neutral" title="The live plan on this screen, not yet frozen">live</span></span></td>
+              <td data-l="Source"><span className="cell msg">Labour and line items as they stand today</span></td>
+              <td data-l="Team labour" className="r mono">{amt(liveLab, d(liveLab, cur.labour))}</td>
+              <td data-l="Other line items" className="r mono">{amt(r2(liveWork - liveLab), cur.other == null ? null : d(r2(liveWork - liveLab), cur.other))}</td>
+              <td data-l="Work budget" className="r mono">{amt(liveWork, gap)}</td>
+              <td data-l="Contingency"></td><td data-l="BAC"></td><td data-l="Management reserve"></td>
+              <td data-l="Total budget" className="r"><span className="cell bstack">{Math.abs(gap) > 0.5 ? <span className={'pill ' + (gap > 0 ? 'warn' : 'neutral')}>{gap > 0 ? 'Above ' + cur.b.version + ' by ' + money(gap) + ': needs a change request' : 'Below ' + cur.b.version + ' by ' + money(-gap)}</span> : <span className="pill good">Matches {cur.b.version}</span>}</span></td>
+              <td data-l="Change"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="bl-legend bh-key"><span><i className="l" />Team labour</span><span><i className="o" />Other line items and approved changes</span><span><i className="c" />Contingency reserve</span><span><i className="m" />Management reserve</span> · The bar under each total shows what it is made of. “Plan now” compares today’s labour and line items with the current baseline: anything above it is not in the budget until a change request is approved and implemented.</p>
+    </div>
+  );
+}
+
 export default function Budget() {
   const { S, update, setNav } = useStore();
   const ui = useUI();
@@ -421,6 +510,7 @@ export default function Budget() {
   const ac = ledgerTotal(S);
   // contingency and management reserve: built-in lines. Their percentages can be changed until a baseline exists, then they are locked.
   const R = reserves(S);
+  const gapWork = Math.round((workBudget(S) - R.base) * 100) / 100; // live labour and line items against the work budget the baseline allows
   const setReserve = (key, v) => update((p) => {
     if (p.baselines && p.baselines.length) return; // locked by the baseline
     const n = parseFloat(v);
@@ -485,6 +575,7 @@ export default function Budget() {
       </div>
 
       <StrayCrLines />
+      <BudgetHistory lab={lab} />
       <div className="card">
         <div className="row sp">
           <div>
@@ -568,6 +659,9 @@ export default function Budget() {
                   </tr>
                 );
               })}
+              {baselined && Math.abs(gapWork) > 0.5 && (
+                <tr className="gap-row"><td data-l="Line item"><span className="cell">{gapWork > 0 ? 'Listed above but not in baseline ' + baseOf(S).version + ' yet (needs a change request)' : 'Below baseline ' + baseOf(S).version + ' (budget not used)'}</span></td><td data-l=""></td><td data-l=""></td><td data-l=""></td><td data-l="Project total" className="r mono"><span className="cell">{signedMoney(-gapWork, money)}</span></td><td data-l=""><span className={'pill ' + (gapWork > 0 ? 'warn' : 'neutral')}>{gapWork > 0 ? 'Not in budget' : 'Freed up'}</span></td></tr>
+              )}
               <tr className="sub-row"><td data-l="Line item"><span className="cell">Work budget</span></td><td data-l=""></td><td data-l=""></td><td data-l=""></td><td data-l="Project total" className="r mono"><span className="cell">{money(R.base)}</span></td><td data-l=""></td></tr>
               {reserveRow('contingency', 'Contingency reserve', R.contPct, R.contingency, 'of the work budget, for identified risks')}
               <tr className="sub-row"><td data-l="Line item"><span className="cell">Budget at completion (BAC)</span></td><td data-l=""></td><td data-l=""></td><td data-l=""></td><td data-l="Project total" className="r mono"><span className="cell">{money(R.costBaseline)}</span></td><td data-l=""></td></tr>

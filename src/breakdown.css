@@ -40,3 +40,19 @@
   .bl tr.bl-current>td:first-child{box-shadow:none}
   .bl tr.bl-current{border-color:var(--accent)!important;box-shadow:inset 3px 0 0 var(--accent)}
 }
+
+/* budget history by baseline */
+.bl .bstack small.up{color:var(--accent)}
+.bl .bstack small.down{color:var(--good)}
+.bl button.chip{border:0;cursor:pointer;font:inherit;font-size:11.5px;font-weight:600}
+.bl tr.bl-now>td{border-top:2px dashed var(--line);background:transparent}
+.bh-bar{display:flex;height:8px;width:150px;max-width:100%;border-radius:4px;overflow:hidden;background:var(--line);margin-top:4px}
+.bh-bar i{display:block;height:100%}
+.bh-bar .l,.bh-key .l{background:var(--accent)}
+.bh-bar .o,.bh-key .o{background:var(--good)}
+.bh-bar .c,.bh-key .c{background:var(--warn)}
+.bh-bar .m,.bh-key .m{background:var(--muted)}
+.bh-key span{display:inline-flex;align-items:center;gap:5px;margin-right:12px}
+.bh-key i{display:inline-block;width:10px;height:10px;border-radius:2px}
+tr.gap-row td{color:var(--warn);font-style:italic}
+@media (max-width:720px){.bh-bar{width:100%}}
