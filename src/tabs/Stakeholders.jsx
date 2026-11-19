@@ -12,6 +12,7 @@ import WorkCalendar from '../components/WorkCalendar';
 import CapacityCards from '../components/CapacityCards';
 import LeaveCalendar, { PeopleCapacity } from '../components/LeaveCalendar';
 import { SCORES, quadrantOf, scoreOf } from '../lib/stakeholderGrid';
+import { currentBaseline } from '../lib/change';
 
 const key = (x) => (x || '').trim().toLowerCase();
 
@@ -82,7 +83,10 @@ export default function Stakeholders() {
     setMsg('');
     update((s) => { s.people.find((x) => x.id === p.id).name = n; });
   };
+  // Once a baseline exists, someone in the labour budget cannot be deleted (that would change the baseline's team): mark them as left instead.
+  const inBaselineTeam = (p) => !!currentBaseline(S) && S.team.some((x) => x.person === p.id);
   const remove = (p) => {
+    if (inBaselineTeam(p)) return;
     const a = tasks.filter((t) => (t.assignees || []).includes(p.id)).length;
     const r = tasks.filter((t) => t.raci && t.raci[p.id]).length;
     ui.ask({
@@ -162,7 +166,9 @@ export default function Stakeholders() {
                   ) : (
                     <button className="btn" onClick={() => setLeaving(p)}>Left the project</button>
                   )}{' '}
-                  <button className="x" onClick={() => remove(p)} aria-label={'Remove ' + p.name} title="Delete completely (removes their history)">✕</button>
+                  {inBaselineTeam(p)
+                    ? <button className="x" disabled aria-label={'Locked: ' + p.name} title="Locked by the baseline: this person is in the labour budget. Use “Left the project” instead; their history stays." style={{ opacity: 0.45, cursor: 'not-allowed' }}>🔒</button>
+                    : <button className="x" onClick={() => remove(p)} aria-label={'Remove ' + p.name} title="Delete completely (removes their history)">✕</button>}
                 </td>
               </tr>
             ))}

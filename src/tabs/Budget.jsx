@@ -13,7 +13,7 @@ import { addLineViaCr, changeLineViaCr, dropPendingLine, lineEditable, revertLin
 import { fdate, fsh, today } from '../lib/dates';
 import { hrsf, money, nz, pc } from '../lib/format';
 import { parseCosts } from '../lib/parse';
-import { claimLabour, crCls, labourControl, labourCrs, recordBaselineTeam } from '../lib/change';
+import { claimLabour, crCls, currentBaseline, labourControl, labourCrs, recordBaselineTeam } from '../lib/change';
 
 const BASES = [['week', 'Per week'], ['month', 'Per month'], ['sprint', 'Per sprint'], ['project', 'One-time']];
 const VIEWS = [['entries', 'Entries'], ['week', 'By week'], ['month', 'By month'], ['sprint', 'By sprint'], ['element', 'By element']];
@@ -129,7 +129,7 @@ function Ledger() {
 const NEW_CR = '__new';
 
 // Extra labour budget must be claimed through a change request: link it to an open one, or raise a new one for the difference.
-function LabourCrDialog({ who, amount, total, baseTotal, version, onConfirm, onCancel }) {
+function LabourCrDialog({ who, amount, total, baseTotal, version, adding, onConfirm, onCancel }) {
   const { S } = useStore();
   const opts = labourCrs(S);
   const [sel, setSel] = useState(opts.length ? '' : NEW_CR);
@@ -143,8 +143,9 @@ function LabourCrDialog({ who, amount, total, baseTotal, version, onConfirm, onC
   return (
     <Modal title="Change request needed" onClose={onCancel}>
       <p className="hint" style={{ marginBottom: 12 }}>
-        The labour budget would be <b>{money(total)}</b> against <b>{money(baseTotal)}</b> in baseline {version}. The <b>{money(amount)}</b> difference ({who}) is additional budget, so it has to be claimed through a change request.
-        Budget freed up by removing someone is used first and needs no request.
+        {adding
+          ? <>Baseline {version} is set, so the team is locked. Adding <b>{who}</b> changes the baseline and needs a change request. Their labour cost is <b>{money(amount)}</b>, which takes the labour budget from <b>{money(baseTotal)}</b> to <b>{money(total)}</b>. They are added to the team only after you link or raise a request.</>
+          : <>The labour budget would be <b>{money(total)}</b> against <b>{money(baseTotal)}</b> in baseline {version}. The <b>{money(amount)}</b> difference ({who}) is additional budget, so it has to be claimed through a change request. Budget freed up by removing someone is used first and needs no request.</>}
       </p>
       <div className="form" onKeyDown={(e) => e.key === 'Enter' && e.target.tagName !== 'SELECT' && go()}>
         <label className="fld">Change request *
@@ -208,13 +209,18 @@ function AddLabour({ onClose }) {
   };
   const save = () => {
     if (!pid) return;
-    // after a baseline, extra budget needs a change request. Try the change on a copy first.
-    const trial = structuredClone(S);
-    build(trial);
-    const ctl = labourControl(trial);
-    if (ctl.active && ctl.needsCr) {
+    // after a baseline the team is locked: every new stakeholder needs a change request (new or an open one), even at no extra cost.
+    // Try the change on a copy first so the request can show the real cost.
+    if (currentBaseline(S)) {
+      const trial = structuredClone(S);
+      build(trial);
+      const L = labourOf(trial, trial.team[trial.team.length - 1]);
+      const cost = L ? Math.round(nz(L.cost) * 100) / 100 : 0;
+      const before = S.team.reduce((a, t) => { const x = labourOf(S, t); return a + (x ? nz(x.cost) : 0); }, 0);
+      const c0 = labourControl(S);
+      const baseTotal = c0.active ? c0.baseTotal : Math.round(before * 100) / 100;
       const who = (S.people.find((x) => x.id === pid) || {}).name || 'The new stakeholder';
-      setNeed({ ctl, who, amount: ctl.short });
+      setNeed({ version: currentBaseline(S).version, who, amount: cost, total: Math.round((before + cost) * 100) / 100, baseTotal });
       return;
     }
     update(build);
@@ -227,7 +233,7 @@ function AddLabour({ onClose }) {
     });
     onClose();
   };
-  if (need) return <LabourCrDialog who={need.who} amount={need.amount} total={need.ctl.nowTotal} baseTotal={need.ctl.baseTotal} version={need.ctl.b.version} onConfirm={confirmClaim} onCancel={() => setNeed(null)} />;
+  if (need) return <LabourCrDialog adding who={need.who} amount={need.amount} total={need.total} baseTotal={need.baseTotal} version={need.version} onConfirm={confirmClaim} onCancel={() => setNeed(null)} />;
   if (!free.length)
     return (
       <Modal title="Add to the labour budget" onClose={onClose}>
@@ -269,6 +275,30 @@ function LabourRegister() {
   const crOf = (id) => S.cr.find((c) => c.id === id);
   const replaces = ctl.active && ctl.removed.length ? ctl.removed.map((x) => x.name).join(', ') : '';
   const used = new Set(S.team.map((t) => t.person));
+  // After a baseline the team is locked. Someone who is in the baseline's team can never be removed or swapped here.
+  // Someone added after it can be taken out again only while the change request that adds them is still awaiting a decision
+  // (their share is taken back out of that request's cost).
+  const base = currentBaseline(S);
+  const openCr = (id) => labourCrs(S).some((c) => c.id === id);
+  const canRemove = (i) => {
+    if (!base) return true;
+    const r = rowCtl[i];
+    return !!(r && r.isNew && r.crId && openCr(r.crId));
+  };
+  const lockWhy = base ? 'Locked by baseline ' + base.version + '. A stakeholder in the baseline team cannot be removed. To add someone, raise a change request.' : '';
+  const removeRow = (i) => {
+    if (!canRemove(i)) return;
+    update((s) => {
+      const t = s.team[i];
+      if (!t) return;
+      const c = t.crId ? s.cr.find((x) => x.id === t.crId) : null;
+      if (c && nz(t.crClaim) > 0 && ['Draft', 'Submitted', 'Under review'].includes(c.status)) {
+        c.cost = Math.max(0, Math.round((nz(c.cost) - nz(t.crClaim)) * 100) / 100);
+        c.log.push({ on: today(), text: 'Cost change −' + Math.round(nz(t.crClaim) * 100) / 100 + ' (stakeholder taken out of the labour budget before approval)' });
+      }
+      s.team.splice(i, 1);
+    });
+  };
   const setPerson = (id, patch) => update((s) => void Object.assign(s.people.find((x) => x.id === id), patch));
   const setTeam = (i, patch) => update((s) => void Object.assign(s.team[i], patch));
   const win = planWindow(S);
@@ -307,7 +337,9 @@ function LabourRegister() {
           <tbody>
             {rows.map(({ t, i, per, L }) => (
               <tr key={per.id + ':' + i}>
-                <td data-l="Stakeholder"><SelectCell value={t.person} options={S.people.filter((x) => x.id === t.person || !used.has(x.id)).map((x) => [x.id, x.name || '(unnamed)'])} cls="w-md" onCommit={(v) => update((s) => { s.team[i].person = v; })} /></td>
+                <td data-l="Stakeholder">{base
+                  ? <span className="cell" title="The team is locked by the baseline. Add a stakeholder through a change request.">{per.name || '(unnamed)'}</span>
+                  : <SelectCell value={t.person} options={S.people.filter((x) => x.id === t.person || !used.has(x.id)).map((x) => [x.id, x.name || '(unnamed)'])} cls="w-md" onCommit={(v) => update((s) => { s.team[i].person = v; })} />}</td>
                 <td data-l="Hourly rate"><Cell value={per.rate} type="num" cls="w-md n" label="Hourly rate" onCommit={(v) => setPerson(per.id, { rate: v == null ? 0 : v })} /></td>
                 <td data-l="Capacity %">
                   <Cell value={L.cap} type="pct" cls="w-md n" label="Capacity for this project in percent" onCommit={(v) => setTeam(i, v == null ? { cap: undefined } : { cap: Math.max(0, v) })} />
@@ -340,7 +372,9 @@ function LabourRegister() {
                     })()}
                   </td>
                 )}
-                <td data-l=""><button className="x" onClick={() => update((s) => { s.team.splice(i, 1); })} aria-label="Remove from the labour budget" title="Remove from the labour budget (they stay in RACI)">✕</button></td>
+                <td data-l="">{canRemove(i)
+                  ? <button className="x" onClick={() => removeRow(i)} aria-label="Remove from the labour budget" title={base ? 'Take out again: their change request has not been decided yet' : 'Remove from the labour budget (they stay in RACI)'}>✕</button>
+                  : <button className="x" disabled aria-label="Locked by the baseline" title={lockWhy} style={{ opacity: 0.45, cursor: 'not-allowed' }}>🔒</button>}</td>
               </tr>
             ))}
             {!rows.length && (<tr className="empty-row"><td colSpan={ctl.active ? 8 : 7}><span className="cell msg">Nobody in the labour budget yet. Use “+ Add stakeholder”.</span></td></tr>)}
