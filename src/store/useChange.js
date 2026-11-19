@@ -6,14 +6,23 @@ import { nz } from '../lib/format';
 import { promoteFor } from '../lib/drafts';
 import { baselinesOf, blankCr, crBlockers, currentBaseline, inNextBaseline, isNewestBaseline, missing, reserveAfter, snapshot } from '../lib/change';
 import { allContainers } from '../lib/tasks';
+import { canSeeBudget } from '../lib/access';
 
 const note = (c, text) => c.log.push({ on: today(), text });
 
-// Change-request and baseline actions for the current project
+// Only these baseline fields may be corrected by hand. The budget figures (amount, reserves, BAC) are never typed in:
+// they come from the plan and from implemented change requests.
+const BASELINE_EDITABLE = ['version', 'date', 'end', 'note'];
+
+// Change-request and baseline actions for the current project.
+// Only an Admin or a Project Manager may use them: the Change tab is hidden from everyone else, and the actions refuse as well,
+// so a Team member or Viewer cannot change a baseline or a request even by another route.
 export function useChange() {
-  const { update } = useStore();
+  const { update, role } = useStore();
+  const mgr = canSeeBudget(role);
   return useMemo(
-    () => ({
+    () => {
+      const raw = {
       // The first baseline is taken from the plan as it stands; every later one comes from an approved change request
       setInitialBaseline(text) {
         update((p) => {
@@ -23,9 +32,12 @@ export function useChange() {
       },
       // Baselines can be corrected or removed.
       patchBaseline(id, patch) {
+        const safe = {};
+        BASELINE_EDITABLE.forEach((k) => { if (patch && k in patch) safe[k] = patch[k]; }); // amount, reserves and BAC are ignored here
+        if (!Object.keys(safe).length) return;
         update((p) => {
           const b = p.baselines.find((x) => x.id === id);
-          if (b) Object.assign(b, patch);
+          if (b) Object.assign(b, safe);
         });
       },
       recaptureBaseline(id) {
@@ -181,7 +193,10 @@ export function useChange() {
           note(c, 'Approved → Implemented · baseline ' + version + ' created');
         });
       },
-    }),
-    [update]
+      };
+      // every action is switched off for roles that may not manage the budget and change control
+      return Object.fromEntries(Object.entries(raw).map(([k, fn]) => [k, mgr ? fn : (k === 'add' ? () => '' : () => {})]));
+    },
+    [update, mgr]
   );
 }
