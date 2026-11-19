@@ -392,7 +392,7 @@ function LabourRegister() {
           <h2>Labour budget</h2>
           <p className="hint">Pick a stakeholder and set their hourly rate. Capacity for the project starts as their allocation % from the Stakeholders tab; type a value to use your own and it stays until you reset it (changing it here never changes the allocation, and the allocation never changes it once you have typed your own). Total available hours come from the Stakeholders calendar (working days × hours per day, after team off days and their leave); type a value to adjust it and it stays until you reset it. Hours at capacity = total available hours × capacity. Cost = hours at capacity × hourly rate.</p>
         </div>
-        <button className="btn primary" onClick={() => setAdding(true)}>+ Add stakeholder</button>
+        <button className="btn primary" onClick={() => setAdding(true)} title={base ? 'Locked by baseline ' + base.version + ': a new stakeholder needs a change request. You pick the person, then link or raise the request.' : ''}>{base ? '🔒 Add stakeholder via change request' : '+ Add stakeholder'}</button>
       </div>
       {base && <p className="msg" style={{ margin: '8px 0 0' }}>🔒 Locked by baseline {base.version}. Rates, capacity and hours cannot be typed in any more: use “Change…” on a row. A change that takes the labour budget above the baseline needs a change request.</p>}
       {ctl.reason === 'untracked' && (
@@ -456,7 +456,7 @@ function LabourRegister() {
                   : <button className="x" disabled aria-label="Locked by the baseline" title={lockWhy} style={{ opacity: 0.45, cursor: 'not-allowed' }}>🔒</button>}</td>
               </tr>
             ))}
-            {!rows.length && (<tr className="empty-row"><td colSpan={ctl.active ? 8 : 7}><span className="cell msg">Nobody in the labour budget yet. Use “+ Add stakeholder”.</span></td></tr>)}
+            {!rows.length && (<tr className="empty-row"><td colSpan={ctl.active ? 8 : 7}><span className="cell msg">Nobody in the labour budget yet. Use the Add stakeholder button above.</span></td></tr>)}
           </tbody>
           {rows.length > 0 && (<tfoot><tr><td>Total</td><td></td><td></td><td className="r mono">{hrsf(sum((l) => l.total))}</td><td className="r mono">{hrsf(sum((l) => l.avail))}</td><td className="r mono">{money(sum((l) => l.cost))}</td>{ctl.active && <td className="msg"><span className="cell">Baseline {money(ctl.baseTotal)}</span></td>}<td></td></tr></tfoot>)}
         </table>
