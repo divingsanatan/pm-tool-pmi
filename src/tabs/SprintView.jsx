@@ -20,6 +20,8 @@ import '../sprintlist.css';
 import { WEEKDAYS_SHORT, calendarOf, sprintDayList } from '../lib/offdays';
 import { StakeholderOffDays, SprintCapacity } from '../components/CapacityViews';
 import BulkBar from '../components/BulkBar';
+import { CrLink } from '../components/CrLinks';
+import { crsFor } from '../lib/crLinks';
 import NameInput from '../components/NameInput';
 import { LIST_COLS, useListCols } from '../lib/listCols';
 import TaskDrawer from './TaskDrawer';
@@ -140,7 +142,7 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
         <TypeMenu task={t} size={16} />
         <StatusMenu task={t} />
         <NameInput t={t} focus={focus} bold={parent} done={done} keys={keys} wrap={ctx.wrap}>
-          <span className="tags-inline"><TagMenu task={t} inline max={99} /></span>
+          <span className="tags-inline"><TagMenu task={t} inline max={99} /><CrLink kind="tasks" id={t.id} inline /></span>
         </NameInput>
         {parent && <span className="subc" title="Direct child items done">⑂ {kidsDone}/{kidList.length}</span>}
         <AddChildMenu parent={t} onAdded={(id) => { expand(t.id); ask({ id, select: true }); }} />
@@ -179,7 +181,7 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
       </div>
       <div className="c-st"><StatusMenu task={t} pill /></div>
       <div className="c-deps"><DepsCell task={t} idx={ctx.depIdx} onOpen={onOpen} /></div>
-      <div className="c-tags"><TagMenu task={t} /></div>
+      <div className="c-tags"><TagMenu task={t} /><CrLink kind="tasks" id={t.id} /></div>
       <div className="c-code mono msg" title="Work item ID">{t.code || '–'}</div>
       <div className="c-type msg">{ty.label}</div>
       <div className="c-doneon msg">{t.doneOn ? fdate(t.doneOn) : '–'}</div>
@@ -503,7 +505,7 @@ export default function SprintView() {
   const matched = useMemo(() => {
     if (!c) return new Set();
     const ql = q.trim().toLowerCase();
-    return new Set(c.tasks.filter((t) => (!ql || t.name.toLowerCase().includes(ql) || (t.code || '').toLowerCase().includes(ql) || (t.tags || []).some((g) => g.toLowerCase().includes(ql.replace(/^#/, '')))) && (ft === 'all' || t.type === ft) && (fg === 'all' || (fg === 'none' ? !(t.tags || []).length : hasTag(t, fg))) && (who === 'all' || (who === 'none' ? !(t.assignees || []).length : (t.assignees || []).includes(who)))).map((t) => t.id));
+    return new Set(c.tasks.filter((t) => (!ql || t.name.toLowerCase().includes(ql) || (t.code || '').toLowerCase().includes(ql) || (t.tags || []).some((g) => g.toLowerCase().includes(ql.replace(/^#/, ''))) || crsFor(S, 'tasks', t.id).some((x) => (x.code + ' ' + (x.title || '')).toLowerCase().includes(ql))) && (ft === 'all' || t.type === ft) && (fg === 'all' || (fg === 'none' ? !(t.tags || []).length : hasTag(t, fg))) && (who === 'all' || (who === 'none' ? !(t.assignees || []).length : (t.assignees || []).includes(who)))).map((t) => t.id));
   }, [c, q, who, ft, fg]);
   const filtering = !!q.trim() || who !== 'all' || ft !== 'all' || fg !== 'all';
   const shown = useMemo(() => (!c ? new Set() : filtering ? withAncestors(c.tasks, matched) : new Set(c.tasks.map((t) => t.id))), [c, matched, filtering]);

@@ -13,6 +13,7 @@ import { hrsf, nz } from '../lib/format';
 import { flatTree, kidsMap, leafTasks, rootTasks, subtreeIds, withAncestors } from '../lib/hier';
 import TaskDrawer from './TaskDrawer';
 import BulkBar from '../components/BulkBar';
+import { CrLink } from '../components/CrLinks';
 import { useSelect } from '../lib/useSelect';
 import { AddRow, TriBox } from '../components/ListBits';
 import { groupsOf } from './SprintView';
@@ -123,7 +124,7 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
         )}
         <TypeMenu task={t} size={16} />
         <NameInput t={t} focus={focus} bold={parent} done={false} keys={keys} wrap>
-          <span className="tags-inline"><TagMenu task={t} inline max={99} /></span>
+          <span className="tags-inline"><TagMenu task={t} inline max={99} /><CrLink kind="tasks" id={t.id} inline /></span>
         </NameInput>
         {parent && <span className="subc" title="Direct child items">⑂ {kidList.length}</span>}
         <AddChildMenu parent={t} onAdded={(id) => { expand(t.id); ask({ id, select: true }); }} />

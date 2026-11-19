@@ -8,6 +8,9 @@ import { PRIORITIES, allTags, cleanTag, findTask, hasTag, statusesOf, tagColor }
 import { useTags } from '../store/useTags';
 import { TagAdder } from './Tags';
 import { fdate } from '../lib/dates';
+import { canSeeBudget } from '../lib/access';
+import { useCrLinks } from '../store/useCrLinks';
+import { crMenuItems } from './CrLinks';
 
 // Asks for one value (a date or a number) and applies it to every selected work item
 function ValueDialog({ kind, count, tasks, container, onApply, onClose }) {
@@ -43,9 +46,10 @@ function ValueDialog({ kind, count, tasks, container, onApply, onClose }) {
 
 // Bulk actions for the selected work items of a sprint or the Backlog
 export default function BulkBar({ ids, container, onDone }) {
-  const { S, setNav } = useStore();
+  const { S, setNav, role } = useStore();
   const tk = useTasks();
   const tg = useTags();
+  const lk = useCrLinks();
   const ui = useUI();
   const [dlg, setDlg] = useState(null);
   if (!ids.length) return null;
@@ -139,6 +143,7 @@ export default function BulkBar({ ids, container, onDone }) {
           items={tagItems}
           footer={() => <TagAdder placeholder="New tag for all selected" autoFocus={false} onAdd={(name) => { const g = cleanTag(name); if (g) tg.tagMany(ids, g, true); }} />}
         />
+        {canSeeBudget(role) && <Menu className="btn" label="Change request ▾" title="Link the selected work items to a change request, or unlink them" items={crMenuItems(S, 'tasks', ids, lk, setNav)} />}
         <Menu className="btn" label="Priority ▾" title="Set priority for selected work items" items={prio} />
         {!backlog && <Menu className="btn" label="Dates ▾" title="Set dates for selected work items" items={dates} />}
         <Menu className="btn" label="Effort ▾" title="Set effort for selected work items" items={effort} />

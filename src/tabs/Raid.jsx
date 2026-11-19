@@ -10,6 +10,7 @@ import { uid } from '../lib/tasks';
 import { raidJump } from '../lib/deps';
 import { hrsf, money, nz } from '../lib/format';
 import '../raid.css';
+import { CrChips, CrField } from '../components/CrLinks';
 
 const TYPES = ['Risk', 'Assumption', 'Issue', 'Dependency'];
 // Dependencies are added on the work items (they then get their RAID entry automatically), so they are not offered as a type to add by hand
@@ -176,6 +177,12 @@ function RaidDrawer({ k, fresh, onClose }) {
         <div className="rd-sec">
           <h3 className="d-h">{isR ? 'Response or mitigation' : 'Response / next steps'}</h3>
           <RichText html={r.respHtml} text={r.resp} label="Response" placeholder="What will we do about it, and who does what?" rows={4} onCommit={setRich('resp')} />
+        </div>
+
+        <div className="rd-sec">
+          <h3 className="d-h">Change requests</h3>
+          <CrField kind="raid" id={r.key} />
+          <p className="msg" style={{ margin: '6px 0 0' }}>Link this item to the change requests it belongs to. This works at any stage, also after a request is implemented, and the request lists it too.</p>
         </div>
 
         <div className="d-actions">
@@ -349,7 +356,7 @@ export default function Raid() {
                   <tr key={r.key} className="rd-row" onClick={() => show(r.key)}>
                     <td data-l="ID" className="rd-c-id"><button type="button" className="linkbtn mono" onClick={(e) => { e.stopPropagation(); show(r.key); }}>{r.id || '(no ID)'}</button>{r.auto === 'dependency' && <span className="msg" title="Created automatically from a dependency between work items"> · auto</span>}</td>
                     <td data-l="Type" className="rd-c-nw"><span className={'cell rd-ty ty-' + r.type}>{r.type}</span></td>
-                    <td data-l="Description"><div className="rd-prev">{r.desc ? r.desc : <span className="msg">No description yet</span>}</div></td>
+                    <td data-l="Description"><div className="rd-prev">{r.desc ? r.desc : <span className="msg">No description yet</span>}</div><CrChips kind="raid" id={r.key} /></td>
                     <td data-l="Owner" className="rd-c-nw"><span className="cell">{nameOf(r.owner) || <span className="msg">–</span>}</span></td>
                     <td data-l="Rating" className="rd-c-nw"><span className="cell">{r.type === 'Risk' && rt ? <span className={'pill ' + ratingCls(rt)} title={'Likelihood ' + r.p + ' × impact ' + r.i}>{rt} · {sc}</span> : <span className="msg">–</span>}</span></td>
                     <td data-l="Status" className="rd-c-nw"><span className="cell"><span className={'pill ' + (statCls[r.status] || 'neutral')}>{r.status}</span></span></td>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from '../store/StoreContext';
 import { useChange } from '../store/useChange';
 import { useUI } from '../components/UI';
+import { LinkedSection } from '../components/CrLinks';
 import { Area, Cell, SelectCell } from '../components/Field';
 import RichText from '../components/RichText';
 import { addDays, fdate, today } from '../lib/dates';
@@ -215,7 +216,7 @@ export default function ChangeDrawer({ id, onClose }) {
         <h3 className="d-h">2 · Links</h3>
         <div className="d-grid">
           <div className="fld" style={{ gridColumn: '1 / -1' }}>Work items affected
-            <Picker ids={cr.tasks} options={tasks} disabled={lockImp} label="Add work item" onChange={(v) => set({ tasks: v })} />
+            <LinkedSection cr={cr} kind="tasks" />
           </div>
           {S.sprints.some((sp) => sp.dateCrId === cr.id) && (
             <div className="fld" style={{ gridColumn: '1 / -1' }}>Sprint dates moved by this request
@@ -243,7 +244,7 @@ export default function ChangeDrawer({ id, onClose }) {
             </div>
           )}
           <div className="fld" style={{ gridColumn: '1 / -1' }}>Related RAID items
-            <Picker ids={cr.raid} options={raid} disabled={lockImp} label="Add RAID item" empty={S.raid.length ? 'All RAID items are already linked.' : 'There are no RAID items yet. Add one below, or in the RAID log.'} onChange={(v) => set({ raid: v })} />
+            <LinkedSection cr={cr} kind="raid" />
             {!lockImp && <QuickRaid cr={cr} />}
           </div>
           <div className="fld" style={{ gridColumn: '1 / -1' }}>Stakeholders to inform

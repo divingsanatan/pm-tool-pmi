@@ -1,0 +1,22 @@
+/* change request links on work items and RAID items */
+.crl-wrap{display:inline-flex;flex-wrap:wrap;gap:4px;align-items:center;min-width:0;vertical-align:middle}
+.crtag{display:inline-flex;align-items:center;gap:4px;min-width:0;max-width:220px;padding:1px 10px;border-radius:999px;font-size:12.5px;font-weight:600;line-height:20px;white-space:nowrap;border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);background:var(--accent-soft);color:var(--accent)}
+.crtag.good{border-color:color-mix(in srgb,var(--good) 45%,transparent);background:var(--good-bg);color:var(--good)}
+.crtag.warn{border-color:color-mix(in srgb,var(--warn) 45%,transparent);background:var(--warn-bg);color:var(--warn)}
+.crtag.bad{border-color:color-mix(in srgb,var(--bad) 45%,transparent);background:var(--bad-bg);color:var(--bad)}
+.crtag .crt-t{overflow:hidden;text-overflow:ellipsis}
+.crtag .crt-c{font-family:var(--f-mono);flex:none}
+.crtag-x{border:0;background:none;color:inherit;cursor:pointer;padding:0 0 0 2px;font-size:10px;line-height:1;opacity:.7}
+.tag-btn.crl{margin-left:4px}
+.tag-btn.crl.none{opacity:0;padding:0 7px;border:1px dashed var(--line);border-radius:999px;font-size:12.5px;line-height:20px}
+.tg-row:hover .tag-btn.crl.none,.tag-btn.crl.none:focus-visible,.drawer .tag-btn.crl.none{opacity:.85}
+@media (hover:none){.tag-btn.crl.none{opacity:.7}}
+.crl-sec .crl-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.crl-sec .tbl td{padding:5px 6px}
+.crl-sec .crl-name{min-width:160px;white-space:normal}
+.crl-dlg{display:flex;flex-direction:column;gap:8px;min-width:min(520px,86vw)}
+.crl-dlg .crl-list{max-height:52vh;overflow:auto;border:1px solid var(--line);border-radius:8px}
+.crl-dlg .crl-grp{position:sticky;top:0;background:var(--row);font-size:12px;font-weight:700;color:var(--muted);padding:5px 10px;text-transform:uppercase;letter-spacing:.04em}
+.crl-dlg label.crl-it{display:flex;gap:10px;align-items:flex-start;padding:7px 10px;border-top:1px solid var(--line);cursor:pointer}
+.crl-dlg label.crl-it:hover{background:var(--row)}
+.crl-dlg .crl-it .mono{flex:none;color:var(--muted);min-width:64px}

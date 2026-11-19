@@ -13,6 +13,7 @@ import { ancestorsOf, flatTree, rollParts, subtreeIds } from '../lib/hier';
 import { fdate } from '../lib/dates';
 import { clock, dayLabel } from '../lib/activity';
 import { hrsf, nz, pc } from '../lib/format';
+import { CrField } from '../components/CrLinks';
 
 export default function TaskDrawer({ taskId, onClose, onOpen }) {
   const { S } = useStore();
@@ -106,6 +107,9 @@ export default function TaskDrawer({ taskId, onClose, onOpen }) {
               {(t.tags || []).map((g) => (<EditableTag key={g} tag={g} onRemove={() => tk.patch(t.id, { tags: t.tags.filter((x) => x !== g) })} />))}
               <TagMenu task={t} className="btn tag-add-btn" label="+ Tag" />
             </div>
+          </div>
+          <div className="fld" style={{ gridColumn: '1 / -1' }}>Change requests
+            <CrField kind="tasks" id={t.id} />
           </div>
           <label className="fld">{parent ? 'Effort total (hours)' : 'Effort (hours)'}{effortRolled && <span className="msg"> · Σ from children{P.ownEffort > 0 ? ' + own' : ''}</span>}
             {effortRolled ? <span className="c ro-field n">{hrsf(t.effort)}</span> : <Cell value={t.effort} type="num" min={0} cls="n" placeholder={milestone ? 'Milestones carry no effort' : '–'} disabled={milestone} onCommit={(v) => (parent ? tk.patchOwn(t.id, { effort: v }) : tk.patch(t.id, { effort: v }))} />}
