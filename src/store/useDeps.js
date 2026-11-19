@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react';
 import { useStore } from './StoreContext';
 import { useUI } from '../components/UI';
-import { checkAdd, depLocked, hasBaseline } from '../lib/deps';
+import { checkAdd, depImpact, depLocked, hasBaseline } from '../lib/deps';
 import { blankCr } from '../lib/change';
 import { findTask, uid } from '../lib/tasks';
 import { today } from '../lib/dates';
@@ -42,20 +42,23 @@ export function useDeps() {
           say({ id: 'dep', tone: 'bad', text: err, ttl: 8000 });
           return false;
         }
-        const make = (choice) => {
+        const make = (choice, free) => {
           update((p) => {
             const f = findTask(p, succId);
             if (!f) return;
             const d = { id: uid(), pred, type: spec.type || 'FS', lag: Math.round(Number(spec.lag) || 0), lagCal: spec.lagCal === 'cal' ? 'cal' : 'work', nature: spec.nature || 'mandatory' };
             if (!pred) { d.ext = String(spec.ext).trim(); if (spec.due) d.due = spec.due; }
+            if (free) d.free = { on: today() };
             if (choice) d.crId = crFor(p, choice, 'Dependency added: ' + (pred ? nameOf(succId) + ' waits on ' + nameOf(pred) : nameOf(succId) + ' waits on ' + String(spec.ext).trim())).id;
             f.t.deps = (f.t.deps || []).concat(d);
           });
-          say({ id: 'dep', tone: 'info', text: 'Dependency added and logged in the RAID log as a Dependency.' + (choice ? ' It is listed on its change request.' : ''), ttl: 5000 });
+          say({ id: 'dep', tone: 'info', text: free ? 'Dependency added without a change request: soft logic with no date or cost impact. It is logged in the RAID log.' : 'Dependency added and logged in the RAID log as a Dependency.' + (choice ? ' It is listed on its change request.' : ''), ttl: free ? 8000 : 5000 });
           done && done();
         };
         if (hasBaseline(sRef.current)) {
-          gate({ body: 'This project has a baseline. A new dependency changes the approved schedule logic, so it must be added through a change request. Pick an open request, or raise a new one (you can complete it in Change control).', confirm: 'Add dependency', title: 'Dependency: ' + nameOf(succId), onPick: make });
+          const imp = depImpact(sRef.current, succId, spec);
+          if (imp.free) make(null, true); // soft logic that moves no baselined date or cost: logged, no change request
+          else gate({ body: 'This project has a baseline and this dependency affects it. ' + imp.why.join(' ') + ' It must be added through a change request. Pick an open request, or raise a new one (you can complete it in Change control).', confirm: 'Add dependency', title: 'Dependency: ' + nameOf(succId), onPick: (c) => make(c, false) });
         } else make(null);
         return true;
       },
@@ -70,7 +73,8 @@ export function useDeps() {
           Object.assign(x, patch);
           if (choice) x.crId = crFor(p, choice, 'Dependency changed: ' + nameOf(succId) + (x.pred ? ' and ' + nameOf(x.pred) : '')).id;
         });
-        if (d && real && depLocked(sRef.current, d)) {
+        const stillFree = d && d.free && real && depImpact(sRef.current, succId, { ...d, ...patch }).free;
+        if (d && real && depLocked(sRef.current, d) && !stillFree) {
           gate({ body: 'This dependency is part of the approved baseline. Changing its relationship, lag or nature changes the schedule logic, so it needs a change request.', confirm: 'Change dependency', title: 'Dependency change: ' + nameOf(succId), onPick: apply });
         } else apply(null);
       },
@@ -91,7 +95,7 @@ export function useDeps() {
           });
           say({ id: 'dep', tone: 'info', text: 'Dependency removed. Its RAID entry was closed and kept for the record.', ttl: 6000 });
         };
-        if (d && depLocked(sRef.current, d)) {
+        if (d && depLocked(sRef.current, d) && !d.free) {
           gate({ body: 'This dependency is part of the approved baseline. Removing it changes the schedule logic, so it needs a change request.', confirm: 'Remove dependency', title: 'Remove dependency: ' + nameOf(succId), onPick: run });
         } else run(null);
       },

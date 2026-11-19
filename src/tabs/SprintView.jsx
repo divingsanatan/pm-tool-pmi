@@ -17,7 +17,7 @@ import { hrsf, money, nz, pc } from '../lib/format';
 import { crCls, currentBaseline, signedMoney } from '../lib/change';
 import { flatTree, kidsMap, leafTasks, rootTasks, subtreeIds, summarize, withAncestors } from '../lib/hier';
 import '../sprintlist.css';
-import { WEEKDAYS_SHORT, calendarOf, sprintDayList } from '../lib/offdays';
+import { WEEKDAYS_SHORT, calendarOf, sprintDayList, workDaysAfter } from '../lib/offdays';
 import { StakeholderOffDays, SprintCapacity } from '../components/CapacityViews';
 import BulkBar from '../components/BulkBar';
 import { CrLink } from '../components/CrLinks';
@@ -543,6 +543,8 @@ export default function SprintView() {
     } else tk.place(drag.id, { parent: target.parent || '', ref: target.id, pos: zone });
   };
   const sum = summarize(S, c);
+  // effort is work added up; the duration is the time from the first start to the last due date, in working days
+  const spanDays = sum.start && sum.end ? workDaysAfter(calendarOf(S), addDays(sum.start, -1), sum.end) : 0;
   // drag the right edge of the Name heading to change the column's width
   const startResize = (e) => {
     e.preventDefault();
@@ -821,9 +823,9 @@ export default function SprintView() {
             })}
             {c.tasks.length > 0 && (
               <div className="tg-row tg-tot">
-                <div className="h-wbs" /><div className="tg-name"><b>Total</b> <span className="msg">{sum.items} work item{sum.items === 1 ? '' : 's'} · {sum.leaves} at the lowest level</span></div>
+                <div className="h-wbs" /><div className="tg-name"><b>Total</b> <span className="msg">{sum.items} work item{sum.items === 1 ? '' : 's'} · {sum.leaves} at the lowest level · {hrsf(sum.hrs)} h of work · {spanDays ? spanDays + ' working day' + (spanDays === 1 ? '' : 's') + ' from start to due' : 'no dates yet, so no duration'}</span></div>
                 <div className="h-assignee" /><div className="c-start msg">{sum.start ? fdate(sum.start) : ''}</div><div className="c-due msg">{sum.end ? fdate(sum.end) : ''}</div><div className="h-priority" />
-                <div className="c-eff mono">{hrsf(sum.hrs)}</div>
+                <div className="c-eff mono" title="Effort is the work in hours added up. It is not elapsed time: people working in parallel finish sooner than the hours suggest. The duration is shown next to Total.">{hrsf(sum.hrs)}</div>
                 <div className="c-pct w-pct">{sum.pct == null ? null : (<><div className="bar"><i style={{ width: Math.min(100, sum.pct * 100) + '%' }} /></div><span className="mono">{pc(sum.pct, 0)}</span></>)}</div>
                 <div className="h-status" /><div className="h-deps" /><div className="h-tags" /><div className="h-code" /><div className="h-type" /><div className="h-doneOn" /><div className="h-parent" /><div className="c-open" />
               </div>

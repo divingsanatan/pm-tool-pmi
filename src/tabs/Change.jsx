@@ -14,7 +14,7 @@ import { crJump } from '../lib/drafts';
 import ChangeDrawer from './ChangeDrawer';
 
 export default function Change() {
-  const { S } = useStore();
+  const { S, update } = useStore();
   const ch = useChange();
   const ui = useUI();
   const [open, setOpen] = useState(null);
@@ -75,6 +75,15 @@ export default function Change() {
           <Kpi l="Approved, not in baseline" v={P.appr.length} s={P.appr.length ? signedMoney(P.apprCost, money) + ' · ' + signedWorkDays(P.apprDays) : 'None'} />
         </section>
       )}
+
+      <section className="card">
+        <h2>Change control rules</h2>
+        <p className="hint">After the baseline, a new dependency between work items needs no change request when it is soft (discretionary) logic and moves no baselined date or cost. It is added, logged in the RAID log and marked as having no baseline impact. Mandatory logic, an outside party, or a date that would have to move still needs a change request.</p>
+        <label className="row" style={{ gap: 8, alignItems: 'center' }}>
+          <input type="checkbox" checked={!!(S.meta && S.meta.strictDeps)} onChange={(e) => update((p) => { p.meta.strictDeps = e.target.checked; })} />
+          <span>Require a change request for every new dependency after the baseline (stricter)</span>
+        </label>
+      </section>
 
       <section className="card">
         <div className="row sp">

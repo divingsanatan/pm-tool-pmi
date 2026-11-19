@@ -220,6 +220,30 @@ export function deleteDepNote(S, rootIds) {
 /* ---------- change control ---------- */
 export const hasBaseline = (S) => !!(S.baselines && S.baselines.length);
 export const OPEN_CR = ['Draft', 'Submitted', 'Under review', 'Approved'];
+// Project rule (Change control rules): when on, every new dependency after the baseline needs a change request, whatever its effect
+export const depStrict = (S) => !!(S.meta && S.meta.strictDeps);
+
+/* Does a dependency that is added or changed after the baseline leave the approved baseline untouched?
+   A change request is the way to change the BASELINE (scope, schedule, cost). Soft logic that moves no baselined date and costs nothing
+   only refines the schedule model, so it is allowed without one, and it is logged (RAID entry, marked "no baseline impact").
+   It is free only when ALL of these hold; otherwise `why` lists what makes a change request necessary:
+     - the project has not switched on "a change request for every new dependency"
+     - it is discretionary (soft) logic, not mandatory (hard) logic
+     - it is between two work items of the project (an outside party's date is not under the project's control)
+     - the planned dates and progress do not break it (no date would have to move, so no baselined date or cost changes) */
+export function depImpact(S, succId, spec) {
+  const why = [];
+  if (depStrict(S)) why.push('This project requires a change request for every new dependency (see Change control rules).');
+  if (!spec.pred) why.push('It depends on an outside party, whose date the project does not control.');
+  if ((spec.nature || 'mandatory') !== 'discretionary') why.push('It is mandatory (hard) logic: the order cannot be changed, so it constrains the approved plan.');
+  const succ = findTask(S, succId);
+  const pred = spec.pred ? findTask(S, spec.pred) : null;
+  if (succ && pred) {
+    const ev = evalDep(S, succ.t, { type: spec.type || 'FS', lag: Number(spec.lag) || 0, lagCal: spec.lagCal === 'cal' ? 'cal' : 'work', nature: spec.nature || 'mandatory' }, pred.t);
+    if (ev.conflict) why.push(ev.conflict.text + ' A date would have to move, which changes the baseline.');
+  }
+  return { free: !why.length, why };
+}
 export const openCrs = (S) => (S.cr || []).filter((c) => OPEN_CR.includes(c.status));
 // Once the project has a baseline, a dependency is part of the approved schedule logic unless it was added under a change request that is still open.
 export function depLocked(S, dep) {
@@ -241,7 +265,8 @@ export function describeDep(S, e) {
   const bits = [e.pred ? r.label : 'External', nat + ' dependency'];
   if (lag) bits.push(lag);
   if (e.cross) bits.push(e.pc.name + ' → ' + e.sc.name);
-  return head + ' ' + bits.join(' · ') + '.';
+  const free = e.dep.free ? ' Added after the baseline without a change request' + (e.dep.free.on ? ' on ' + fdate(e.dep.free.on) : '') + ': soft logic with no effect on any baselined date or cost.' : '';
+  return head + ' ' + bits.join(' · ') + '.' + free;
 }
 const dueFor = (e) => (e.pred ? ((REL[e.dep.type] || REL.FS).from === 'finish' ? fDate(e.pred) : sDate(e.pred)) : e.dep.due || '');
 const ownerFor = (S, e) => {
@@ -292,6 +317,7 @@ export function syncDependencies(S) {
           nature: NATURE[d.nature] ? d.nature : 'mandatory',
         };
         if (d.crId) o.crId = d.crId;
+        if (d.free && !d.crId) o.free = { on: String(d.free.on || '') }; // added after the baseline without a change request: no baseline impact
         if (!pred) {
           o.ext = ext;
           if (d.due) o.due = d.due;
