@@ -181,8 +181,10 @@ export function planImport(S, cid, rows, mode) {
 
     // an item with sub-items takes its status, dates and hours from them, so those columns cannot change it
     if (tasks.some((t) => t.parent === target.id) && ['status', 'start', 'due', 'effort'].some((k) => f[k] != null && f[k] !== '')) {
+      // a downloaded file carries these rolled-up values unchanged: only say something when the file really tries to change them
+      const differs = ['status', 'start', 'due', 'effort'].some((k) => f[k] != null && f[k] !== '' && String(f[k]) !== String(target[k] == null ? '' : target[k]));
       ['status', 'start', 'due', 'effort'].forEach((k) => delete f[k]);
-      warn.push('This item has sub-items, so its status, dates and hours come from them and are not changed here');
+      if (differs) warn.push('This item has sub-items, so its status, dates and hours come from them and are not changed here');
     }
     // an update: list what really changes
     const changes = [];
@@ -265,6 +267,19 @@ export function exportCsv(S, cid) {
     return [t.code, t.name, ty ? ty.label : t.type, st ? st.label : '', (PRIORITIES.find((x) => x.id === t.priority) || {}).label || '', (t.assignees || []).map(nm).filter(Boolean).join(';'), t.start || '', t.due || '', t.effort == null ? '' : t.effort, t.description || '', (t.tags || []).join(';'), par];
   });
   return [head].concat(rows).map((r) => r.map(q).join(',')).join('\r\n');
+}
+
+// Saves CSV text as a file download (with the byte-order mark, so Excel reads accents and Hindi names correctly)
+export function downloadCsv(text, name) {
+  const bl = new Blob(['\ufeff' + text], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(bl);
+  const el = document.createElement('a');
+  el.href = url;
+  el.download = name;
+  document.body.appendChild(el);
+  el.click();
+  el.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 500);
 }
 
 export const TEMPLATE_CSV = [

@@ -3,7 +3,8 @@ import { useStore } from '../store/StoreContext';
 import { useUI } from './UI';
 import Menu from './Menu';
 import { BacklogIcon, FolderIcon, SprintIcon } from './Bits';
-import { blankProject, isOpen } from '../lib/tasks';
+import { blankProject, containerById, isOpen } from '../lib/tasks';
+import { downloadCsv, exportCsv } from '../lib/csvImport';
 import { leafTasks } from '../lib/hier';
 import DirectoryPanel from './DirectoryPanel';
 import ImportDialog from './ImportDialog';
@@ -34,6 +35,13 @@ function InlineEdit({ value, onDone }) {
 export default function Sidebar({ onNavigate }) {
   const { W, nav, updateW, setNav, saved, cloud, access } = useStore();
   const isAdmin = !cloud || access.admin;
+  // Download a sprint or the backlog as a CSV in the import layout (it has the Code column): edit it, then Import work items to update
+  const slug = (x) => String(x || 'items').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '') || 'items';
+  const dl = (p, cid) => {
+    const c = containerById(p, cid);
+    if (!c || !c.tasks.length) return;
+    downloadCsv(exportCsv(p, cid), slug(p.name) + '-' + slug(cid === 'backlog' ? 'Backlog' : c.name) + '-work-items.csv');
+  };
   const mayManage = (pid) => !cloud || canSeeSettings(roleOf(access, pid)); // Admin and Project Manager
   const ui = useUI();
   const [closed, setClosed] = useState({});
@@ -154,19 +162,20 @@ export default function Sidebar({ onNavigate }) {
                             {n > 0 && <span className="badge">{n}</span>}
                           </button>
                         )}
-                        {mayManage(p.id) && (
-                          <Menu
-                            className="sb-act"
-                            label="⋯"
-                            title="Sprint actions"
-                            items={[
-                              { label: 'Rename', onClick: () => setEditing(sk) },
+                        <Menu
+                          className="sb-act"
+                          label="⋯"
+                          title="Sprint actions"
+                          items={[
+                            { label: 'Download work items (CSV)', disabled: !s.tasks.length, onClick: () => dl(p, s.id) },
+                            ...(mayManage(p.id) ? [
                               { label: 'Import work items (CSV)…', onClick: () => setImp({ pid: p.id, cid: s.id }) },
                               { sep: true },
+                              { label: 'Rename', onClick: () => setEditing(sk) },
                               { label: 'Delete sprint', danger: true, onClick: () => delSprint(p, s) },
-                            ]}
-                          />
-                        )}
+                            ] : []),
+                          ]}
+                        />
                       </div>
                     );
                   })}
@@ -186,7 +195,7 @@ export default function Sidebar({ onNavigate }) {
                       <span className="sb-name">Backlog</span>
                       {p.backlog.tasks.length > 0 && <span className="badge">{p.backlog.tasks.length}</span>}
                     </button>
-                    {mayManage(p.id) && <Menu className="sb-act" label="⋯" title="Backlog actions" items={[{ label: 'Import work items (CSV)…', onClick: () => setImp({ pid: p.id, cid: 'backlog' }) }]} />}
+                    <Menu className="sb-act" label="⋯" title="Backlog actions" items={[{ label: 'Download work items (CSV)', disabled: !p.backlog.tasks.length, onClick: () => dl(p, 'backlog') }, ...(mayManage(p.id) ? [{ label: 'Import work items (CSV)…', onClick: () => setImp({ pid: p.id, cid: 'backlog' }) }] : [])]} />
                   </div>
                   {mayManage(p.id) && <button className="sb-add" onClick={() => addSprint(p.id)}>+ Add sprint</button>}
                 </div>
