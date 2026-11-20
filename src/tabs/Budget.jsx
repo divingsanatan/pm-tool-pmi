@@ -288,8 +288,8 @@ function LabourChange({ i, win, onClose }) {
     const tt = p.team[i];
     const pp = p.people.find((x) => x.id === tt.person);
     pp.rate = rt;
-    if (Math.abs(cp / 100 - L.capAuto) < 0.00005) delete tt.cap; else tt.cap = cp / 100; // the suggested value is kept as "follows the allocation"
-    if (Math.abs(h - L.auto.hours) < 0.005) delete tt.hours; else tt.hours = h; // the calendar value is kept as "follows the calendar"
+    tt.cap = cp / 100; // after a baseline the row always keeps its own values; the Stakeholders tab only suggests
+    tt.hours = h;
   };
   let trial = null, c2 = null, L2 = null;
   if (dirty) {
@@ -316,11 +316,11 @@ function LabourChange({ i, win, onClose }) {
   return (
     <Modal title={'Change labour: ' + who} onClose={onClose}>
       <div className="form">
-        <p className="hint" style={{ margin: 0 }}>The labour budget is locked by the baseline. A change that keeps it inside the baseline is applied after you confirm. A change that takes it above the baseline needs a change request.</p>
+        <p className="hint" style={{ margin: 0 }}>The labour budget is locked by the baseline. The Stakeholders tab (allocation, leave, delivery team) only suggests values and never moves it. A change here that keeps it inside the baseline is applied after you confirm. A change that takes it above the baseline needs a change request.</p>
         <div className="row" style={{ gap: 12, alignItems: 'flex-start' }}>
           <label className="fld" style={{ flex: 1, minWidth: 120 }}>Hourly rate<input className="c" type="number" min="0" step="any" value={rate} onChange={(e) => setRate(e.target.value)} /></label>
-          <label className="fld" style={{ flex: 1, minWidth: 120 }}>Capacity for project (%)<input className="c" type="number" min="0" step="any" value={cap} onChange={(e) => setCap(e.target.value)} /></label>
-          <label className="fld" style={{ flex: 1, minWidth: 120 }}>Total available hrs<input className="c" type="number" min="0" step="any" value={hrs} onChange={(e) => setHrs(e.target.value)} /></label>
+          <label className="fld" style={{ flex: 1, minWidth: 120 }}>Capacity for project (%)<input className="c" type="number" min="0" step="any" value={cap} onChange={(e) => setCap(e.target.value)} /><button type="button" className="linkbtn" onClick={() => setCap(String(Math.round(L.capAuto * 10000) / 100))}>use suggested {pc(L.capAuto, 0)}</button></label>
+          <label className="fld" style={{ flex: 1, minWidth: 120 }}>Total available hrs<input className="c" type="number" min="0" step="any" value={hrs} onChange={(e) => setHrs(e.target.value)} /><button type="button" className="linkbtn" onClick={() => setHrs(String(r2(L.auto.hours)))}>use calendar {hrsf(L.auto.hours)} h</button></label>
         </div>
         <p className="msg" style={{ margin: 0 }}>Now: {money(L.cost)} ({hrsf(L.avail)} h at {money(L.rate)}).{dirty && L2 ? ' After: ' + money(L2.cost) + ' (' + hrsf(L2.avail) + ' h at ' + money(L2.rate) + ').' : ''}</p>
         {dirty && c2 && c2.active && (
@@ -423,17 +423,21 @@ function LabourRegister() {
                 <td data-l="Capacity %">
                   {base ? <span className="cell n mono" title="Locked by the baseline. Use Change…">{pc(L.cap, 0)}</span> : <Cell value={L.cap} type="pct" cls="w-md n" label="Capacity for this project in percent" onCommit={(v) => setTeam(i, v == null ? { cap: undefined } : { cap: Math.max(0, v) })} />}
                   <div className={'inh' + (L.capManual ? ' own' : '')} title="The stakeholder's allocation % (Stakeholders tab) is only a suggestion here. Type a value to use your own; it is never changed by the allocation or by assigned work items.">
-                    {L.capManual
-                      ? <>own value · allocation {pc(L.capAuto, 0)} {!base && <button type="button" className="linkbtn" onClick={() => setTeam(i, { cap: undefined })}>reset</button>}</>
-                      : <>suggested from allocation %</>}
+                    {base
+                      ? <>fixed by the baseline · Stakeholders tab suggests {pc(L.capAuto, 0)}{Math.abs(L.capAuto - L.cap) > 0.00005 ? ' (differs)' : ''}</>
+                      : L.capManual
+                        ? <>own value · allocation {pc(L.capAuto, 0)} <button type="button" className="linkbtn" onClick={() => setTeam(i, { cap: undefined })}>reset</button></>
+                        : <>suggested from allocation %</>}
                   </div>
                 </td>
                 <td data-l="Total available hrs">
                   {base ? <span className="cell n mono" title="Locked by the baseline. Use Change…">{hrsf(L.total)}</span> : <Cell value={L.total} type="num" cls="w-md n" label="Total available hours on the project, before capacity" onCommit={(v) => setTeam(i, v == null || Math.abs(v - L.auto.hours) < 0.005 ? { hours: undefined } : { hours: Math.max(0, v) })} />}
                   <div className={'inh' + (L.manual ? ' own' : '')} title={L.auto.cal + ' sprint days − ' + L.auto.teamOff + ' team off days − ' + L.auto.leave + ' leave days = ' + L.auto.days + ' days × ' + hrsf(L.auto.hpd) + ' h'}>
-                    {L.manual
-                      ? <>adjusted · calendar {hrsf(L.auto.hours)} h ({L.diff > 0 ? '+' : ''}{hrsf(L.diff)}) {!base && <button type="button" className="linkbtn" onClick={() => useCalendar([i])}>reset</button>}</>
-                      : <>from calendar · {hrsf(L.auto.days)} d × {hrsf(L.auto.hpd)} h</>}
+                    {base
+                      ? <>fixed by the baseline · calendar suggests {hrsf(L.auto.hours)} h{Math.abs(L.diff) > 0.005 ? ' (differs)' : ''}</>
+                      : L.manual
+                        ? <>adjusted · calendar {hrsf(L.auto.hours)} h ({L.diff > 0 ? '+' : ''}{hrsf(L.diff)}) <button type="button" className="linkbtn" onClick={() => useCalendar([i])}>reset</button></>
+                        : <>from calendar · {hrsf(L.auto.days)} d × {hrsf(L.auto.hpd)} h</>}
                   </div>
                 </td>
                 <td data-l="Hours at capacity" className="r mono"><span className="cell">{hrsf(L.avail)}</span></td>

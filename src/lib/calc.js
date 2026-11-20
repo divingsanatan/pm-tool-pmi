@@ -744,6 +744,22 @@ export function normalize(S) {
   if (!Array.isArray(S.raci)) S.raci = [];
   // change control: change requests and baseline versions
   if (!Array.isArray(S.baselines)) S.baselines = [];
+  // Once a baseline exists, the labour budget stands on its own values. The Stakeholders tab (allocation %, leave, "not on the delivery team")
+  // only SUGGESTS values: every labour row keeps its own capacity and hours, taken from the baseline, so nothing there moves the budget.
+  // Only the PM or an Admin changes them, through "Change…" in the Budget tab.
+  if (S.baselines.length && Array.isArray(S.team) && Array.isArray(S.people)) {
+    const last = S.baselines[S.baselines.length - 1];
+    const rec = new Map((Array.isArray(last.labour) ? last.labour : []).map((x) => [x.person, x]));
+    S.team.forEach((t) => {
+      const needCap = !hasOwnCap(t), needHrs = t.hours == null || isNaN(t.hours);
+      if (!needCap && !needHrs) return;
+      const r = rec.get(t.person);
+      let L = null;
+      if (!(r && r.cap != null && r.hours != null)) { try { L = labourOf(S, t); } catch (e) { L = null; } }
+      if (needCap) { const v = r && r.cap != null ? nz(r.cap) : L ? L.cap : null; if (v != null) t.cap = v; }
+      if (needHrs) { const v = r && r.hours != null ? nz(r.hours) : L ? L.total : null; if (v != null) t.hours = v; }
+    });
+  }
   // A request that says Implemented or Closed but whose baseline no longer exists (it was deleted) goes back to Approved,
   // so its approved cost and days can be corrected and it can be implemented again.
   (Array.isArray(S.cr) ? S.cr : []).forEach((c) => {
