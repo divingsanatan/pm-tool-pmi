@@ -1,0 +1,38 @@
+/* work item attachments, the hover card and the small icons in the list */
+.att{display:flex;flex-direction:column;gap:8px}
+.att-drop{display:flex;flex-direction:column;gap:2px;align-items:flex-start;padding:12px 14px;border:1.5px dashed var(--line);border-radius:10px;cursor:pointer;background:transparent;color:var(--ink);font-size:13.5px}
+.att-drop:hover,.att-drop:focus-visible,.att-drop.over{border-color:var(--accent);background:var(--accent-soft);outline:none}
+.att-drop span{color:var(--muted)}
+.att-busy{margin:0}
+.att-err{margin:0;color:var(--bad);font-size:13px}
+.att-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:10px}
+.att-it{position:relative;display:flex;flex-direction:column;gap:2px;min-width:0}
+.att-th{display:block;width:100%;aspect-ratio:4/3;padding:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg);cursor:pointer}
+.att-th:hover,.att-th:focus-visible{border-color:var(--accent);outline:none}
+.att-pv{display:block;width:100%;height:100%;object-fit:cover}
+.att-ico,.att-ph{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:20px;font-weight:700;color:var(--muted);background:var(--bg)}
+.att-nm{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.att-sz{font-size:11.5px}
+.att-x{position:absolute;top:4px;right:4px;width:22px;height:22px;line-height:20px;border-radius:50%;background:var(--surface);border:1px solid var(--line);opacity:.0;transition:opacity .12s}
+.att-it:hover .att-x,.att-x:focus-visible{opacity:1}
+@media (hover:none){.att-x{opacity:1}}
+.att-view{display:flex;justify-content:center;align-items:center;max-height:68vh;overflow:auto;background:var(--bg);border-radius:8px}
+.att-view img,.att-view video{max-width:100%;max-height:68vh;display:block}
+.att-view iframe{width:100%;height:68vh;border:0}
+.att-view audio{width:100%;margin:24px}
+.marks{display:inline-flex;align-items:center;gap:8px;margin:0 6px;color:var(--muted);font-size:12px;flex:none}
+.mk{display:inline-flex;align-items:center;gap:3px}
+.mk svg{width:14px;height:14px}
+.peek{position:fixed;z-index:60;width:360px;max-width:calc(100vw - 16px);padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);box-shadow:0 8px 28px rgba(0,0,0,.28);pointer-events:none;font-size:13px;display:flex;flex-direction:column;gap:8px}
+.peek-h{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.peek-desc{white-space:pre-wrap;max-height:9.5em;overflow:hidden;color:var(--ink);line-height:1.4}
+.peek-none{color:var(--muted);font-size:12.5px}
+.peek-sum{color:var(--muted);font-size:12.5px;margin-bottom:4px}
+.peek-row{display:flex;gap:6px;align-items:center}
+.peek-pv{width:72px;height:54px;object-fit:cover;border-radius:6px;border:1px solid var(--line);flex:none;font-size:14px}
+.peek-more{color:var(--muted);font-weight:600}
+
+.att-ico{letter-spacing:.02em;font-size:13px}
+.att-ico.big{width:96px;height:72px;border-radius:10px;border:1px solid var(--line);font-size:18px}
+.att-doc{display:flex;flex-direction:column;align-items:center;gap:10px;padding:28px 16px}
+.att-doc p{margin:0}

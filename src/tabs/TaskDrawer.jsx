@@ -14,6 +14,7 @@ import { fdate } from '../lib/dates';
 import { clock, dayLabel } from '../lib/activity';
 import { hrsf, nz, pc } from '../lib/format';
 import { CrField } from '../components/CrLinks';
+import { AttachmentsSection } from '../components/Attachments';
 
 export default function TaskDrawer({ taskId, onClose, onOpen }) {
   const { S } = useStore();
@@ -153,6 +154,9 @@ export default function TaskDrawer({ taskId, onClose, onOpen }) {
 
         <h3 className="d-h">Description</h3>
         <RichText key={t.id} html={t.descriptionHtml} text={t.description} placeholder="Add details, acceptance criteria, links…" label="Description" rows={4} onCommit={({ html, text }) => tk.patch(t.id, { description: text, descriptionHtml: html })} />
+
+        <h3 className="d-h">Attachments {(t.attachments || []).length > 0 && <span className="msg">{(t.attachments || []).length}</span>}</h3>
+        <AttachmentsSection task={t} />
 
         <h3 className="d-h">Child items {kids.length > 0 && <span className="msg">{kids.filter((k) => isDoneStatus(S, k.status)).length}/{kids.length} done</span>}</h3>
         <div className="d-subs">

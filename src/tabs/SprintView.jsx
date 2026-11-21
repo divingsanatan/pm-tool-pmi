@@ -20,6 +20,7 @@ import '../sprintlist.css';
 import { WEEKDAYS_SHORT, calendarOf, sprintDayList, workDaysAfter } from '../lib/offdays';
 import { StakeholderOffDays, SprintCapacity } from '../components/CapacityViews';
 import BulkBar from '../components/BulkBar';
+import { ItemMarks, usePeek } from '../components/ItemPeek';
 import { CrLink } from '../components/CrLinks';
 import { crsFor } from '../lib/crLinks';
 import NameInput from '../components/NameInput';
@@ -42,6 +43,7 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
   const tk = useTasks();
   const ui = useUI();
   const { S } = useStore();
+  const peek = usePeek(t); // hover the item to see its description and attachments
   const { onOpen, sel, onSelect, drag, over, setDrag, setOver, drop, focus, ask, expand, tasks } = ctx;
   const selected = sel.has(t.id);
   const ty = typeOf(S, t.type);
@@ -117,7 +119,7 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
       }}
     >
       <div className="c-wbs mono" title="WBS number">{wbs}</div>
-      <div className="tg-name" style={depth ? { paddingLeft: depth * 18 } : undefined}>
+      <div className="tg-name" style={depth ? { paddingLeft: depth * 18 } : undefined} {...peek.bind}>
         <span
           className="w-grip"
           draggable
@@ -144,6 +146,8 @@ function Row({ t, depth, kidList, expanded, onToggle, ctx, wbs }) {
         <NameInput t={t} focus={focus} bold={parent} done={done} keys={keys} wrap={ctx.wrap}>
           <span className="tags-inline"><TagMenu task={t} inline max={99} /><CrLink kind="tasks" id={t.id} inline /></span>
         </NameInput>
+        <ItemMarks t={t} />
+        {peek.node}
         {parent && <span className="subc" title="Direct child items done">⑂ {kidsDone}/{kidList.length}</span>}
         <AddChildMenu parent={t} onAdded={(id) => { expand(t.id); ask({ id, select: true }); }} />
       </div>
